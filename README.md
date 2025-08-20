@@ -16,13 +16,13 @@ It can optionally be expanded to include LDAP integration for downstream app req
 👉 Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
 👉 GitHub Repo: https://github.com/modom-ofn/auth-portal
 
-<img width="2525" height="1227" alt="auth-portal-login" src="https://github.com/user-attachments/assets/57aecd34-e6f5-4905-9d80-05de2c7ff068" />
+<img width="1147" height="804" alt="auth-portal-login" src="https://github.com/user-attachments/assets/69c8ebad-fd1a-4433-afed-6e929db8b354" />
 
-<img width="643" height="838" alt="auth-portal-signin" src="https://github.com/user-attachments/assets/c656fafe-618b-49ff-b7e9-ef3290913caa" />
+<img width="642" height="838" alt="auth-portal-signin" src="https://github.com/user-attachments/assets/368f2370-dba3-4a82-b328-e501d4356708" />
 
-<img width="1159" height="858" alt="auth-portalorized-portal" src="https://github.com/user-attachments/assets/0ccc2a72-2454-4c61-b42e-594845442cee" />
+<img width="649" height="393" alt="plex-authorized-portal" src="https://github.com/user-attachments/assets/b720766b-49ee-41d9-b223-d6d8bf3e615c" />
 
-<img width="1158" height="821" alt="plex-unauthorized-portal" src="https://github.com/user-attachments/assets/73dda994-4db9-4637-b04e-b6b644cb6c2f" />
+<img width="654" height="386" alt="plex-unauthorized-portal" src="https://github.com/user-attachments/assets/4cec68b5-b543-4590-9258-75072d28fb16" />
 
 ---
 
