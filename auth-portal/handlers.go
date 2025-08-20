@@ -118,7 +118,7 @@ func forwardHandler(w http.ResponseWriter, r *http.Request) {
 		req.Header.Set("X-Plex-Client-Identifier", plexClientID)
 
 		resp, err := http.DefaultClient.Do(req)
-		if err == nil && resp != nil && resp.StatusCode == 200 {
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
 			_ = json.NewDecoder(resp.Body).Decode(&tokenResp)
 			resp.Body.Close()
 			if tokenResp.AuthToken != "" {
@@ -132,25 +132,40 @@ func forwardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ok {
-		// Fetch profile, save, and set session cookie so the opener is already logged in
+		// Fetch profile, upsert user, compute & persist plex_access, set session cookie
 		profile, perr := fetchUserProfile(tokenResp.AuthToken)
 		if perr == nil {
-			saveUser(TokenResponse{
-				AuthToken: tokenResp.AuthToken,
-				User: struct {
-					Username string `json:"username"`
-					Email    string `json:"email"`
-					UUID     string `json:"uuid"`
-				}{
-					Username: profile.User.Username,
-					Email:    profile.User.Email,
-					UUID:     profile.User.UUID,
-				},
-			})
+			// Upsert user record (token, username, email, uuid)
+			if _, err := upsertUser(User{
+				Username:   profile.User.Username,
+				Email:      nullStringFrom(profile.User.Email),
+				PlexUUID:   nullStringFrom(profile.User.UUID),
+				PlexToken:  nullStringFrom(tokenResp.AuthToken),
+				PlexAccess: false, // will update below after authz check
+			}); err != nil {
+				log.Printf("upsertUser error: %v", err)
+			}
+
+			// Compute and persist server-authorization flag
+			authorized := false
+			if okAuth, err := isUserAuthorizedOnServer(profile.User.UUID, profile.User.Username); err == nil {
+				authorized = okAuth
+			} else {
+				log.Printf("authz check failed after login for %s (%s): %v",
+					profile.User.Username, profile.User.UUID, err)
+			}
+
+			// Persist plex_access once
+			if err := setUserPlexAccessByUUID(profile.User.UUID, authorized); err != nil {
+				log.Printf("setUserPlexAccessByUUID error: %v", err)
+			}
+
+			// Session cookie
 			if err := setSessionCookie(w, profile.User.UUID, profile.User.Username); err != nil {
 				log.Printf("setSessionCookie error: %v", err)
 			}
 		} else {
+			log.Printf("fetchUserProfile error: %v", perr)
 			ok = false
 		}
 	}
@@ -158,15 +173,19 @@ func forwardHandler(w http.ResponseWriter, r *http.Request) {
 	// Tiny page to notify opener and close; relax CSP ONLY for this response.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'")
+	dest := appBaseURL + "/home"
 
 	fmt.Fprintf(w, `<!doctype html>
 <meta charset="utf-8">
 <title>AuthPortal</title>
 <script>
 (function(){
+  var ok = %v;
+  var dest = %q;
   try {
     if (window.opener && window.opener !== window) {
-      window.opener.postMessage({type:"auth-portal", ok:%v}, window.location.origin);
+      try { window.opener.postMessage({type:"auth-portal", ok: ok}, window.location.origin); } catch(e){}
+      if (ok) { try { window.opener.location = dest; } catch(e){} }
     }
   } catch(e){}
   setTimeout(function(){ window.close(); }, 200);
@@ -174,13 +193,15 @@ func forwardHandler(w http.ResponseWriter, r *http.Request) {
 </script>
 <body style="background:#0b1020;color:#e5e7eb;font:14px system-ui">
   <p style="text-align:center;margin-top:20vh">You can close this window.</p>
-</body>`, ok)
+</body>`, ok, dest)
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	render(w, "login.html", map[string]any{
-		"BaseURL": appBaseURL,
-	})
+	if usernameFrom(r.Context()) != "" { // user has a valid session
+		http.Redirect(w, r, "/home", http.StatusFound)
+		return
+	}
+	render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
 }
 
 // ---------- Account profile (JSON) ----------
@@ -304,16 +325,16 @@ func resolvePlexServerMachineID() (string, error) {
 
 // /api/servers/{machineId}/shared_servers returns <SharedServer ...> entries
 type sharedServersDoc struct {
-	XMLName       xml.Name           `xml:"MediaContainer"`
+	XMLName       xml.Name            `xml:"MediaContainer"`
 	SharedServers []sharedServerEntry `xml:"SharedServer"`
 }
 
 type sharedServerEntry struct {
-	ID        int    `xml:"id,attr"`        // shared record id
-	Username  string `xml:"username,attr"`  // the user's Plex username
-	Email     string `xml:"email,attr"`     // email (if available)
-	UserID    int    `xml:"userID,attr"`    // numeric user id (not UUID)
-	Owned     int    `xml:"owned,attr"`     // 1 if this user owns the server (for owner)
+	ID       int    `xml:"id,attr"`       // shared record id
+	Username string `xml:"username,attr"` // the user's Plex username
+	Email    string `xml:"email,attr"`    // email (if available)
+	UserID   int    `xml:"userID,attr"`   // numeric user id (not UUID)
+	Owned    int    `xml:"owned,attr"`    // 1 if this user owns the server (for owner)
 	// ... plus many library <Section> children we don't need for auth check
 }
 
@@ -425,7 +446,6 @@ type homeUser struct {
 	ID       int    `xml:"id,attr"`
 	UUID     string `xml:"uuid,attr"`
 	Username string `xml:"username,attr"`
-	// There are more attributes (email, protected, etc.) we don’t need here
 }
 
 // fetchHomeUsers returns the list of users in the owner’s Plex Home.
@@ -535,6 +555,10 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		authorized, err = isUserAuthorizedOnServer(uid, uname)
 		if err != nil {
 			log.Printf("home authz check failed for %s (%s): %v", uname, uid, err)
+		}
+		// Persist the decision to DB for quick reads elsewhere
+		if err := setUserPlexAccessByUUID(uid, authorized); err != nil {
+			log.Printf("setUserPlexAccessByUUID error: %v", err)
 		}
 	}
 
