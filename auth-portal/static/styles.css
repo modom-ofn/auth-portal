@@ -1,0 +1,172 @@
+/* ========== Root palette ========== */
+:root{
+  --bg:#0b1020;          /* deep navy */
+  --bg2:#0f172a;         /* slate */
+  --card:#111827;        /* card surface */
+  --muted:#94a3b8;       /* muted text */
+  --border:#1f2937;      /* borders */
+  --text:#e5e7eb;        /* foreground */
+  --brand:#f59e0b;       /* Plex orange accent */
+  --ok:#86efac;          /* success */
+  --warn:#fbbf24;        /* warning */
+  /* Optional hero artwork (place a file at /static/bg.jpg to enable) */
+  --hero-url: url("/static/bg.jpg"); /* or set to 'none' to disable */
+}
+
+/* Reset / Base */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+
+/* ========== Overseerr-like background ========== */
+/* Layered gradients for rich depth */
+.bg{
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(70% 60% at 10% 10%, #1e293b 0%, transparent 60%),
+    radial-gradient(70% 60% at 90% 20%, #0b1220 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+  overflow: hidden;
+}
+
+/* Optional blurred hero art glow — supply /static/bg.jpg for a subtle, soft-focus vibe */
+.bg::before{
+  content:"";
+  position:absolute; inset:-10% -10% -10% -10%;
+  background-image: var(--hero-url);
+  background-position:center 20%;
+  background-repeat:no-repeat;
+  background-size:cover;
+  filter: blur(38px) saturate(1.05) brightness(.7);
+  opacity:.18;                /* keep it subtle */
+  transform: scale(1.15);
+  pointer-events:none;
+}
+
+/* Animated film grain (very subtle) */
+.bg::after{
+  content:"";
+  position:absolute; inset:0;
+  background-image: repeating-radial-gradient(rgba(255,255,255,.012) 0 1px, transparent 2px 4px);
+  opacity:.25;
+  mix-blend-mode: soft-light;
+  animation: grain 12s steps(10) infinite;
+  pointer-events:none;
+}
+@keyframes grain{
+  0%{transform:translate(0,0)}
+  10%{transform:translate(-1%,1%)}
+  20%{transform:translate(1%,-1%)}
+  30%{transform:translate(-1%,0)}
+  40%{transform:translate(1%,1%)}
+  50%{transform:translate(0,-1%)}
+  60%{transform:translate(-1%,1%)}
+  70%{transform:translate(1%,0)}
+  80%{transform:translate(-1%,-1%)}
+  90%{transform:translate(1%,-1%)}
+  100%{transform:translate(0,0)}
+}
+
+/* ========== Layout ========== */
+.center{min-height:100%;display:grid;place-items:center;padding:2rem;position:relative;z-index:1}
+
+.card{
+  width:100%;max-width:520px;
+  background:linear-gradient(180deg, rgba(17,24,39,.9), rgba(17,24,39,.92));
+  border:1px solid var(--border);
+  padding:2rem;border-radius:16px;
+  box-shadow:0 10px 40px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.02) inset;
+  backdrop-filter: blur(6px);
+  animation: fadeIn .8s ease-out both;
+}
+
+.brand{display:flex;flex-direction:column;align-items:center;gap:.5rem;margin-bottom:1.25rem}
+.logo{width:42px;height:42px;border-radius:8px}
+h1{font-size:1.6rem;margin:0}
+.muted{color:var(--muted)}
+.footnote{margin-top:1rem;color:var(--muted);font-size:.9rem}
+
+/* ========== Buttons ========== */
+/* Overseerr-style Plex CTA in Plex Orange */
+.plex-btn {
+  background: #e5a00d; /* Plex orange */
+  border: 1px solid #d48f0b;
+  color: #ffffff; /* white text for contrast */
+  font-size: 18px;
+  font-weight: 700;
+  padding: 14px 22px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-shadow: 0 6px 20px rgba(229, 160, 13, 0.25);
+  transition: transform .18s ease, 
+              box-shadow .18s ease, 
+              background-color .18s ease, 
+              border-color .18s ease;
+}
+
+.plex-btn:hover {
+  background: #f59e0b; /* brighter Plex orange */
+  border-color: #cc7a00;
+  box-shadow: 0 12px 36px rgba(229, 160, 13, 0.35);
+  transform: translateY(-2px);
+}
+
+.plex-btn:active {
+  transform: translateY(0);
+  background: #d48f0b;
+  border-color: #a86400;
+}
+
+.plex-logo {
+  width: 22px;
+  height: 22px;
+}
+
+/* badges for portal auth state */
+.btn.badge{
+  cursor: default;
+  font-weight: 700;
+  border-radius: 12px;
+  padding: .6rem 1rem;
+  letter-spacing:.2px;
+}
+.btn.badge.success{
+  background:#0f3d25;
+  border:1px solid #1f7a4a;
+  color:#b8f3d3;
+}
+.btn.badge.danger{
+  background:#3d0f16;
+  border:1px solid #7a1f2f;
+  color:#f3b8c2;
+}
+
+.badge{
+  display:inline-block;padding:.35rem .55rem;border-radius:999px;
+  font-weight:700;font-size:.85rem;border:1px solid transparent
+}
+.badge.ok{background:#052e1a;border-color:#0a5a35;color:#b2f5cf}
+.badge.warn{background:#2c1605;border-color:#8a4b16;color:#ffd8b3}
+
+/* ========== Footer ========== */
+.footer{
+  position:fixed;left:0;right:0;bottom:0;
+  display:flex;justify-content:center;align-items:center;
+  padding:14px 10px;font-size:14px;color:#8b8f99;z-index:1;
+  background: linear-gradient(to top, rgba(11,16,32,.55), rgba(11,16,32,0));
+  backdrop-filter: blur(2px);
+}
+.footer a{
+  color:var(--brand);
+  text-decoration:none;font-weight:700;
+}
+.footer a:hover{text-decoration:underline}
+
+/* ========== Small niceties ========== */
+a{color:var(--text)}
+a:hover{opacity:.9}
+@keyframes fadeIn{from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)}}

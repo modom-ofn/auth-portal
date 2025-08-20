@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuthPortal — Authorized</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg">
+  <main class="center">
+    <section class="card">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="logo">
+          <path d="M3 3h18v18H3z" fill="#111827"/>
+          <path d="M9 6l7 6-7 6V6z" fill="#f59e0b"/>
+        </svg>
+        <h1>Welcome, {{ .Username }}</h1>
+        <p class="muted">You’re authorized on this Plex server.</p>
+      </div>
+
+      <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
+        <span class="badge ok">Plex Authorized</span>
+        <!-- Example: links to internal services -->
+        <a class="btn" href="/some-internal-app">Open Internal App</a>
+      </div>
+
+      <form action="/logout" method="post" style="margin-top:16px;text-align:center">
+        <button class="btn ghost" type="submit">Log out</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with Plex, Inc.”.</p>
+  </footer>
+</body>
+</html>

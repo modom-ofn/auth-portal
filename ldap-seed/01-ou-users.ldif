@@ -1,0 +1,3 @@
+dn: ou=users,dc=plexauth,dc=local
+objectClass: organizationalUnit
+ou: users

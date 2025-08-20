@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuthPortal — Access Pending</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg">
+  <main class="center">
+    <section class="card">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="logo">
+          <path d="M3 3h18v18H3z" fill="#111827"/>
+          <path d="M9 6l7 6-7 6V6z" fill="#f59e0b"/>
+        </svg>
+        <h1>Hello, {{ .Username }}</h1>
+        <p class="muted">You’ve signed in with Plex, but you’re not yet authorized on this server.</p>
+      </div>
+
+      <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
+        <span class="badge warn">Plex Not Authorized</span>
+        <!-- Optional: a CTA to request access -->
+        <a class="btn" href="mailto:admin@example.com?subject=Plex%20Access%20Request">Request Access</a>
+      </div>
+
+      <form action="/logout" method="post" style="margin-top:16px;text-align:center">
+        <button class="btn ghost" type="submit">Log out</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with Plex, Inc.”.</p>
+  </footer>
+</body>
+</html>
