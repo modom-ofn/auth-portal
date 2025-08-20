@@ -11,7 +11,7 @@ It reproduces Overseerr’s clean popup login (no code entry), stores the Plex t
 - ✅ Authorized Plex users → directed to the authorized home page.
 - 🚫 Unauthorized Plex users → shown the restricted home page.
 
-**“Use at your own risk. This project is unaffiliated with Plex, Inc.”.**
+**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc.”.**
 
 It can optionally be expanded to include LDAP integration for downstream app requirements.
 
@@ -343,5 +343,4 @@ https://github.com/modom-ofn/auth-portal/issues
 
 GPL-3.0 — https://opensource.org/license/lgpl-3-0
 
-**“Use at your own risk. This project is unaffiliated with Plex, Inc.”.**
-**“Use at your own risk. This project is unaffiliated with Plex, Inc.”.**
+**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc.”.**
