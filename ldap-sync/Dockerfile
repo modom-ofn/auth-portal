@@ -1,14 +1,20 @@
-FROM golang:1.22-alpine
+# ---- builder ----
+FROM golang:1.23.10-alpine3.21 AS build
+WORKDIR /src
 
-WORKDIR /app
+# copy only go.mod first (no go.sum yet)
+COPY go.mod ./
+RUN go mod download
 
-# ✅ Copy all code (go.mod, go.sum, main.go, etc.)
+# now copy source and finalize deps
 COPY . .
-
-# ✅ Tidy now that all source is in place
 RUN go mod tidy
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/ldap-sync .
 
-# ✅ Build the binary
-RUN go build -o ldap-sync .
-
-CMD ["./ldap-sync"]
+# ---- runtime ----
+FROM alpine:3.21
+WORKDIR /app
+RUN apk add --no-cache ca-certificates && apk --no-cache upgrade musl
+COPY --from=build /out/ldap-sync /app/ldap-sync
+USER 65532:65532
+ENTRYPOINT ["/app/ldap-sync"]

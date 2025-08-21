@@ -132,40 +132,40 @@ func forwardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ok {
-		// Fetch profile, upsert user, compute & persist plex_access, set session cookie
+		// Fetch profile, decide authz, only persist if authorized; always set session cookie
 		profile, perr := fetchUserProfile(tokenResp.AuthToken)
 		if perr == nil {
-			// Upsert user record (token, username, email, uuid)
-			if _, err := upsertUser(User{
-				Username:   profile.User.Username,
-				Email:      nullStringFrom(profile.User.Email),
-				PlexUUID:   nullStringFrom(profile.User.UUID),
-				PlexToken:  nullStringFrom(tokenResp.AuthToken),
-				PlexAccess: false, // will update below after authz check
-			}); err != nil {
-				log.Printf("upsertUser error: %v", err)
-			}
-
-			// Compute and persist server-authorization flag
+			// 1) Check authorization first
 			authorized := false
 			if okAuth, err := isUserAuthorizedOnServer(profile.User.UUID, profile.User.Username); err == nil {
 				authorized = okAuth
 			} else {
-				log.Printf("authz check failed after login for %s (%s): %v",
-					profile.User.Username, profile.User.UUID, err)
+				log.Printf("authz check failed after login for %s (%s): %v", profile.User.Username, profile.User.UUID, err)
 			}
 
-			// Persist plex_access once
-			if err := setUserPlexAccessByUUID(profile.User.UUID, authorized); err != nil {
-				log.Printf("setUserPlexAccessByUUID error: %v", err)
+			// 2) Persist ONLY authorized users
+			if authorized {
+				if _, err := upsertUser(User{
+					Username:   profile.User.Username,
+					Email:      nullStringFrom(profile.User.Email),
+					PlexUUID:   nullStringFrom(profile.User.UUID),
+					PlexToken:  nullStringFrom(tokenResp.AuthToken),
+					PlexAccess: true,
+				}); err != nil {
+					log.Printf("upsertUser error (authorized): %v", err)
+				}
+				if err := setSessionCookie(w, profile.User.UUID, profile.User.Username); err != nil {
+					log.Printf("setSessionCookie error: %v", err)
+				}
+			} else {
+				log.Printf("skipping DB persist for unauthorized user %q (%s)", profile.User.Username, profile.User.UUID)
 			}
 
-			// Session cookie
-			if err := setSessionCookie(w, profile.User.UUID, profile.User.Username); err != nil {
-				log.Printf("setSessionCookie error: %v", err)
+			// 3) Issue session cookie so the opener can be routed to /home and see the proper page
+			if err := setTempSessionCookie(w, profile.User.UUID, profile.User.Username); err != nil {
+				log.Printf("setTempSessionCookie error: %v", err)
 			}
 		} else {
-			log.Printf("fetchUserProfile error: %v", perr)
 			ok = false
 		}
 	}
@@ -197,11 +197,11 @@ func forwardHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	if usernameFrom(r.Context()) != "" { // user has a valid session
-		http.Redirect(w, r, "/home", http.StatusFound)
-		return
-	}
-	render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+    if hasValidSession(r) {
+        http.Redirect(w, r, "/home", http.StatusFound)
+        return
+    }
+    render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
 }
 
 // ---------- Account profile (JSON) ----------
@@ -556,10 +556,18 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("home authz check failed for %s (%s): %v", uname, uid, err)
 		}
-		// Persist the decision to DB for quick reads elsewhere
-		if err := setUserPlexAccessByUUID(uid, authorized); err != nil {
-			log.Printf("setUserPlexAccessByUUID error: %v", err)
-		}
+	}
+
+	// If you want to ensure the DB reflects "authorized" even if the user first hit /home
+	// via a fresh session (rare), you can opportunistically upsert here — ONLY when authorized.
+	if authorized {
+		// We don’t have the token here if the session is new and we skipped forward upsert,
+		// but upsertUser tolerates NULL token/email. It will mark plex_access=true.
+		_, _ = upsertUser(User{
+			Username:   uname,
+			PlexUUID:   nullStringFrom(uid),
+			PlexAccess: true,
+		})
 	}
 
 	if authorized {

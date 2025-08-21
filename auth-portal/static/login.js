@@ -18,21 +18,26 @@
     window.location = `${base}/home`;
   }
 
+  async function checkSessionOnce() {
+    try {
+      const r = await fetch(`${base}/me`, { credentials: 'include' });
+      if (!r.ok) return false;
+      const j = await r.json().catch(() => ({}));
+      return !!(j && (j.username || j.uuid));
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Fallback: poll session for a few seconds. If logged in, redirect.
   function startSessionPoll() {
     const end = Date.now() + 12_000; // ~12s
     const timer = setInterval(async () => {
       if (Date.now() > end) { clearInterval(timer); return; }
-      try {
-        const r = await fetch(`${base}/me`, { credentials: 'include' });
-        if (r.ok) {
-          const j = await r.json().catch(() => ({}));
-          if (j && (j.username || j.uuid)) {
-            clearInterval(timer);
-            redirectHome();
-          }
-        }
-      } catch (_) {}
+      if (await checkSessionOnce()) {
+        clearInterval(timer);
+        redirectHome();
+      }
     }, 800);
   }
 
@@ -50,15 +55,14 @@
       if (!popup || popup.closed) {
         // Popup blocked → navigate current tab
         window.location = authUrl;
-        // session poll still helps us get back
       }
 
-      // Primary path: wait for postMessage from the popup/forward page
+      // Primary: wait for postMessage from the popup/forward page
       const handler = (evt) => {
         try {
           if (evt.origin !== appOrigin) return;
           const data = evt.data || {};
-          const ok = (data.type === 'plex-auth' || data.type === 'auth-portal') && data.ok === true;
+          const ok = (data.type === 'auth-portal' || data.type === 'plex-auth') && data.ok === true;
           if (ok) {
             window.removeEventListener('message', handler);
             redirectHome();
@@ -67,7 +71,7 @@
       };
       window.addEventListener('message', handler);
 
-      // Backup path: poll the session briefly in case the message is missed
+      // Backup: poll the session briefly in case message is missed
       startSessionPoll();
 
     } catch (e) {
@@ -76,6 +80,16 @@
       btn.disabled = false;
     }
   }
+
+  // *** NEW: On page load, if session is already valid, skip the login UI ***
+  (async function autoForwardIfLoggedIn() {
+    if (await checkSessionOnce()) {
+      redirectHome();
+      return;
+    }
+    // Not logged in → enable the button
+    if (btn) btn.disabled = false;
+  })();
 
   btn && btn.addEventListener('click', startWeb);
 })();

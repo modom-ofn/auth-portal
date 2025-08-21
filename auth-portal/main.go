@@ -110,7 +110,7 @@ type sessionClaims struct {
 	jwt.RegisteredClaims
 }
 
-func setSessionCookie(w http.ResponseWriter, uuid, username string) error {
+func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl time.Duration) error {
 	now := time.Now()
 	claims := sessionClaims{
 		UUID:     uuid,
@@ -118,7 +118,7 @@ func setSessionCookie(w http.ResponseWriter, uuid, username string) error {
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-portal-go",
 			Subject:   uuid,
-			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
@@ -132,15 +132,25 @@ func setSessionCookie(w http.ResponseWriter, uuid, username string) error {
 		Name:     sessionCookie,
 		Value:    signed,
 		Path:     "/",
-		MaxAge:   86400,
+		MaxAge:   int(ttl.Seconds()), // <--  TTL in seconds
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	}
-	if strings.HasPrefix(strings.ToLower(appBaseURL), "https://") {
+	if strings.HasPrefix(appBaseURL, "https://") {
 		cookie.Secure = true
 	}
 	http.SetCookie(w, cookie)
 	return nil
+}
+
+// keep a convenience wrapper for "normal" authorized sessions (24h):
+func setSessionCookie(w http.ResponseWriter, uuid, username string) error {
+	return setSessionCookieWithTTL(w, uuid, username, 24*time.Hour)
+}
+
+// and one for short-lived (unauthorized) sessions (5 minutes):
+func setTempSessionCookie(w http.ResponseWriter, uuid, username string) error {
+	return setSessionCookieWithTTL(w, uuid, username, 5*time.Minute)
 }
 
 func clearSessionCookie(w http.ResponseWriter) {
@@ -175,4 +185,15 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func hasValidSession(r *http.Request) bool {
+    c, err := r.Cookie(sessionCookie)
+    if err != nil || c.Value == "" {
+        return false
+    }
+    token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
+        return sessionSecret, nil
+    })
+    return err == nil && token.Valid
 }

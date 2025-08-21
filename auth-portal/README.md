@@ -42,64 +42,9 @@ It can optionally be expanded to include LDAP integration for downstream app req
 ## 🚀 Deploy with Docker Compose
 
 
-### **Docker Compose Minimal** (recommended for most users)
-Use the following docker compose for a minimal setup (just postgres + auth-portal). This keeps only what AuthPortal truly needs exposed: port 8089. Postgres is internal.
-
-```yaml
-version: "3.9"
-
-services:
-  postgres:
-    image: postgres:15
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: AuthPortaldb
-      POSTGRES_USER: AuthPortal
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  auth-portal:
-    image: modomofn/auth-portal:latest
-    ports:
-      - "8089:8080"
-    environment:
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
-      SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
-      DATABASE_URL: postgres://AuthPortal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/AuthPortaldb?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-volumes:
-  pgdata:
-```
-Create a .env next to it:
-```txt
-# .env
-POSTGRES_PASSWORD=change-me-long-random
-SESSION_SECRET=change-me-32+chars-random
-APP_BASE_URL=http://localhost:8089
-PLEX_OWNER_TOKEN=plxxxxxxxxxxxxxxxxxxxx
-PLEX_SERVER_MACHINE_ID=abcd1234ef5678901234567890abcdef12345678
-PLEX_SERVER_NAME=My-Plex-Server
-```
-Then:
-```bash
-docker compose up -d
-```
-**Open:** http://localhost:8089
-
-
-
 ### **Docker Compose Full Stack **
-Use the following docker compose for a full stack setup (postgres, auth-portal, openldap, ldap-sync, phpldapadmin). Adds OpenLDAP, sync job, and phpLDAPadmin for downstream LDAP clients.
+Use the following docker compose for a full stack setup (postgres, auth-portal, openldap, ldap-sync, phpldapadmin). 
+Using `--profile ldap` adds OpenLDAP, sync job, and phpLDAPadmin for downstream LDAP clients.
 
 ```yaml
 version: "3.9"
@@ -109,8 +54,8 @@ services:
     image: postgres:15
     restart: unless-stopped
     environment:
-      POSTGRES_DB: AuthPortaldb
-      POSTGRES_USER: AuthPortal
+      POSTGRES_DB: authportaldb
+      POSTGRES_USER: authportal
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -122,13 +67,17 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:latest
+    image: modomofn/auth-portal:dev
     ports:
       - "8089:8080"
     environment:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
-      DATABASE_URL: postgres://AuthPortal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/AuthPortaldb?sslmode=disable
+      DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
+      # Optional (recommended for server-authorization checks):
+      PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}
+      PLEX_SERVER_MACHINE_ID: ${PLEX_SERVER_MACHINE_ID:-}
+      PLEX_SERVER_NAME: ${PLEX_SERVER_NAME:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -140,28 +89,28 @@ services:
     profiles: ["ldap"]
     environment:
       LDAP_ORGANISATION: AuthPortal
-      LDAP_DOMAIN: AuthPortal.local
+      LDAP_DOMAIN: authportal.local
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-    # Expose only if you need external LDAP clients:
+    # Uncomment if you need external LDAP access from host:
     # ports:
     #   - "389:389"
     #   - "636:636"
     volumes:
       - ldap_data:/var/lib/ldap
       - ldap_config:/etc/ldap/slapd.d
-      # Seed OU/users if you like:
+      # Seed OU/users if desired:
       # - ./ldap-seed:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
     restart: unless-stopped
     healthcheck:
       # Use service DNS name inside the network, not localhost
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://openldap -D 'cn=admin,dc=AuthPortal,dc=local' -w \"$LDAP_ADMIN_PASSWORD\" -b 'dc=AuthPortal,dc=local' -s base dn >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://openldap -D 'cn=admin,dc=authportal,dc=local' -w \"$LDAP_ADMIN_PASSWORD\" -b 'dc=authportal,dc=local' -s base dn >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 10
     networks: [authnet]
 
   ldap-sync:
-    build: ./ldap-sync
+    image: modomofn/ldap-sync:dev
     profiles: ["ldap"]
     depends_on:
       postgres:
@@ -169,11 +118,12 @@ services:
       openldap:
         condition: service_healthy
     environment:
-      LDAP_HOST: openldap:389
-      LDAP_ADMIN_DN: cn=admin,dc=AuthPortal,dc=local
+      DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
+      LDAP_HOST: ldap://openldap:389
+      LDAP_ADMIN_DN: cn=admin,dc=authportal,dc=local
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      BASE_DN: ou=users,dc=AuthPortal,dc=local
-      DATABASE_URL: postgres://AuthPortal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/AuthPortaldb?sslmode=disable
+      BASE_DN: ou=users,dc=authportal,dc=local
+      # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
     restart: "no"
     networks: [authnet]
 
@@ -184,7 +134,7 @@ services:
       PHPLDAPADMIN_LDAP_HOSTS: openldap
       PHPLDAPADMIN_HTTPS: "false"
     ports:
-      - "8087:80"   # Only expose when you need to inspect LDAP
+      - "8087:80"
     depends_on:
       openldap:
         condition: service_healthy
@@ -201,15 +151,18 @@ networks:
 ```
 Create a .env next to it:
 ```txt
-# .env
 POSTGRES_PASSWORD=change-me-long-random
 SESSION_SECRET=change-me-32+chars-random
 APP_BASE_URL=http://localhost:8089
+
+# LDAP (if using the ldap profile)
 LDAP_ADMIN_PASSWORD=change-me-strong
+
+# Authz (optional but recommended)
 PLEX_OWNER_TOKEN=plxxxxxxxxxxxxxxxxxxxx
-PLEX_SERVER_MACHINE_ID=abcd1234ef5678901234567890abcdef12345678
-PLEX_SERVER_NAME=My-Plex-Server
-	# If both PLEX_SERVER_MACHINE & PLEX_SERVER_NAME are set, MACHINE_ID wins.
+# Either set machine id or a server name (machine id wins if both present)
+PLEX_SERVER_MACHINE_ID=
+PLEX_SERVER_NAME=
 ```
 Run core only:
 ```bash
@@ -229,6 +182,8 @@ docker compose --profile ldap up -d
 |--------------------------|---------:|-----------------------------|----------------------------------------------------------------------------------------|
 | `APP_BASE_URL`           |    ✅    | `http://localhost:8089`     | Public URL of this service. If using HTTPS, cookies will be marked `Secure`.           |
 | `SESSION_SECRET`         |    ✅    | _(none)_                    | Long random string for signing the session cookie (HS256).                             |
+| `POSTGRS_PASSWORD`       |    ✅    | _(none)_                    | Long random string for postgres access password.                                       |
+| `LDAP_ADMIN_PASSWORD`    |    ✅    | _(none)_                    | Long random string for ldap admin password.                                            |
 | `PLEX_OWNER_TOKEN`       |    ✅    | _(none)_                    | Token from Plex server owner; used to validate server membership.                      |
 | `PLEX_SERVER_MACHINE_ID` |    ✅    | _(none)_                    | Machine ID of your Plex server (preferred over name).                                  |
 | `PLEX_SERVER_NAME`       |    ⛔    | _(none)_                    | Optional: Plex server name (used if machine ID not set).                               |
@@ -239,11 +194,13 @@ docker compose --profile ldap up -d
 
 ## 🧩 How it works (high level)
 
-1. User clicks **Sign in with Plex** → JS opens `https://app.plex.tv/auth#?...` in a popup.  
+1. User clicks **Sign in with Plex** → JS opens `https://app.plex.tv/auth#?...` in a popup.
+- If user is already logged on, redirect to home is automatic
 2. Plex redirects back to your app at `/auth/forward` inside the popup.  
 3. Server exchanges PIN → gets Plex profile → checks if user is authorized on your Plex server.  
-4. Stores profile in DB, issues signed cookie.
-5. Popup closes; opener navigates to:
+4. Stores only authorized user's profile in DB
+5. Issues signed cookies with variable TTL (5m for unauthorized, 24h for authorized)
+6. Popup closes; opener navigates to:
 - `/home` → Authorized
 - `/restricted` → logged in, but not authorized
 
@@ -301,6 +258,7 @@ docker compose up -dark
 │   ├── go.mod
 │   ├── handlers.go
 │   ├── main.go
+│   ├── store.go
 │   ├── LICENSE
 │   ├── README.md
 │   ├── templates/
@@ -336,6 +294,39 @@ docker compose up -dark
 
 Issues and PRs welcome:  
 https://github.com/modom-ofn/auth-portal/issues
+
+---
+
+## 🧩 Current Dev Release Notes
+
+### 🔒 Authentication & Authorization
+
+- **Authorized Users Only**: Strengthened logic so that only users who successfully authenticate via Plex OAuth are inserted into the database. Unauthorized or partially authenticated attempts no longer create placeholder/null user records.
+
+### 🍪 Session Management
+
+- **Session Cookie TTL**: Introduced explicit `MaxAge` for session cookies (86400 seconds / 24 hours). This ensures sessions expire predictably and stale cookies cannot linger indefinitely.
+- **Secure Defaults**: Session cookies are set with `HttpOnly` and `SameSite=Lax` for improved protection against XSS and CSRF.
+
+### 🔄 Schema Changes
+
+- `updated_at` **column**: Added `TIMESTAMPTZ NOT NULL DEFAULT now()`, ensuring consistent timestamp tracking. Existing tables are migrated so that `UPDATE` statements no longer fail due to a missing column.
+- **Primary key upgrade**: Switched `id` to `BIGSERIAL` for future-proof scalability.
+
+### ⚡ UPSERT Logic Improvements
+
+- **UUID Path**: If a `plex_uuid` is present, it is now used as the natural key (`ON CONFLICT (plex_uuid)`), ensuring reliable identification of users.
+- **Username Path**: In the absence of a `plex_uuid`, we key on `username` and later backfill plex_uuid once known, maintaining continuity across updates.
+- **No Blank Overwrites**: Applied `NULLIF($x, '')` and `COALESCE(NULLIF(EXCLUDED.col,''), users.col)` to prevent empty strings from unintentionally overwriting valid data.
+
+### 🛠️ Data Integrity Fixes
+
+- **Argument Order**: Corrected mismatched `INSERT` placeholders. Previous versions risked inserting values into incorrect columns, which could corrupt user records.
+
+### ⏱️ Timestamps
+
+- **Automatic updates**: Every `UPDATE` now sets `updated_at = now()`, ensuring auditability and consistency in data tracking.
+
 
 ---
 
