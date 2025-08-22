@@ -73,6 +73,7 @@ services:
     environment:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
+	  DATA_KEY: ${DATA_KEY:?set-in-.env}
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
       # Optional (recommended for server-authorization checks):
       PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}
@@ -182,6 +183,7 @@ docker compose --profile ldap up -d
 |--------------------------|---------:|-----------------------------|----------------------------------------------------------------------------------------|
 | `APP_BASE_URL`           |    ✅    | `http://localhost:8089`     | Public URL of this service. If using HTTPS, cookies will be marked `Secure`.           |
 | `SESSION_SECRET`         |    ✅    | _(none)_                    | Long random string for signing the session cookie (HS256).                             |
+| `DATA_KEY`               |    ✅    | _(none)_                    | Strong 32-byte key, base64-encoded 'openssl rand -base64 32'.                          |
 | `POSTGRS_PASSWORD`       |    ✅    | _(none)_                    | Long random string for postgres access password.                                       |
 | `LDAP_ADMIN_PASSWORD`    |    ✅    | _(none)_                    | Long random string for ldap admin password.                                            |
 | `PLEX_OWNER_TOKEN`       |    ✅    | _(none)_                    | Token from Plex server owner; used to validate server membership.                      |
@@ -253,6 +255,8 @@ docker compose up -dark
 │   └── main.go
 ├── auth-portal/
 │   ├── context_helpers.go
+│   ├── crypto.go
+│   ├── crypto_tokens.go
 │   ├── db.go
 │   ├── Dockerfile
 │   ├── go.mod
@@ -270,6 +274,8 @@ docker compose up -dark
 │   	├── login.js
 │   	├── login.svg     # optional login button svg icon
 │   	└── bg.jpg        # optional hero image
+├── auth-portal-full-stack-dev.env					# full stack docker-compose env template
+├── auth-portal-full-stack-dev_docker-compose.yml	# full stack docker-compose template
 ├── LICENSE
 └── README.md
 ```
@@ -307,6 +313,12 @@ https://github.com/modom-ofn/auth-portal/issues
 
 - **Session Cookie TTL**: Introduced explicit `MaxAge` for session cookies (86400 seconds / 24 hours). This ensures sessions expire predictably and stale cookies cannot linger indefinitely.
 - **Secure Defaults**: Session cookies are set with `HttpOnly` and `SameSite=Lax` for improved protection against XSS and CSRF.
+
+### 🔐 Security & Token Management
+
+- **Encrypted Plex tokens**: User Plex tokens are now sealed before being stored in the database using XChaCha20-Poly1305 encryption with a derived key from `DATA_KEY`.
+- **DATA_KEY required**: The application enforces a secret environment variable (`DATA_KEY`) at startup. This ensures all tokens are encrypted consistently.
+- **Key management note**: Changing `DATA_KEY` will invalidate previously stored tokens (users will be prompted to re-authenticate).
 
 ### 🔄 Schema Changes
 

@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -144,9 +143,44 @@ func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl t
 }
 
 // keep a convenience wrapper for "normal" authorized sessions (24h):
+var (
+    // e.g. "24h" or "15m"
+    sessionTTL = parseDurationOr(os.Getenv("SESSION_TTL"), 24*time.Hour)
+    // force secure cookie even if APP_BASE_URL isn't https (useful behind TLS proxy)
+    forceSecureCookie = os.Getenv("FORCE_SECURE_COOKIE") == "1"
+)
+
 func setSessionCookie(w http.ResponseWriter, uuid, username string) error {
-	return setSessionCookieWithTTL(w, uuid, username, 24*time.Hour)
+    now := time.Now()
+    claims := sessionClaims{
+        UUID: uuid, Username: username,
+        RegisteredClaims: jwt.RegisteredClaims{
+            Issuer: "auth-portal-go", Subject: uuid,
+            ExpiresAt: jwt.NewNumericDate(now.Add(sessionTTL)),
+            IssuedAt:  jwt.NewNumericDate(now),
+        },
+    }
+    tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    signed, err := tok.SignedString(sessionSecret)
+    if err != nil { return err }
+
+    c := &http.Cookie{
+        Name: sessionCookie, Value: signed, Path: "/",
+        MaxAge: int(sessionTTL.Seconds()),
+        HttpOnly: true, SameSite: http.SameSiteLaxMode,
+        Secure: forceSecureCookie || strings.HasPrefix(appBaseURL, "https://") ||
+            strings.EqualFold(rpProtoFrom(w), "https"),
+    }
+    http.SetCookie(w, c)
+    return nil
 }
+
+func parseDurationOr(s string, d time.Duration) time.Duration {
+    if v, err := time.ParseDuration(s); err == nil { return v }
+    return d
+}
+func rpProtoFrom(w http.ResponseWriter) string { return "" } // (stub if you don’t read X-Forwarded-Proto)
+
 
 // and one for short-lived (unauthorized) sessions (5 minutes):
 func setTempSessionCookie(w http.ResponseWriter, uuid, username string) error {
@@ -196,4 +230,19 @@ func hasValidSession(r *http.Request) bool {
         return sessionSecret, nil
     })
     return err == nil && token.Valid
+}
+
+// ---------- CSRF on state-changing routes ----------
+func requireSameOrigin(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if r.Method == http.MethodGet || r.Method == http.MethodHead { next.ServeHTTP(w,r); return }
+        origin := r.Header.Get("Origin")
+        referer := r.Header.Get("Referer")
+        allowed := strings.HasPrefix(origin, appBaseURL) || strings.HasPrefix(referer, appBaseURL)
+        if !allowed {
+            http.Error(w, "CSRF check failed", http.StatusForbidden)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
 }

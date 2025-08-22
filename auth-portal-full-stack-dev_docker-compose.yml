@@ -24,6 +24,7 @@ services:
     environment:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
+      DATA_KEY: ${DATA_KEY:?set-in-.env}
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
       # Optional (recommended for server-authorization checks):
       PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}

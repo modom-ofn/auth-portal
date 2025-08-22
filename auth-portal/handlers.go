@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -144,20 +145,31 @@ func forwardHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// 2) Persist ONLY authorized users
-			if authorized {
-				if _, err := upsertUser(User{
-					Username:   profile.User.Username,
-					Email:      nullStringFrom(profile.User.Email),
-					PlexUUID:   nullStringFrom(profile.User.UUID),
-					PlexToken:  nullStringFrom(tokenResp.AuthToken),
-					PlexAccess: true,
-				}); err != nil {
-					log.Printf("upsertUser error (authorized): %v", err)
-				}
-				if err := setSessionCookie(w, profile.User.UUID, profile.User.Username); err != nil {
-					log.Printf("setSessionCookie error: %v", err)
-				}
+		if authorized {
+			// Encrypt the token (optional but recommended). If encryption fails,
+			// we simply don’t store a token rather than failing the login.
+			var encTok sql.NullString
+			if enc, err := sealToken(tokenResp.AuthToken); err != nil {
+				log.Printf("token encrypt error: %v", err)
 			} else {
+				encTok = nullStringFrom(enc)
+			}
+
+			// Upsert the authorized user (store uuid, email, and encrypted token if we have it)
+			if _, err := upsertUser(User{
+				Username:   profile.User.Username,
+				Email:      nullStringFrom(profile.User.Email),
+				PlexUUID:   nullStringFrom(profile.User.UUID),
+				PlexToken:  encTok,      // may be NULL if encryption failed
+				PlexAccess: true,
+			}); err != nil {
+				log.Printf("upsertUser error (authorized): %v", err)
+			}
+
+			if err := setSessionCookie(w, profile.User.UUID, profile.User.Username); err != nil {
+				log.Printf("setSessionCookie error: %v", err)
+			}
+		} else {
 				log.Printf("skipping DB persist for unauthorized user %q (%s)", profile.User.Username, profile.User.UUID)
 			}
 
