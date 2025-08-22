@@ -156,6 +156,12 @@ POSTGRES_PASSWORD=change-me-long-random
 SESSION_SECRET=change-me-32+chars-random
 APP_BASE_URL=http://localhost:8089
 
+# Set 'FORCE_SECURE_COOKIE=1' in prod; Nginx should set 'X-Forwarded-Proto: https' anyway.
+FORCE_SECURE_COOKIE=0
+
+# Generate a strong 32-byte key, base64-encoded 'openssl rand -base64 32'
+DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
+
 # LDAP (if using the ldap profile)
 LDAP_ADMIN_PASSWORD=change-me-strong
 
