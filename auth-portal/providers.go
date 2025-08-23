@@ -397,19 +397,43 @@ func (embyProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8">
-<title>Sign in to Emby</title>
-<body style="font-family:system-ui;padding:2rem;max-width:28rem;margin:auto">
-  <h1 style="font-size:1.25rem;margin:0 0 1rem">Sign in to Emby</h1>
-  <form method="post">
-    <label>Username<br><input name="username" required style="width:100%;padding:.5rem;margin:.25rem 0"></label>
-    <label>Password<br><input type="password" name="password" required style="width:100%;padding:.5rem;margin:.25rem 0"></label>
-    <button type="submit" style="padding:.5rem 1rem;margin-top:.75rem">Sign in</button>
-  </form>
-  <p style="color:#666;margin-top:.75rem">Server: ` + htmlEscape(embyServerURL) + `</p>
-</body>`))
+
+		page := `<!doctype html>
+	<html lang="en">
+	<head>
+	  <meta charset="utf-8" />
+	  <title>Sign in to Emby — AuthPortal</title>
+	  <meta name="viewport" content="width=device-width, initial-scale=1" />
+	  <link rel="stylesheet" href="/static/styles.css" />
+	</head>
+	<body>
+	  <main class="container" style="max-width:28rem;margin:2rem auto">
+		<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+		  <img src="/static/emby.svg" alt="Emby" width="24" height="24" />
+		  <h1 class="title" style="margin:0;font-size:1.25rem">Sign in to Emby</h1>
+		</header>
+
+		<p class="subtitle" style="margin:.25rem 0 1rem">Continue to <strong>AuthPortal</strong></p>
+
+		<form method="post" action="/auth/forward?emby=1" class="card" style="padding:1rem">
+		  <label style="display:block;margin:.5rem 0">
+			<span>Username</span><br/>
+			<input name="username" required autofocus style="width:100%;padding:.5rem"/>
+		  </label>
+		  <label style="display:block;margin:.5rem 0">
+			<span>Password</span><br/>
+			<input type="password" name="password" required style="width:100%;padding:.5rem"/>
+		  </label>
+		  <button type="submit" class="btn" style="margin-top:.75rem">Sign in</button>
+		</form>
+
+		<p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(embyServerURL) + `</p>
+	  </main>
+	</body>
+	</html>`
+		_, _ = w.Write([]byte(page))
 		return
 	}
 
@@ -428,9 +452,49 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	clientID := randClientID()
 	auth, err := embyAuthenticate(embyServerURL, clientID, username, password)
 	if err != nil || auth.AccessToken == "" || auth.User.ID == "" {
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;padding:2rem"><p>Login failed. Please try again.</p><a href="` + "/auth/forward?emby=1" + `">Back</a></body>`))
+
+		page := `<!doctype html>
+		<html lang="en">
+		<head>
+		  <meta charset="utf-8" />
+		  <title>Emby sign-in failed — AuthPortal</title>
+		  <meta name="viewport" content="width=device-width, initial-scale=1" />
+		  <link rel="stylesheet" href="/static/styles.css" />
+		</head>
+		<body>
+		  <main class="container" style="max-width:28rem;margin:2rem auto">
+			<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+			  <img src="/static/emby.svg" alt="Emby" width="24" height="24" />
+			  <h1 class="title" style="margin:0;font-size:1.25rem">Sign in to Emby</h1>
+			</header>
+
+			<div class="card" style="padding:1rem">
+			  <p class="error" style="color:#b91c1c;margin:0 0 .75rem"><strong>Login failed.</strong> Please try again.</p>
+			  <form method="post" action="/auth/forward?emby=1">
+				<label style="display:block;margin:.5rem 0">
+				  <span>Username</span><br/>
+				  <input name="username" required autofocus style="width:100%;padding:.5rem"/>
+				</label>
+				<label style="display:block;margin:.5rem 0">
+				  <span>Password</span><br/>
+				  <input type="password" name="password" required style="width:100%;padding:.5rem"/>
+				</label>
+				<div style="display:flex;gap:.5rem;align-items:center;margin-top:.75rem">
+				  <button type="submit" class="btn">Try again</button>
+				  <a href="/auth/forward?emby=1" class="muted">Reset</a>
+				</div>
+			  </form>
+			</div>
+
+			<p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(embyServerURL) + `</p>
+		  </main>
+		</body>
+		</html>`
+		_, _ = w.Write([]byte(page))
 		return
 	}
 
@@ -475,22 +539,29 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 
 	// Finish popup
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+		"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8">
-<title>Signed in — AuthPortal</title>
-<body style="font-family:system-ui;padding:2rem">
-  <h1>Signed in — you can close this window.</h1>
-  <script>
-    try {
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage({ ok: true, type: "emby-auth", redirect: "/home" }, window.location.origin);
-      }
-    } catch (e) {}
-    setTimeout(() => { try { window.close(); } catch(e){} }, 600);
-  </script>
-</body>`))
+	<title>Signed in — AuthPortal</title>
+	<link rel="stylesheet" href="/static/styles.css" />
+	<body>
+	  <main class="container" style="max-width:28rem;margin:2rem auto">
+		<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+		  <img src="/static/emby.svg" alt="Emby" width="24" height="24" />
+		  <h1 class="title" style="margin:0;font-size:1.25rem">Signed in to Emby</h1>
+		</header>
+		<p>You can close this window.</p>
+	  </main>
+	  <script>
+		try {
+		  if (window.opener && !window.opener.closed) {
+			window.opener.postMessage({ ok: true, type: "emby-auth", redirect: "/home" }, window.location.origin);
+		  }
+		} catch (e) {}
+		setTimeout(() => { try { window.close(); } catch(e){} }, 600);
+	  </script>
+	</body>`))
 }
 
 func (embyProvider) IsAuthorized(uuid, _username string) (bool, error) {
