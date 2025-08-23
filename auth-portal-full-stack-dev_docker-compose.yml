@@ -8,41 +8,32 @@ services:
       POSTGRES_DB: authportaldb
       POSTGRES_USER: authportal
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # reuse same flag as app
+      log_level: ${log_level:-INFO}
     command:
-    - sh
-    - -lc
-    - |
-      set -e
-      case "${log_level:-INFO}" in
-        DEBUG|debug)
-          exec postgres \
-            -c log_min_messages=debug1 \
-            -c log_connections=on \
-            -c log_disconnections=on \
-            -c log_destination=stderr
-          ;;
-        INFO|info)
-          exec postgres \
-            -c log_min_messages=info \
-            -c log_destination=stderr
-          ;;
-        WARN|warn|WARNING|warning)
-          exec postgres \
-            -c log_min_messages=warning \
-            -c log_destination=stderr
-          ;;
-        ERROR|error)
-          exec postgres \
-            -c log_min_messages=error \
-            -c log_destination=stderr
-          ;;
-        *)
-          exec postgres \
-            -c log_min_messages=warning \
-            -c log_destination=stderr
-          ;;
-      esac
+      - sh
+      - -c
+      - |
+        set -e
+        case "${log_level:-INFO}" in
+          DEBUG|debug)
+            EXTRA="-c log_min_messages=debug1 -c log_connections=on -c log_disconnections=on -c log_destination=stderr"
+            ;;
+          INFO|info)
+            EXTRA="-c log_min_messages=info -c log_destination=stderr"
+            ;;
+          WARN|warn|WARNING|warning)
+            EXTRA="-c log_min_messages=warning -c log_destination=stderr"
+            ;;
+          ERROR|error)
+            EXTRA="-c log_min_messages=error -c log_destination=stderr"
+            ;;
+          *)
+            EXTRA="-c log_min_messages=warning -c log_destination=stderr"
+            ;;
+        esac
+        # IMPORTANT: call the official entrypoint so initdb still runs on first boot
+        exec docker-entrypoint.sh postgres $EXTRA
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
