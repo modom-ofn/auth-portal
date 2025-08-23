@@ -100,14 +100,12 @@ func main() {
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
 
-	// Health (optional)
-	r.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	}).Methods("GET")
+	// Wrap with security headers and request logging
+	handler := withSecurityHeaders(WithRequestLogging(r))
 
+	log.Printf("Log level: %s", strings.ToUpper(os.Getenv("LOG_LEVEL")))
 	log.Println("Starting AuthPortal on :8080")
-	if err := http.ListenAndServe(":8080", withSecurityHeaders(r)); err != nil {
+	if err := http.ListenAndServe(":8080", handler); err != nil {
 		log.Fatal(err)
 	}
 }
