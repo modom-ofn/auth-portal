@@ -21,7 +21,8 @@
   });
 
   async function startFlow(btn) {
-    let popup = openPopup("about:blank"); // open synchronously to avoid blockers
+    // Open placeholder popup synchronously (prevents popup blockers)
+    let popup = openPopup("about:blank");
     try {
       if (popup?.document) {
         popup.document.write(`<!doctype html><meta charset="utf-8"><title>Starting sign-in…</title>
@@ -32,7 +33,7 @@
 
     btn.disabled = true;
     try {
-      // Primary: Plex start endpoint
+      // Primary (Plex) path
       let authUrl = null;
       try {
         const res = await fetch("/auth/start-web", {
@@ -46,16 +47,18 @@
         }
       } catch {}
 
-      // Fallback: Emby popup page
+      // Fallback (Emby) path
       if (!authUrl) authUrl = "/auth/forward?emby=1";
 
       if (popup && !popup.closed) {
         try { popup.location.replace(authUrl); } catch { popup.location.href = authUrl; }
       } else {
-        window.location.assign(authUrl); // popup blocked → full-page
+        // Popup blocked → full-page navigation
+        window.location.assign(authUrl);
         return;
       }
 
+      // If user closes the popup, head to /home
       const iv = setInterval(() => {
         if (!popup || popup.closed) {
           clearInterval(iv);
@@ -78,26 +81,23 @@
   }
 
   function bind() {
-    const selectors = [
-      "#startBtn",        // <- old working id (dev)
-      "#plex-signin",     // <- older plex-specific id
-      "#auth-signin",     // <- new id (dev-r2)
-      "[data-auth-signin]",
-      ".auth-signin"
-    ];
-    for (const sel of selectors) {
-      const btn = document.querySelector(sel);
-      if (btn) {
-        // If inside a form, prevent default submit
-        const form = btn.closest("form");
-        if (form) form.addEventListener("submit", (e) => { e.preventDefault(); startFlow(btn); });
-        btn.addEventListener("click", (e) => { e.preventDefault(); startFlow(btn); });
-        return true;
-      }
+    const btn =
+      document.getElementById("auth-signin") ||
+      document.querySelector("[data-auth-signin]") ||
+      document.querySelector(".auth-signin");
+    if (!btn) return false;
+
+    // If inside a form, prevent default submit
+    const form = btn.closest("form");
+    if (form) {
+      form.addEventListener("submit", (e) => { e.preventDefault(); startFlow(btn); });
     }
-    return false;
+
+    btn.addEventListener("click", (e) => { e.preventDefault(); startFlow(btn); });
+    return true;
   }
 
+  // Bind now; if not yet in DOM, bind on DOMContentLoaded; as a last resort, poll briefly
   if (!bind()) {
     document.addEventListener("DOMContentLoaded", bind);
     let tries = 0;

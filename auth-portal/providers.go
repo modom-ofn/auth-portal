@@ -62,6 +62,67 @@ type plexResource struct {
 	ClientIdentifier string `json:"clientIdentifier"`
 }
 
+// GET JSON with standard Plex headers
+func plexGetJSON(url, token string, out any) error {
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Plex-Token", token)
+	// Friendly identification (optional)
+	req.Header.Set("X-Plex-Product", "AuthPortal")
+	req.Header.Set("X-Plex-Version", "1.0.0")
+	req.Header.Set("X-Plex-Client-Identifier", "auth-portal")
+
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		s := strings.TrimSpace(string(body))
+		if len(s) > 200 { s = s[:200] + "…" }
+		return fmt.Errorf("plex %s -> %d: %s", url, resp.StatusCode, s)
+	}
+	return json.Unmarshal(body, out)
+}
+
+// Does this token's account see the configured server?
+func plexUserHasServer(token string) (bool, error) {
+	url := "https://plex.tv/api/resources?includeHttps=1"
+	var devices []plexResource
+	if err := plexGetJSON(url, token, &devices); err != nil {
+		return false, err
+	}
+
+	mid := strings.TrimSpace(plexServerMachineID)
+	sname := strings.TrimSpace(plexServerName)
+
+	for _, d := range devices {
+		// "provides" is a comma-separated string; we only care about "server"
+		if !strings.Contains(strings.ToLower(d.Provides), "server") {
+			continue
+		}
+		if mid != "" && strings.EqualFold(d.ClientIdentifier, mid) {
+			return true, nil
+		}
+		if sname != "" && strings.EqualFold(d.Name, sname) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// plexAccountID returns the numeric/string id for the token's account.
+func plexAccountID(token string) (string, error) {
+	var resp struct {
+		ID string `json:"id"`
+	}
+	if err := plexGetJSON("https://plex.tv/api/v2/user", token, &resp); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(resp.ID), nil
+}
+
 func plexCreatePin(clientID string) (plexPin, error) {
 	form := url.Values{}
 	form.Set("strong", "true")
@@ -290,21 +351,23 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 
 	// 4) Check authorization: can *this user* see your server in /resources?
 	authorized := false
-	if plexServerMachineID != "" || plexServerName != "" {
-		if ok, chkErr := plexUserHasServer(token); chkErr == nil {
-			authorized = ok
-		} else {
-			log.Printf("auth check failed for %s: %v", username, chkErr)
+	if strings.TrimSpace(plexServerMachineID) != "" || strings.TrimSpace(plexServerName) != "" {
+		if ok, _ := plexUserHasServer(token); ok {
+			authorized = true
 		}
-	} else {
-		authorized = false
+	} else if strings.TrimSpace(plexOwnerToken) != "" {
+		if uid, e1 := plexAccountID(token); e1 == nil {
+			if oid, e2 := plexAccountID(plexOwnerToken); e2 == nil && uid == oid {
+				authorized = true
+			}
+		}
 	}
 
 	// 5) Persist (media_* fields)
 	_, _ = upsertUser(User{
 		Username:    username,
 		Email:       nullStringFrom(email),
-		MediaUUID:   nullStringFrom(mediaUUID),
+		MediaUUID:   nullStringFrom(fmt.Sprintf("plex-%d", user.ID)),
 		MediaToken:  nullStringFrom(sealedToken),
 		MediaAccess: authorized,
 	})
@@ -331,19 +394,43 @@ func (plexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 		}
 		return false, err
 	}
-	if u.PlexAccess {
+
+	// Trust cache
+	if u.MediaAccess {
 		return true, nil
 	}
-	if u.PlexToken.Valid && u.PlexToken.String != "" {
-		ok, err := plexUserHasServer(u.PlexToken.String)
+
+	// Need a token to check live.
+	if !u.MediaToken.Valid || strings.TrimSpace(u.MediaToken.String) == "" {
+		return false, nil
+	}
+	userToken := strings.TrimSpace(u.MediaToken.String)
+
+	// 1) Preferred: check if this user can see the configured server
+	if strings.TrimSpace(plexServerMachineID) != "" || strings.TrimSpace(plexServerName) != "" {
+		ok, err := plexUserHasServer(userToken)
 		if err == nil {
-			_ = setUserPlexAccessByUsername(u.Username, ok)
+			if ok {
+				_ = setUserMediaAccessByUsername(u.Username, true)
+			}
 			return ok, nil
 		}
-		return false, err
+		Debugf("plex: server visibility check failed: %v", err)
 	}
+
+	// 2) Fallback: if we have an owner token, consider the owner always authorized
+	if strings.TrimSpace(plexOwnerToken) != "" {
+		usrID, e1 := plexAccountID(userToken)
+		ownID, e2 := plexAccountID(plexOwnerToken)
+		if e1 == nil && e2 == nil && usrID != "" && usrID == ownID {
+			_ = setUserMediaAccessByUsername(u.Username, true)
+			return true, nil
+		}
+	}
+
 	return false, nil
 }
+
 
 /* =======================================================
  *                        EMBY
