@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -39,11 +40,14 @@ func envOr(k, d string) string {
 
 // Pick the auth provider (plex default)
 func pickProvider() MediaProvider {
-	switch strings.ToLower(envOr("MEDIA_PROVIDER", "plex")) {
+	v := strings.ToLower(os.Getenv("MEDIA_SERVER"))
+	switch v {
 	case "emby":
-		return embyProvider{} // stub; implement later
-	// case "jellyfin": return jellyfinProvider{}
+		return embyProvider{}
+	case "plex", "":
+		return plexProvider{}
 	default:
+		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", v)
 		return plexProvider{}
 	}
 }

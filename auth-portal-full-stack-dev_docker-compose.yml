@@ -18,18 +18,33 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:dev
+    image: modomofn/auth-portal:dev-r2
     ports:
       - "8089:8080"
     environment:
+      # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
+      FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
+      MEDIA_SERVER: ${MEDIA_SERVER:-plex}
+
+      # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
-      # Optional (recommended for server-authorization checks):
+
+      # Plex (optional but recommended for authz checks)
       PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}
       PLEX_SERVER_MACHINE_ID: ${PLEX_SERVER_MACHINE_ID:-}
       PLEX_SERVER_NAME: ${PLEX_SERVER_NAME:-}
+
+      # Emby (present for future use; safe to keep)
+      EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
+      EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-1.0.0}
+      # EMBY_QUICKCONNECT: ${EMBY_QUICKCONNECT:-}
+      EMBY_API_KEY: ${EMBY_API_KEY:-}
+      EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
+      EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

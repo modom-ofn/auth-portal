@@ -31,6 +31,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	if uname == "" && uid == "" {
 		log.Printf("home: no username/uuid in session; treating as not authorized")
 	} else {
+		// Match the provider interface: (uuid, username) -> (bool, error)
 		authorized, err = currentProvider.IsAuthorized(uid, uname)
 		if err != nil {
 			log.Printf("home authz check failed for %s (%s): %v", uname, uid, err)
