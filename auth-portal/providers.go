@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -337,20 +339,27 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 func (plexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 	u, err := getUserByUUID(uuid)
 	if err != nil {
+		// Fresh DB after volume wipe: no row = not authorized (not an error)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
 		return false, err
 	}
-	// If DB already knows, trust it.
+
 	if u.PlexAccess {
 		return true, nil
 	}
-	// Try an on-demand check if we have a token
+
+	// If we have a token, try a one-time live check and cache the result.
 	if u.PlexToken.Valid && u.PlexToken.String != "" {
-		ok, err := plexUserHasServer(u.PlexToken.String)
-		if err == nil {
-			_ = setUserPlexAccessByUsername(u.Username, ok) // best-effort
+		ok, chkErr := plexUserHasServer(u.PlexToken.String)
+		if chkErr == nil {
+			_ = setUserPlexAccessByUsername(u.Username, ok) // best effort
 			return ok, nil
 		}
+		return false, chkErr
 	}
+
 	return false, nil
 }
 
