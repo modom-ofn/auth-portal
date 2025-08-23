@@ -15,13 +15,13 @@
           <path d="M9 6l7 6-7 6V6z" fill="#f59e0b"/>
         </svg>
         <h1>Hello, {{ .Username }}</h1>
-        <p class="muted">You’ve signed in with Plex, but you’re not yet authorized on this server.</p>
+        <p class="muted">You’ve signed in with {{.ProviderName}}, but you’re not yet authorized on this server.</p>
       </div>
 
       <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
-        <span class="badge warn">Plex Not Authorized</span>
+        <span class="badge warn">{{.ProviderName}} Not Authorized</span>
         <!-- Optional: a CTA to request access -->
-        <a class="btn" href="mailto:admin@example.com?subject=Plex%20Access%20Request">Request Access</a>
+        <a class="btn" href="mailto:admin@example.com?subject={{.ProviderName}}%20Access%20Request">Request Access</a>
       </div>
 
       <form action="/logout" method="post" style="margin-top:16px;text-align:center">
@@ -32,7 +32,7 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with Plex, Inc.”.</p>
+    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with {{.ProviderName}}”.</p>
   </footer>
 </body>
 </html>

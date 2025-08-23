@@ -15,11 +15,11 @@
           <path d="M9 6l7 6-7 6V6z" fill="#f59e0b"/>
         </svg>
         <h1>Welcome, {{ .Username }}</h1>
-        <p class="muted">You’re authorized on this Plex server.</p>
+        <p class="muted">You’re authorized on this {{.ProviderName}} server.</p>
       </div>
 
       <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
-        <span class="badge ok">Plex Authorized</span>
+        <span class="badge ok">{{.ProviderName}} Authorized</span>
         <!-- Example: links to internal services -->
         <a class="btn" href="/some-internal-app">Open Internal App</a>
       </div>
@@ -32,7 +32,7 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with Plex, Inc.”.</p>
+    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with {{.ProviderName}}”.</p>
   </footer>
 </body>
 </html>

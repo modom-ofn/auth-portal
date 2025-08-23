@@ -17,13 +17,13 @@
           <path d="M9 6l7 6-7 6V6z" fill="#f59e0b"/>
         </svg>
         <h1>AuthPortal</h1>
-        <p class="muted">Sign in with your Plex account to continue</p>
+        <p class="muted">Sign in with your {{.ProviderName}} account to continue</p>
       </div>
 
       <div style="display: flex; justify-content: center; align-items: center">
         <button id="startBtn" class="plex-btn">
-          <img src="/static/login.svg" alt="Plex Logo" class="plex-logo">
-          Sign in with Plex
+          <img  src="{{if eq .ProviderKey "plex"}}/static/plex.svg{{else}}/static/emby.svg{{end}}"  alt="{{.ProviderName}} logo"/>
+          Sign in with {{.ProviderName}}
         </button>
       </div>
     </section>
@@ -31,7 +31,7 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with Plex, Inc.”.</p>
+    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with {{.ProviderName}}”.</p>
   </footer>
 
   <script src="/static/login.js" defer></script>

@@ -9,46 +9,63 @@ import (
 	"strings"
 )
 
-// db is initialized in main.go
-// var db *sql.DB
-
 // ---------- Schema ----------
 
 func createSchema() error {
-	// users table
+	// Create users table (provider-agnostic columns)
 	if _, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS users (
-  id           BIGSERIAL PRIMARY KEY,
-  username     TEXT UNIQUE NOT NULL,
-  email        TEXT,
-  plex_uuid    TEXT UNIQUE,
-  plex_token   TEXT,
-  plex_access  BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  id            BIGSERIAL PRIMARY KEY,
+  username      TEXT UNIQUE NOT NULL,
+  email         TEXT,
+  media_uuid    TEXT UNIQUE,
+  media_token   TEXT,
+  media_access  BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 )`); err != nil {
 		return err
 	}
 
-	// upgrades (older DBs): add any missing columns/constraints safely
+	// One-time migration: rename old plex_* columns to media_* if they exist
+	if _, err := db.Exec(`
+DO $$
+BEGIN
+  BEGIN
+    ALTER TABLE users RENAME COLUMN plex_uuid TO media_uuid;
+  EXCEPTION WHEN undefined_column THEN NULL;
+  END;
+  BEGIN
+    ALTER TABLE users RENAME COLUMN plex_token TO media_token;
+  EXCEPTION WHEN undefined_column THEN NULL;
+  END;
+  BEGIN
+    ALTER TABLE users RENAME COLUMN plex_access TO media_access;
+  EXCEPTION WHEN undefined_column THEN NULL;
+  END;
+END $$;`); err != nil {
+		return err
+	}
+
+	// Add any missing columns (no-ops if already present)
 	if _, err := db.Exec(`
 ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS plex_access BOOLEAN NOT NULL DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  ADD COLUMN IF NOT EXISTS updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  ADD COLUMN IF NOT EXISTS media_access  BOOLEAN    NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 `); err != nil {
 		return err
 	}
 
-	// helpful indexes
+	// Helpful indexes
 	if _, err := db.Exec(`
-CREATE INDEX IF NOT EXISTS idx_users_username   ON users (username);
-CREATE INDEX IF NOT EXISTS idx_users_plex_uuid  ON users (plex_uuid);
+CREATE INDEX IF NOT EXISTS idx_users_username    ON users (username);
+CREATE INDEX IF NOT EXISTS idx_users_media_uuid  ON users (media_uuid);
 `); err != nil {
 		return err
 	}
 
-	// pins table for PIN→ID mapping during login
+	// Pins table (unchanged)
 	if _, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS pins (
   code       TEXT PRIMARY KEY,
@@ -61,7 +78,7 @@ CREATE TABLE IF NOT EXISTS pins (
 	return nil
 }
 
-// ---------- PIN storage (used by startAuthWebHandler) ----------
+// ---------- PIN storage ----------
 
 func savePin(code string, pinID int) error {
 	_, err := db.Exec(`
@@ -84,10 +101,20 @@ func getPinIDByCode(code string) (int, error) {
 
 // ---------- Users ----------
 
+// Backward-compatible struct: prefer Media* fields, but keep Plex* for callers
+// that haven't been updated yet. upsertUser() will prefer Media* if provided.
 type User struct {
-	ID         int
-	Username   string
-	Email      sql.NullString
+	ID int
+
+	Username string
+	Email    sql.NullString
+
+	// New, provider-agnostic fields
+	MediaUUID   sql.NullString
+	MediaToken  sql.NullString
+	MediaAccess bool
+
+	// Legacy (will be ignored if Media* are set)
 	PlexUUID   sql.NullString
 	PlexToken  sql.NullString
 	PlexAccess bool
@@ -108,70 +135,6 @@ func strOrNil(ns sql.NullString) *string {
 	return nil
 }
 
-// Upsert rules:
-// - If plex_uuid present: upsert keyed on plex_uuid
-// - Else: upsert keyed on username
-// - Never overwrite non-empty DB values with blanks
-// - Always touch updated_at on change
-func upsertUser(u User) (int, error) {
-	if strings.TrimSpace(u.Username) == "" {
-		return 0, errors.New("username required")
-	}
-
-	// Gate elsewhere: do NOT call upsertUser for unauthorized users
-
-	// Prefer UUID path if present
-	if u.PlexUUID.Valid && strings.TrimSpace(u.PlexUUID.String) != "" {
-		var id int
-		err := db.QueryRow(`
-INSERT INTO users (plex_uuid, username, email, plex_token, plex_access)
-VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
-ON CONFLICT (plex_uuid) DO UPDATE
-SET username   = COALESCE(NULLIF(EXCLUDED.username, ''), users.username),
-    email      = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
-    plex_token = COALESCE(NULLIF(EXCLUDED.plex_token, ''), users.plex_token),
-    plex_access= EXCLUDED.plex_access,
-    updated_at = now()
-RETURNING id
-`, strings.TrimSpace(u.PlexUUID.String), strings.TrimSpace(u.Username), nn(u.Email), nn(u.PlexToken), u.PlexAccess).Scan(&id)
-		if err != nil {
-			return 0, err
-		}
-		return id, nil
-	}
-
-	// Username path (for users that don't yet have plex_uuid)
-	var id int
-	err := db.QueryRow(`
-INSERT INTO users (username, email, plex_token, plex_access)
-VALUES (NULLIF($1, ''), NULLIF($2, ''), NULLIF($3, ''), $4)
-ON CONFLICT (username) DO UPDATE
-SET email       = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
-    plex_token  = COALESCE(NULLIF(EXCLUDED.plex_token, ''), users.plex_token),
-    plex_access = EXCLUDED.plex_access,
-    updated_at  = now()
-RETURNING id
-`, strings.TrimSpace(u.Username), nn(u.Email), nn(u.PlexToken), u.PlexAccess).Scan(&id)
-	if err != nil {
-		return 0, err
-	}
-
-	// If a uuid became known later, set it once (no overwrite if already set)
-	if u.PlexUUID.Valid && strings.TrimSpace(u.PlexUUID.String) != "" {
-		if _, err := db.Exec(`
-UPDATE users
-   SET plex_uuid = COALESCE(plex_uuid, $2),
-       updated_at = now()
- WHERE id = $1
-`, id, strings.TrimSpace(u.PlexUUID.String)); err != nil {
-			// Not fatal; just log
-			log.Printf("upsertUser: uuid backfill failed for user id=%d: %v", id, err)
-		}
-	}
-
-	return id, nil
-}
-
 // Helper: return trimmed string or empty for NULLIF
 func nn(ns sql.NullString) string {
 	if !ns.Valid {
@@ -187,22 +150,114 @@ func strOrEmpty(ns sql.NullString) string {
 	return ""
 }
 
-// Set plex_access by UUID (preferred)
-func setUserPlexAccessByUUID(uuid string, access bool) error {
+// Choose values, preferring Media* (new) over Plex* (legacy)
+func pickUUID(u User) string {
+	if v := strings.TrimSpace(u.MediaUUID.String); u.MediaUUID.Valid && v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(u.PlexUUID.String); u.PlexUUID.Valid && v != "" {
+		return v
+	}
+	return ""
+}
+func pickToken(u User) string {
+	if v := strings.TrimSpace(u.MediaToken.String); u.MediaToken.Valid && v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(u.PlexToken.String); u.PlexToken.Valid && v != "" {
+		return v
+	}
+	return ""
+}
+func pickAccess(u User) bool {
+	// MediaAccess takes precedence; otherwise fall back to PlexAccess
+	if u.MediaAccess {
+		return true
+	}
+	return u.PlexAccess
+}
+
+// Upsert rules (media-agnostic):
+// - If media_uuid present: upsert keyed on media_uuid
+// - Else: upsert keyed on username
+// - Never overwrite non-empty DB values with blanks
+// - Always touch updated_at on change
+func upsertUser(u User) (int, error) {
+	if strings.TrimSpace(u.Username) == "" {
+		return 0, errors.New("username required")
+	}
+
+	uuid := pickUUID(u)
+	token := pickToken(u)
+	access := pickAccess(u)
+
+	// Prefer UUID path if present
+	if uuid != "" {
+		var id int
+		err := db.QueryRow(`
+INSERT INTO users (media_uuid, username, email, media_token, media_access)
+VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
+ON CONFLICT (media_uuid) DO UPDATE
+SET username     = COALESCE(NULLIF(EXCLUDED.username, ''), users.username),
+    email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
+    media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), users.media_token),
+    media_access = EXCLUDED.media_access,
+    updated_at   = now()
+RETURNING id
+`, uuid, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
+		if err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+
+	// Username path (no UUID yet)
+	var id int
+	err := db.QueryRow(`
+INSERT INTO users (username, email, media_token, media_access)
+VALUES (NULLIF($1, ''), NULLIF($2, ''), NULLIF($3, ''), $4)
+ON CONFLICT (username) DO UPDATE
+SET email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
+    media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), users.media_token),
+    media_access = EXCLUDED.media_access,
+    updated_at   = now()
+RETURNING id
+`, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	// If a UUID became known later, set it once (no overwrite if already set)
+	if uuid != "" {
+		if _, err := db.Exec(`
+UPDATE users
+   SET media_uuid = COALESCE(media_uuid, $2),
+       updated_at = now()
+ WHERE id = $1
+`, id, uuid); err != nil {
+			// Not fatal; just log
+			log.Printf("upsertUser: uuid backfill failed for user id=%d: %v", id, err)
+		}
+	}
+
+	return id, nil
+}
+
+// Set media_access by UUID (preferred, provider-agnostic)
+func setUserMediaAccessByUUID(uuid string, access bool) error {
 	uuid = strings.TrimSpace(uuid)
 	if uuid == "" {
-		return fmt.Errorf("setUserPlexAccessByUUID: empty uuid")
+		return fmt.Errorf("setUserMediaAccessByUUID: empty uuid")
 	}
 	_, err := db.Exec(`
 UPDATE users
-   SET plex_access = $2,
-       updated_at  = now()
- WHERE plex_uuid = $1
+   SET media_access = $2,
+       updated_at   = now()
+ WHERE media_uuid = $1
 `, uuid, access)
 	return err
 }
 
-// Convenience: same name you were calling in homeHandler; treats the arg as UUID
-func setUserPlexAccess(uuid string, access bool) error {
-	return setUserPlexAccessByUUID(uuid, access)
-}
+// Legacy shims (keep old callers working)
+func setUserPlexAccessByUUID(uuid string, access bool) error { return setUserMediaAccessByUUID(uuid, access) }
+func setUserPlexAccess(uuid string, access bool) error       { return setUserMediaAccessByUUID(uuid, access) }
