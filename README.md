@@ -123,40 +123,50 @@ It can optionally be expanded to include LDAP integration for downstream app req
 1) **.env**
 
 ```env
+# ---------- Core ----------
 POSTGRES_PASSWORD=change-me-long-random
 SESSION_SECRET=change-me-32+chars-random
 APP_BASE_URL=http://localhost:8089
 
-# Choose: plex or emby
+# Login page extra link (optional)
+LOGIN_EXTRA_LINK_URL=/some-internal-app
+LOGIN_EXTRA_LINK_TEXT=Open Internal App
+
+# Unauthorized page "Request Access" mailto link
+UNAUTH_REQUEST_EMAIL=support@example.com
+UNAUTH_REQUEST_SUBJECT=AuthPortal Access Request
+
+# Set 'MEDIA_SERVER=' options: plex | emby (jellyfin later)
 MEDIA_SERVER=plex
 
-# App logging (INFO default): DEBUG | INFO | WARN | ERROR
-LOG_LEVEL=INFO
-
-# Force 'Secure' cookie (set to 1 in TLS/prod)
+# Set 'FORCE_SECURE_COOKIE=1' in prod; if behind TLS/NGINX with X-Forwarded-Proto use 1
 FORCE_SECURE_COOKIE=0
 
-# 32-byte base64 key: openssl rand -base64 32
+# 32-byte base64 key (e.g.,: openssl rand -base64 32)
 DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
 
-# LDAP (optional; only if using the ldap profile)
+# Logging # DEBUG | INFO | WARN | ERROR
+LOG_LEVEL=DEBUG
+
+# ---------- LDAP (only if using `--profile ldap`) ----------
 LDAP_ADMIN_PASSWORD=change-me-strong
 
-# Plex
-PLEX_OWNER_TOKEN=
+# ---------- Plex ----------
+# Optional but recommended for server-authorization checks
+PLEX_OWNER_TOKEN=plxxxxxxxxxxxxxxxxxxxx
+
+# Either set machine id or a server name (machine id wins if both present)
 PLEX_SERVER_MACHINE_ID=
 PLEX_SERVER_NAME=
 
-# Emby
+# ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
 EMBY_APP_VERSION=1.0.0
+# EMBY_QUICKCONNECT=1  # (not yet implemented)
 EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
-
-# Postgres logging (reused by compose command)
-log_level=INFO
 ```
 
 2) **docker-compose.yaml**
@@ -216,6 +226,10 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
+      LOGIN_EXTRA_LINK_URL: ${LOGIN_EXTRA_LINK_URL:-}
+      LOGIN_EXTRA_LINK_TEXT: ${LOGIN_EXTRA_LINK_TEXT:-}
+      UNAUTH_REQUEST_EMAIL: ${UNAUTH_REQUEST_EMAIL:-}
+      UNAUTH_REQUEST_SUBJECT: ${UNAUTH_REQUEST_SUBJECT:-}
       FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
       MEDIA_SERVER: ${MEDIA_SERVER:-plex}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -328,6 +342,10 @@ docker compose --profile ldap up -d --build
 - `DATA_KEY` — base64 32-byte key for sealing tokens at rest (required).
 - `LOG_LEVEL` / `log_level` — `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 - `FORCE_SECURE_COOKIE` — set to 1 to force Secure on cookies (behind TLS/ingress).
+- `LOGIN_EXTRA_LINK_URL` — external URL on authorized page.
+- `LOGIN_EXTRA_LINK_TEXT` — text for external URL on authorized page.
+- `UNAUTH_REQUEST_EMAIL` — email address for unauthorized page request access link
+- `UNAUTH_REQUEST_SUBJECT` — subject for unuathorized page request access email
 
 ### Plex
 

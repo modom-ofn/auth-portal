@@ -23,6 +23,14 @@ var (
 	plexOwnerToken      = envOr("PLEX_OWNER_TOKEN", "")
 	plexServerMachineID = envOr("PLEX_SERVER_MACHINE_ID", "")
 	plexServerName      = envOr("PLEX_SERVER_NAME", "")
+	
+	// Optional extra link on the login page
+	loginExtraLinkURL  = envOr("LOGIN_EXTRA_LINK_URL", "/some-internal-app")
+	loginExtraLinkText = envOr("LOGIN_EXTRA_LINK_TEXT", "Open Internal App")
+	
+	// Unauthorized-page "Request Access" mailto link (optional)
+	unauthRequestEmail   = envOr("UNAUTH_REQUEST_EMAIL", "admin@example.com")
+	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
 
 	// Provider selected at startup (plex default, emby stub available)
 	currentProvider MediaProvider

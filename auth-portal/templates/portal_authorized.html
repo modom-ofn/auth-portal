@@ -10,20 +10,19 @@
   <main class="center">
     <section class="card">
       <div class="brand">
-		<svg viewBox="0 0 24 24" aria-hidden="true" class="logo">
-		  <rect x="3" y="3" width="18" height="18" rx="3" fill="#111827"/>
-		  <circle cx="12" cy="12" r="6.25" fill="none" stroke="#10B981" stroke-width="1.5"/>
-		  <path d="M9 10V9a3 3 0 1 1 6 0v1" fill="none" stroke="#F59E0B" stroke-width="1.5" stroke-linecap="round"/>
-		  <rect x="8" y="10" width="8" height="7" rx="1.6" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
-		</svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="logo">
+          <rect x="3" y="3" width="18" height="18" rx="3" fill="#111827"/>
+          <circle cx="12" cy="12" r="6.25" fill="none" stroke="#10B981" stroke-width="1.5"/>
+          <path d="M9 10V9a3 3 0 1 1 6 0v1" fill="none" stroke="#F59E0B" stroke-width="1.5" stroke-linecap="round"/>
+          <rect x="8" y="10" width="8" height="7" rx="1.6" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
+        </svg>
         <h1>Welcome, {{ .Username }}</h1>
-        <p class="muted">You’re authorized on this {{.ProviderName}} server.</p>
+        <p class="muted">You’re authorized on this {{ .ProviderName }} server.</p>
       </div>
 
       <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
-        <span class="badge ok">{{.ProviderName}} Authorized</span>
-        <!-- Example: links to internal services -->
-        <a class="btn" href="/some-internal-app">Open Internal App</a>
+        <span class="badge ok">{{ .ProviderName }} Authorized</span>
+        <a class="btn" href="{{ .ExtraLinkURL }}">{{ .ExtraLinkText }}</a>
       </div>
 
       <form action="/logout" method="post" style="margin-top:16px;text-align:center">
@@ -34,7 +33,10 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with {{.ProviderName}}”.</p>
+    <p>
+      <a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a>
+      created by Modom. “Use at your own risk. This project is unaffiliated with {{ .ProviderName }}”.
+    </p>
   </footer>
 </body>
 </html>
