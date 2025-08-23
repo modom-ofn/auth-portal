@@ -128,7 +128,7 @@ POSTGRES_PASSWORD=change-me-long-random
 SESSION_SECRET=change-me-32+chars-random
 APP_BASE_URL=http://localhost:8089
 
-# Login page extra link (optional)
+# Authorized page extra link (optional)
 LOGIN_EXTRA_LINK_URL=/some-internal-app
 LOGIN_EXTRA_LINK_TEXT=Open Internal App
 
