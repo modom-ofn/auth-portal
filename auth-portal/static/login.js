@@ -1,10 +1,5 @@
 // /static/login.js
 (() => {
-  const btn = document.getElementById("auth-signin") ||
-              document.querySelector("[data-auth-signin]") ||
-              document.querySelector(".auth-signin");
-  if (!btn) return;
-
   function openPopup(url) {
     const w = 600, h = 700;
     const y = (window.top?.outerHeight || 800) / 2 + (window.top?.screenY || 0) - h / 2;
@@ -16,7 +11,7 @@
     );
   }
 
-  // Only accept messages from our origin
+  // Only accept messages from our own origin
   window.addEventListener("message", (ev) => {
     if (ev.origin !== window.location.origin) return;
     const d = ev.data || {};
@@ -25,24 +20,19 @@
     }
   });
 
-  async function startFlow() {
-    // Open placeholder popup *synchronously* to preserve user gesture
-    let popup = openPopup("about:blank");
+  async function startFlow(btn) {
+    let popup = openPopup("about:blank"); // open synchronously to avoid blockers
     try {
       if (popup?.document) {
-        popup.document.write(
-          `<!doctype html><meta charset="utf-8"><title>Starting sign-in…</title>
-           <body style="font-family:system-ui;padding:1rem;line-height:1.4">
-             <p>Starting sign-in…</p>
-           </body>`
-        );
+        popup.document.write(`<!doctype html><meta charset="utf-8"><title>Starting sign-in…</title>
+          <body style="font-family:system-ui;padding:1rem">Starting sign-in…</body>`);
         popup.document.close();
       }
     } catch {}
 
     btn.disabled = true;
     try {
-      // Primary path: Plex start endpoint
+      // Primary: Plex start endpoint
       let authUrl = null;
       try {
         const res = await fetch("/auth/start-web", {
@@ -56,20 +46,16 @@
         }
       } catch {}
 
-      // Fallback path: Emby local popup page
-      if (!authUrl) {
-        authUrl = "/auth/forward?emby=1";
-      }
+      // Fallback: Emby popup page
+      if (!authUrl) authUrl = "/auth/forward?emby=1";
 
       if (popup && !popup.closed) {
         try { popup.location.replace(authUrl); } catch { popup.location.href = authUrl; }
       } else {
-        // Popup was blocked → degrade to full-page navigation
-        window.location.assign(authUrl);
+        window.location.assign(authUrl); // popup blocked → full-page
         return;
       }
 
-      // If user closes the popup, head to /home as a safety net
       const iv = setInterval(() => {
         if (!popup || popup.closed) {
           clearInterval(iv);
@@ -91,10 +77,30 @@
     }
   }
 
-  // Bind
-  const form = btn.closest("form");
-  if (form) {
-    form.addEventListener("submit", (e) => { e.preventDefault(); startFlow(); });
+  function bind() {
+    const selectors = [
+      "#startBtn",        // <- old working id (dev)
+      "#plex-signin",     // <- older plex-specific id
+      "#auth-signin",     // <- new id (dev-r2)
+      "[data-auth-signin]",
+      ".auth-signin"
+    ];
+    for (const sel of selectors) {
+      const btn = document.querySelector(sel);
+      if (btn) {
+        // If inside a form, prevent default submit
+        const form = btn.closest("form");
+        if (form) form.addEventListener("submit", (e) => { e.preventDefault(); startFlow(btn); });
+        btn.addEventListener("click", (e) => { e.preventDefault(); startFlow(btn); });
+        return true;
+      }
+    }
+    return false;
   }
-  btn.addEventListener("click", (e) => { e.preventDefault(); startFlow(); });
+
+  if (!bind()) {
+    document.addEventListener("DOMContentLoaded", bind);
+    let tries = 0;
+    const t = setInterval(() => { if (bind() || ++tries > 10) clearInterval(t); }, 150);
+  }
 })();

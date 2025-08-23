@@ -23,9 +23,9 @@
       </div>
 
       <div style="display: flex; justify-content: center; align-items: center">
-        <button id="startBtn" class="plex-btn">
+        <button id="auth-signin" class="plex-btn">
           <img  src="{{if eq .ProviderKey "plex"}}/static/plex.svg{{else}}/static/emby.svg{{end}}"  alt="{{.ProviderName}} logo"/>
-          Sign in with {{.ProviderName}}
+          {{if eq .ProviderKey "emby"}}Sign in with Emby{{else}}Sign in with Plex{{end}}
         </button>
       </div>
     </section>
