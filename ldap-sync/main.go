@@ -15,15 +15,17 @@ import (
 )
 
 var (
-	// Postgres
-	dbURL = envOr("DATABASE_URL", "postgres://plexauth:plexpass@postgres:5432/plexauthdb?sslmode=disable")
+	// --- Postgres (updated defaults for dev-r2) ---
+	dbURL = envOr("DATABASE_URL", "postgres://authportal:change-me@postgres:5432/authportaldb?sslmode=disable")
 
-	// LDAP
-	ldapHost     = envOr("LDAP_HOST", "ldap://openldap:389") // supports ldap:// or ldaps://
-	ldapAdminDN  = envOr("LDAP_ADMIN_DN", "cn=admin,dc=plexauth,dc=local")
+	// --- LDAP (updated defaults for dev-r2) ---
+	// Supports ldap:// or ldaps://
+	ldapHost     = envOr("LDAP_HOST", "ldap://openldap:389")
+	ldapAdminDN  = envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local")
 	ldapPassword = envOr("LDAP_ADMIN_PASSWORD", "")
-	baseDN       = envOr("BASE_DN", "ou=users,dc=plexauth,dc=local")
-	startTLS     = strings.EqualFold(envOr("LDAP_STARTTLS", "false"), "true")
+	// Base OU for users, e.g. "ou=users,dc=authportal,dc=local"
+	baseDN   = envOr("BASE_DN", "ou=users,dc=authportal,dc=local")
+	startTLS = strings.EqualFold(envOr("LDAP_STARTTLS", "false"), "true")
 
 	// Timeouts
 	dbTimeout   = 8 * time.Second
@@ -37,10 +39,12 @@ func envOr(k, d string) string {
 	return d
 }
 
+// Matches dev-r2 DB schema (media_* fields)
 type rowUser struct {
-	Username string
-	Email    sql.NullString
-	PlexUUID sql.NullString
+	Username   string
+	Email      sql.NullString
+	MediaUUID  sql.NullString
+	MediaAccess bool // not scanned directly; filtered in SQL
 }
 
 func main() {
@@ -59,11 +63,11 @@ func main() {
 		}
 	}
 
-	// Only sync authorized users
+	// Only sync authorized users (dev-r2: media_access)
 	const q = `
-SELECT username, email, plex_uuid
+SELECT username, email, media_uuid
 FROM users
-WHERE plex_access = TRUE
+WHERE media_access = TRUE
 ORDER BY username
 `
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
@@ -100,7 +104,7 @@ ORDER BY username
 	// Process rows
 	for rows.Next() {
 		var u rowUser
-		if err := rows.Scan(&u.Username, &u.Email, &u.PlexUUID); err != nil {
+		if err := rows.Scan(&u.Username, &u.Email, &u.MediaUUID); err != nil {
 			log.Printf("scan row: %v", err)
 			continue
 		}
@@ -121,6 +125,16 @@ ORDER BY username
 			continue
 		}
 
+		// Build auxiliary attributes
+		mailVals := []string{}
+		if u.Email.Valid && strings.TrimSpace(u.Email.String) != "" {
+			mailVals = []string{strings.TrimSpace(u.Email.String)}
+		}
+		descVals := []string{}
+		if u.MediaUUID.Valid && strings.TrimSpace(u.MediaUUID.String) != "" {
+			descVals = []string{"media_uuid=" + strings.TrimSpace(u.MediaUUID.String)}
+		}
+
 		if !exists {
 			// Add new inetOrgPerson (include standard aux classes for compatibility)
 			addReq := ldap.NewAddRequest(userDN, nil)
@@ -128,14 +142,13 @@ ORDER BY username
 			addReq.Attribute("uid", []string{username})
 			addReq.Attribute("cn", []string{username})
 			addReq.Attribute("sn", []string{"User"})
-
-			if u.Email.Valid && strings.TrimSpace(u.Email.String) != "" {
-				addReq.Attribute("mail", []string{strings.TrimSpace(u.Email.String)})
+			if len(mailVals) > 0 {
+				addReq.Attribute("mail", mailVals)
 			}
-			if u.PlexUUID.Valid && strings.TrimSpace(u.PlexUUID.String) != "" {
-				addReq.Attribute("description", []string{"plex_uuid=" + strings.TrimSpace(u.PlexUUID.String)})
+			if len(descVals) > 0 {
+				addReq.Attribute("description", descVals)
 			}
-			// You can set a placeholder password or leave it absent if downstream apps bind anonymously and only search.
+			// Optionally set a placeholder password or omit entirely:
 			// addReq.Attribute("userPassword", []string{"{SSHA}placeholder"})
 
 			if err := l.Add(addReq); err != nil {
@@ -154,16 +167,8 @@ ORDER BY username
 		modReq.Replace("uid", []string{username})
 
 		// Optional fields
-		if u.Email.Valid && strings.TrimSpace(u.Email.String) != "" {
-			modReq.Replace("mail", []string{strings.TrimSpace(u.Email.String)})
-		} else {
-			modReq.Replace("mail", []string{})
-		}
-		if u.PlexUUID.Valid && strings.TrimSpace(u.PlexUUID.String) != "" {
-			modReq.Replace("description", []string{"plex_uuid=" + strings.TrimSpace(u.PlexUUID.String)})
-		} else {
-			modReq.Replace("description", []string{})
-		}
+		modReq.Replace("mail", mailVals)         // empty slice clears attribute
+		modReq.Replace("description", descVals)  // store media_uuid for reference
 
 		if err := l.Modify(modReq); err != nil {
 			log.Printf("LDAP modify %s: %v", userDN, err)

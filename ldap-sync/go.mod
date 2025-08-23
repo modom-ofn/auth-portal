@@ -1,6 +1,6 @@
 module ldap-sync
 
-go 1.22
+go 1.23.8
 
 require (
 	github.com/go-ldap/ldap/v3 v3.4.6
