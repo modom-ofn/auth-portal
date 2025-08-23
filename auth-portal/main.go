@@ -89,7 +89,7 @@ func main() {
 
 	// Provider routes
 	// Plex uses popup flow (StartWeb + Forward).
-	r.HandleFunc("/auth/start-web", currentProvider.StartWeb).Methods("POST")
+	r.HandleFunc("/auth/start-web", currentProvider.StartWeb).Methods("POST", "GET")
 	// Emby uses GET (show form) and POST (submit credentials) on /auth/forward
 	r.HandleFunc("/auth/forward", currentProvider.Forward).Methods("GET", "POST")
 
