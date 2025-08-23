@@ -272,19 +272,23 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2) Fetch user info
 	user, _ := plexFetchUser(token)
 	username := user.Username
 	if username == "" {
 		username = "plex-user"
 	}
-	plexUUID := fmt.Sprintf("plex-%d", user.ID)
+	mediaUUID := fmt.Sprintf("plex-%d", user.ID)
 	email := user.Email
 
-	sealed, err := SealToken(token)
+	// 3) Seal token for storage
+	sealedToken, err := SealToken(token)
 	if err != nil {
-		log.Printf("WARN: token seal failed: %v", err)
+		log.Printf("WARN: token seal failed: %v (storing empty token)", err)
+		sealedToken = ""
 	}
 
+	// 4) Check authorization: can *this user* see your server in /resources?
 	authorized := false
 	if plexServerMachineID != "" || plexServerName != "" {
 		if ok, chkErr := plexUserHasServer(token); chkErr == nil {
@@ -296,18 +300,20 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		authorized = false
 	}
 
+	// 5) Persist (media_* fields)
 	_, _ = upsertUser(User{
-		Username:   username,
-		Email:      nullStringFrom(email),
-		PlexUUID:   nullStringFrom(plexUUID),
-		PlexToken:  nullStringFrom(sealed),
-		PlexAccess: authorized,
+		Username:    username,
+		Email:       nullStringFrom(email),
+		MediaUUID:   nullStringFrom(mediaUUID),
+		MediaToken:  nullStringFrom(sealedToken),
+		MediaAccess: authorized,
 	})
 
+	// 6) Session + finish page stays as you had it...
 	if authorized {
-		_ = setSessionCookie(w, plexUUID, username)
+		_ = setSessionCookie(w, mediaUUID, username)
 	} else {
-		_ = setTempSessionCookie(w, plexUUID, username)
+		_ = setTempSessionCookie(w, mediaUUID, username)
 	}
 
 	w.Header().Set("Content-Security-Policy",
@@ -429,6 +435,7 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optional: verify status with API key (recommended)
+	// Decide authorization
 	authorized := true
 	if embyAPIKey != "" {
 		detail, derr := embyGetUserDetail(embyServerURL, embyAPIKey, auth.User.ID)
@@ -440,26 +447,30 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Save token & user row
-	sealed, serr := SealToken(auth.AccessToken)
+	// Seal token
+	sealedToken, serr := SealToken(auth.AccessToken)
 	if serr != nil {
 		log.Printf("WARN: emby token seal failed: %v", serr)
+		sealedToken = ""
 	}
-	embyUUID := "emby-" + auth.User.ID
 
+	// Compose media UUID
+	mediaUUID := "emby-" + auth.User.ID
+
+	// Persist (media_* fields)
 	_, _ = upsertUser(User{
 		Username:    auth.User.Name,
-		Email:       sql.NullString{},            // Emby typically doesn't expose email via this API
-		MediaUUID:   nullStringFrom(mediaUUID),   // "plex-<id>" or "emby-<id>"
-		MediaToken:  nullStringFrom(sealedToken), // sealed with SealToken(...)
-		MediaAccess: authorizedBool,
+		Email:       sql.NullString{},           // Emby typically doesn’t return email here
+		MediaUUID:   nullStringFrom(mediaUUID),
+		MediaToken:  nullStringFrom(sealedToken),
+		MediaAccess: authorized,
 	})
 
-	// Session cookie
+	// Session
 	if authorized {
-		_ = setSessionCookie(w, embyUUID, auth.User.Name)
+		_ = setSessionCookie(w, mediaUUID, auth.User.Name)
 	} else {
-		_ = setTempSessionCookie(w, embyUUID, auth.User.Name)
+		_ = setTempSessionCookie(w, mediaUUID, auth.User.Name)
 	}
 
 	// Finish popup
