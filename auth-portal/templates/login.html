@@ -23,10 +23,16 @@
       </div>
 
       <div style="display: flex; justify-content: center; align-items: center">
-        <button id="auth-signin" class="plex-btn">
-          <img  src="{{if eq .ProviderKey "plex"}}/static/plex.svg{{else}}/static/emby.svg{{end}}"  alt="{{.ProviderName}} logo"/>
-          {{if eq .ProviderKey "emby"}}Sign in with Emby{{else}}Sign in with Plex{{end}}
-        </button>
+		  <button id="auth-signin" class="plex-btn">
+			{{ if eq .ProviderKey "plex" }}
+			  <!-- Use a masked span so we can force pure black -->
+			  <span class="plex-logo-mask" aria-hidden="true"></span>
+			{{ else }}
+			  <!-- Emby stays as an img as before -->
+			  <img src="/static/emby.svg" alt="{{ .ProviderName }} logo" />
+			{{ end }}
+			{{ if eq .ProviderKey "emby" }}Sign in with Emby{{ else }}Sign in with Plex{{ end }}
+		  </button>
       </div>
     </section>
   </main>

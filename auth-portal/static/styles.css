@@ -92,7 +92,7 @@ h1{font-size:1.6rem;margin:0}
 .plex-btn {
   background: #e5a00d; /* Plex orange */
   border: 1px solid #d48f0b;
-  color: #ffffff; /* white text for contrast */
+  color: #000000; /* black text + icon */
   font-size: 18px;
   font-weight: 700;
   padding: 14px 22px;
@@ -102,10 +102,11 @@ h1{font-size:1.6rem;margin:0}
   justify-content: center;
   gap: 12px;
   box-shadow: 0 6px 20px rgba(229, 160, 13, 0.25);
-  transition: transform .18s ease, 
-              box-shadow .18s ease, 
-              background-color .18s ease, 
-              border-color .18s ease;
+  transition:
+    transform .18s ease,
+    box-shadow .18s ease,
+    background-color .18s ease,
+    border-color .18s ease;
 }
 
 .plex-btn:hover {
@@ -121,10 +122,56 @@ h1{font-size:1.6rem;margin:0}
   border-color: #a86400;
 }
 
+/* Logo sizing */
 .plex-logo {
   width: 22px;
   height: 22px;
+  display: inline-block;
 }
+
+/* Inline SVG logo → force black */
+.plex-btn .plex-logo,
+.plex-btn .plex-logo * {
+  fill: #000 !important;
+  stroke: #000 !important;
+}
+
+/* <img> logo → force black using filter */
+.plex-btn img.plex-logo {
+  filter: brightness(0) saturate(100%) !important; /* makes the icon solid black */
+}
+
+/* Force the Plex logo inside the button to render solid black */
+.plex-btn img.plex-logo {
+  width: 22px;
+  height: 22px;
+  display: inline-block;
+  filter: brightness(0) saturate(100%) !important; /* makes colored SVG/PNG appear black */
+}
+
+/* If you ever switch to inline SVG for the Plex icon, this ensures black, too */
+.plex-btn .plex-logo,
+.plex-btn .plex-logo * {
+  fill: #000 !important;
+  stroke: #000 !important;
+}
+
+/* Monochrome Plex icon, painted by background-color (always black) */
+.plex-btn .plex-logo-mask {
+  width: 22px;
+  height: 22px;
+  display: inline-block;
+  background-color: #000;                 /* <- icon color */
+  -webkit-mask-image: url('/static/plex.svg');
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+  mask-image: url('/static/plex.svg');
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}
+
 
 /* badges for portal auth state */
 .btn.badge{
