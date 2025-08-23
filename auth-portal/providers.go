@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-/************* Provider interface *************/
+/************* Provider interface (unchanged) *************/
 type MediaProvider interface {
 	Name() string
 	StartWeb(w http.ResponseWriter, r *http.Request)
@@ -39,7 +39,10 @@ func randClientID() string {
 	return hex.EncodeToString(b[:])
 }
 
-/************* Plex API types *************/
+/* =======================================================
+ *                        PLEX
+ * ======================================================= */
+
 type plexPin struct {
 	ID         int    `json:"id"`
 	Code       string `json:"code"`
@@ -59,7 +62,6 @@ type plexResource struct {
 	ClientIdentifier string `json:"clientIdentifier"`
 }
 
-/************* Plex helpers *************/
 func plexCreatePin(clientID string) (plexPin, error) {
 	form := url.Values{}
 	form.Set("strong", "true")
@@ -148,8 +150,7 @@ func plexFetchUser(token string) (plexUser, error) {
 	return u, nil
 }
 
-// plexUserHasServer returns true if the *user's* token can see the configured server
-// in /api/v2/resources (shared servers are listed there).
+// plexUserHasServer: true if user's token can see configured server in /resources
 func plexUserHasServer(userToken string) (bool, error) {
 	if userToken == "" {
 		return false, nil
@@ -170,13 +171,10 @@ func plexUserHasServer(userToken string) (bool, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return false, fmt.Errorf("resources non-2xx: %d %s", resp.StatusCode, string(body))
 	}
-
 	var rs []plexResource
 	if err := json.Unmarshal(body, &rs); err != nil {
-		// Some Plex endpoints can return XML; treat as not authorized if we can't parse JSON
 		return false, nil
 	}
-
 	wantMID := strings.TrimSpace(plexServerMachineID)
 	wantName := strings.TrimSpace(plexServerName)
 	for _, r := range rs {
@@ -193,12 +191,11 @@ func plexUserHasServer(userToken string) (bool, error) {
 	return false, nil
 }
 
-/************* Plex provider *************/
 type plexProvider struct{}
 
 func (plexProvider) Name() string { return "plex" }
 
-// StartWeb: create PIN and return { authUrl: ... } (popup flow)
+// StartWeb: create PIN → return Plex UI URL
 func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	clientID := r.Header.Get("X-Client-Id")
 	if clientID == "" {
@@ -211,8 +208,6 @@ func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": "plex pin request failed"})
 		return
 	}
-
-	// Keep pin & client in a short-lived cookie so Forward can finish
 	http.SetCookie(w, &http.Cookie{
 		Name:     "plex_pin",
 		Value:    fmt.Sprintf("%d:%s", pin.ID, clientID),
@@ -221,23 +216,18 @@ func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-
 	authURL := fmt.Sprintf(
 		"https://app.plex.tv/auth#?clientID=%s&code=%s&forwardUrl=%s&context[device][product]=AuthPortal&context[device][version]=1.0.0&context[device][platform]=Web&context[device][device]=Web",
 		url.QueryEscape(clientID), url.QueryEscape(pin.Code), url.QueryEscape(forward),
 	)
-
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true,
-		"provider":   "plex",
+		"ok":         true, "provider": "plex",
 		"authUrl":    authURL,
-		"pin_id":     pin.ID,
-		"client_id":  clientID,
-		"expires_in": 120,
+		"pin_id":     pin.ID, "client_id": clientID, "expires_in": 120,
 	})
 }
 
-// Forward: poll → fetch user → check server access → save → set session → postMessage to close popup.
+// Forward: finish login (Plex) and close popup
 func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	pc, _ := r.Cookie("plex_pin")
 	if pc == nil || pc.Value == "" {
@@ -273,16 +263,15 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	var pinID int
 	fmt.Sscanf(pinIDStr, "%d", &pinID)
 
-	// 1) Poll for token
 	token, err := plexPollPin(clientID, pinID, 60*time.Second)
 	if err != nil || token == "" {
+		// show waiting page instead of blank
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>Plex: Waiting…</title><body style="font-family:system-ui;padding:2rem"><h1>Waiting for Plex approval…</h1></body>`))
+		_, _ = w.Write([]byte(`<!doctype html><title>Plex: Waiting…</title><body style="font-family:system-ui;padding:2rem"><h1>Waiting for Plex approval…</h1></body>`))
 		return
 	}
 
-	// 2) Fetch user info
 	user, _ := plexFetchUser(token)
 	username := user.Username
 	if username == "" {
@@ -291,13 +280,11 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	plexUUID := fmt.Sprintf("plex-%d", user.ID)
 	email := user.Email
 
-	// 3) Seal token for storage
 	sealed, err := SealToken(token)
 	if err != nil {
-		log.Printf("WARN: token seal failed: %v (storing empty token)", err)
+		log.Printf("WARN: token seal failed: %v", err)
 	}
 
-	// 4) Check authorization: can *this user* see your server in /resources?
 	authorized := false
 	if plexServerMachineID != "" || plexServerName != "" {
 		if ok, chkErr := plexUserHasServer(token); chkErr == nil {
@@ -306,11 +293,9 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 			log.Printf("auth check failed for %s: %v", username, chkErr)
 		}
 	} else {
-		// If server not configured, be conservative: treat as unauthorized.
 		authorized = false
 	}
 
-	// 5) Persist to DB (email + sealed token + access flag)
 	_, _ = upsertUser(User{
 		Username:   username,
 		Email:      nullStringFrom(email),
@@ -319,11 +304,9 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		PlexAccess: authorized,
 	})
 
-	// 6) Issue session and close popup
 	if authorized {
 		_ = setSessionCookie(w, plexUUID, username)
 	} else {
-		// short-lived session keeps them "logged in" (so UI can show "unauthorized" page)
 		_ = setTempSessionCookie(w, plexUUID, username)
 	}
 
@@ -331,51 +314,276 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	dest := "/home" // your /home handler shows authorized vs unauthorized content
-	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>Signed in — AuthPortal</title><body style="font-family:system-ui;padding:2rem"><h1>Signed in — you can close this window.</h1><script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ok:true,type:"plex-auth",redirect:"` + dest + `"},window.location.origin)}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script></body>`))
+	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>Signed in — AuthPortal</title><body style="font-family:system-ui;padding:2rem"><h1>Signed in — you can close this window.</h1><script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ok:true,type:"plex-auth",redirect:"/home"},window.location.origin)}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script></body>`))
 }
 
-// IsAuthorized: prefer DB flag; if unknown but we have a token, verify once and update DB.
 func (plexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 	u, err := getUserByUUID(uuid)
 	if err != nil {
-		// Fresh DB after volume wipe: no row = not authorized (not an error)
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, err
 	}
-
 	if u.PlexAccess {
 		return true, nil
 	}
-
-	// If we have a token, try a one-time live check and cache the result.
 	if u.PlexToken.Valid && u.PlexToken.String != "" {
-		ok, chkErr := plexUserHasServer(u.PlexToken.String)
-		if chkErr == nil {
-			_ = setUserPlexAccessByUsername(u.Username, ok) // best effort
+		ok, err := plexUserHasServer(u.PlexToken.String)
+		if err == nil {
+			_ = setUserPlexAccessByUsername(u.Username, ok)
 			return ok, nil
 		}
-		return false, chkErr
+		return false, err
 	}
-
 	return false, nil
 }
 
-/************* Emby (stub) *************/
+/* =======================================================
+ *                        EMBY
+ * ======================================================= */
+
+var (
+	embyServerURL     = envOr("EMBY_SERVER_URL", "http://localhost:8096")
+	embyAppName       = envOr("EMBY_APP_NAME", "AuthPortal")
+	embyAppVersion    = envOr("EMBY_APP_VERSION", "1.0.0")
+	embyAPIKey        = envOr("EMBY_API_KEY", "")
+	embyOwnerUsername = envOr("EMBY_OWNER_USERNAME", "")
+	embyOwnerID       = envOr("EMBY_OWNER_ID", "")
+)
+
+func embyAuthHeader(clientID string) string {
+	// X-Emby-Authorization: MediaBrowser Client="X", Device="Y", DeviceId="Z", Version="V"
+	return fmt.Sprintf(`MediaBrowser Client="%s", Device="Web", DeviceId="%s", Version="%s"`,
+		embyAppName, clientID, embyAppVersion)
+}
+
+type embyAuthResp struct {
+	AccessToken string `json:"AccessToken"`
+	User        struct {
+		ID   string `json:"Id"`
+		Name string `json:"Name"`
+	} `json:"User"`
+}
+
+type embyUserDetail struct {
+	ID     string `json:"Id"`
+	Name   string `json:"Name"`
+	Policy struct {
+		IsDisabled bool `json:"IsDisabled"`
+	} `json:"Policy"`
+}
+
 type embyProvider struct{}
 
 func (embyProvider) Name() string { return "emby" }
+
+// StartWeb: tell the client to open our own login form popup (/auth/forward?emby=1)
 func (embyProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "provider": "emby", "authUrl": "/auth/forward"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"provider": "emby",
+		"authUrl":  "/auth/forward?emby=1",
+	})
 }
+
+// Forward (GET): render small login form; (POST): authenticate → set cookie → close
 func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8">
+<title>Sign in to Emby</title>
+<body style="font-family:system-ui;padding:2rem;max-width:28rem;margin:auto">
+  <h1 style="font-size:1.25rem;margin:0 0 1rem">Sign in to Emby</h1>
+  <form method="post">
+    <label>Username<br><input name="username" required style="width:100%;padding:.5rem;margin:.25rem 0"></label>
+    <label>Password<br><input type="password" name="password" required style="width:100%;padding:.5rem;margin:.25rem 0"></label>
+    <button type="submit" style="padding:.5rem 1rem;margin-top:.75rem">Sign in</button>
+  </form>
+  <p style="color:#666;margin-top:.75rem">Server: ` + htmlEscape(embyServerURL) + `</p>
+</body>`))
+		return
+	}
+
+	// POST: authenticate with Emby
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+	if username == "" || password == "" {
+		http.Error(w, "missing credentials", http.StatusBadRequest)
+		return
+	}
+
+	clientID := randClientID()
+	auth, err := embyAuthenticate(embyServerURL, clientID, username, password)
+	if err != nil || auth.AccessToken == "" || auth.User.ID == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;padding:2rem"><p>Login failed. Please try again.</p><a href="` + "/auth/forward?emby=1" + `">Back</a></body>`))
+		return
+	}
+
+	// Optional: verify status with API key (recommended)
+	authorized := true
+	if embyAPIKey != "" {
+		detail, derr := embyGetUserDetail(embyServerURL, embyAPIKey, auth.User.ID)
+		if derr != nil {
+			log.Printf("emby detail fetch failed for %s: %v", auth.User.Name, derr)
+			authorized = false // conservative
+		} else {
+			authorized = !detail.Policy.IsDisabled
+		}
+	}
+
+	// Save token & user row
+	sealed, serr := SealToken(auth.AccessToken)
+	if serr != nil {
+		log.Printf("WARN: emby token seal failed: %v", serr)
+	}
+	embyUUID := "emby-" + auth.User.ID
+
+	_, _ = upsertUser(User{
+		Username:   auth.User.Name,
+		Email:      sql.NullString{},            // Emby typically doesn't expose email via this API
+		PlexUUID:   nullStringFrom(embyUUID),    // reuse field for "media uuid"
+		PlexToken:  nullStringFrom(sealed),      // sealed Emby token
+		PlexAccess: authorized,
+	})
+
+	// Session cookie
+	if authorized {
+		_ = setSessionCookie(w, embyUUID, auth.User.Name)
+	} else {
+		_ = setTempSessionCookie(w, embyUUID, auth.User.Name)
+	}
+
+	// Finish popup
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>Emby (Stub)</title>`))
+	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8">
+<title>Signed in — AuthPortal</title>
+<body style="font-family:system-ui;padding:2rem">
+  <h1>Signed in — you can close this window.</h1>
+  <script>
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ ok: true, type: "emby-auth", redirect: "/home" }, window.location.origin);
+      }
+    } catch (e) {}
+    setTimeout(() => { try { window.close(); } catch(e){} }, 600);
+  </script>
+</body>`))
 }
-// Default to false until a real Emby check is implemented.
-func (embyProvider) IsAuthorized(_uuid, _username string) (bool, error) { return false, nil }
+
+func (embyProvider) IsAuthorized(uuid, _username string) (bool, error) {
+	u, err := getUserByUUID(uuid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	// trust DB if we have it
+	if u.PlexAccess {
+		return true, nil
+	}
+	// If owner API key exists, re-check once and cache
+	if embyAPIKey != "" && u.PlexUUID.Valid {
+		id := strings.TrimPrefix(u.PlexUUID.String, "emby-")
+		detail, derr := embyGetUserDetail(embyServerURL, embyAPIKey, id)
+		if derr == nil {
+			ok := !detail.Policy.IsDisabled
+			_ = setUserPlexAccessByUsername(u.Username, ok)
+			return ok, nil
+		}
+	}
+	return false, nil
+}
+
+/************* Emby HTTP helpers *************/
+
+// Authenticate to Emby using Username+Pw (newer) or Username+Password (fallback).
+func embyAuthenticate(serverURL, clientID, username, password string) (embyAuthResp, error) {
+	trim := strings.TrimRight(serverURL, "/")
+
+	// 1) Try "Pw"
+	out, err := embyAuthAttempt(trim, clientID, map[string]string{
+		"Username": username,
+		"Pw":       password,
+	})
+	if err == nil && out.AccessToken != "" && out.User.ID != "" {
+		return out, nil
+	}
+
+	// 2) Fallback "Password"
+	return embyAuthAttempt(trim, clientID, map[string]string{
+		"Username": username,
+		"Password": password,
+	})
+}
+
+// Single HTTP attempt for Emby auth.
+func embyAuthAttempt(serverURL, clientID string, body map[string]string) (embyAuthResp, error) {
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, serverURL+"/Users/AuthenticateByName", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Emby-Authorization", embyAuthHeader(clientID))
+
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return embyAuthResp{}, err
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return embyAuthResp{}, fmt.Errorf("emby auth %d: %s", resp.StatusCode, string(raw))
+	}
+
+	var out embyAuthResp
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return embyAuthResp{}, fmt.Errorf("emby auth decode failed: %w", err)
+	}
+	return out, nil
+}
+
+func embyGetUserDetail(serverURL, apiKey, userID string) (embyUserDetail, error) {
+	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(serverURL, "/")+"/Users/"+url.PathEscape(userID), nil)
+	if apiKey != "" {
+		req.Header.Set("X-Emby-Token", apiKey)
+	}
+	// Without API key this may 401; the caller handles that.
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return embyUserDetail{}, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return embyUserDetail{}, fmt.Errorf("emby user %d", resp.StatusCode)
+	}
+	var out embyUserDetail
+	if json.Unmarshal(raw, &out) != nil {
+		return embyUserDetail{}, fmt.Errorf("emby user decode failed")
+	}
+	return out, nil
+}
+
+/************* tiny util *************/
+func htmlEscape(s string) string {
+	repl := strings.NewReplacer(
+		`&`, "&amp;",
+		`<`, "&lt;",
+		`>`, "&gt;",
+		`"`, "&quot;",
+		`'`, "&#39;",
+	)
+	return repl.Replace(s)
+}
