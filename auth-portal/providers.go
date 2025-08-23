@@ -352,8 +352,10 @@ var (
 	embyOwnerID       = envOr("EMBY_OWNER_ID", "")
 )
 
+// Build the MediaBrowser auth header used by Emby
 func embyAuthHeader(clientID string) string {
-	// X-Emby-Authorization: MediaBrowser Client="X", Device="Y", DeviceId="Z", Version="V"
+	// Example:
+	// MediaBrowser Client="AuthPortal", Device="Web", DeviceId="<uuid>", Version="1.0.0"
 	return fmt.Sprintf(`MediaBrowser Client="%s", Device="Web", DeviceId="%s", Version="%s"`,
 		embyAppName, clientID, embyAppVersion)
 }
@@ -511,30 +513,41 @@ func (embyProvider) IsAuthorized(uuid, _username string) (bool, error) {
 
 // Authenticate to Emby using Username+Pw (newer) or Username+Password (fallback).
 func embyAuthenticate(serverURL, clientID, username, password string) (embyAuthResp, error) {
-	trim := strings.TrimRight(serverURL, "/")
-
-	// 1) Try "Pw"
-	out, err := embyAuthAttempt(trim, clientID, map[string]string{
+	base := strings.TrimRight(serverURL, "/")
+	// 1) Try Username + Pw (most common)
+	if out, err := embyAuthAttempt(base, clientID, map[string]string{
 		"Username": username,
 		"Pw":       password,
-	})
-	if err == nil && out.AccessToken != "" && out.User.ID != "" {
+	}); err == nil && out.AccessToken != "" && out.User.ID != "" {
 		return out, nil
 	}
-
-	// 2) Fallback "Password"
-	return embyAuthAttempt(trim, clientID, map[string]string{
+	// 2) Fallback Username + Password
+	return embyAuthAttempt(base, clientID, map[string]string{
 		"Username": username,
 		"Password": password,
 	})
 }
 
-// Single HTTP attempt for Emby auth.
-func embyAuthAttempt(serverURL, clientID string, body map[string]string) (embyAuthResp, error) {
+// Single HTTP attempt for Emby auth. Adds ?format=json and sends both Authorization headers.
+func embyAuthAttempt(baseURL, clientID string, body map[string]string) (embyAuthResp, error) {
 	b, _ := json.Marshal(body)
-	req, _ := http.NewRequest(http.MethodPost, serverURL+"/Users/AuthenticateByName", bytes.NewReader(b))
+	// Some Emby deployments require ?format=json to ensure JSON content/response.
+	loginURL := baseURL + "/Users/AuthenticateByName?format=json"
+
+	req, _ := http.NewRequest(http.MethodPost, loginURL, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Authorization", embyAuthHeader(clientID))
+	req.Header.Set("Accept", "application/json")
+
+	authHdr := embyAuthHeader(clientID)
+	// Send both — different versions/reverse proxies look for one or the other.
+	req.Header.Set("X-Emby-Authorization", authHdr)
+	req.Header.Set("Authorization", authHdr)
+
+	// (Optional niceties; harmless if ignored by server)
+	req.Header.Set("X-Emby-Client", embyAppName)
+	req.Header.Set("X-Emby-Device-Name", "Web")
+	req.Header.Set("X-Emby-Device-Id", clientID)
+	req.Header.Set("X-Emby-Client-Version", embyAppVersion)
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
@@ -544,7 +557,8 @@ func embyAuthAttempt(serverURL, clientID string, body map[string]string) (embyAu
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return embyAuthResp{}, fmt.Errorf("emby auth %d: %s", resp.StatusCode, string(raw))
+		// Bubble up a descriptive error so your popup shows a useful message if needed.
+		return embyAuthResp{}, fmt.Errorf("emby auth %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
 	var out embyAuthResp
