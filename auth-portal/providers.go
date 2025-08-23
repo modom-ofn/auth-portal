@@ -408,7 +408,7 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	  <meta name="viewport" content="width=device-width, initial-scale=1" />
 	  <link rel="stylesheet" href="/static/styles.css" />
 	</head>
-	<body>
+	<body class="bg">
 	  <main class="container" style="max-width:28rem;margin:2rem auto">
 		<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
 		  <img src="/static/emby.svg" alt="Emby" width="24" height="24" />
@@ -465,7 +465,7 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		  <meta name="viewport" content="width=device-width, initial-scale=1" />
 		  <link rel="stylesheet" href="/static/styles.css" />
 		</head>
-		<body>
+		<body class="bg">
 		  <main class="container" style="max-width:28rem;margin:2rem auto">
 			<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
 			  <img src="/static/emby.svg" alt="Emby" width="24" height="24" />
@@ -545,7 +545,7 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8">
 	<title>Signed in — AuthPortal</title>
 	<link rel="stylesheet" href="/static/styles.css" />
-	<body>
+	<body class="bg">
 	  <main class="container" style="max-width:28rem;margin:2rem auto">
 		<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
 		  <img src="/static/emby.svg" alt="Emby" width="24" height="24" />
