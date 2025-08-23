@@ -63,8 +63,8 @@ type plexResource struct {
 }
 
 // GET JSON with standard Plex headers
-func plexGetJSON(url, token string, out any) error {
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
+func plexGetJSON(u, token string, out any) error {
+	req, _ := http.NewRequest(http.MethodGet, u, nil)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", token)
 	// Friendly identification (optional)
@@ -80,36 +80,12 @@ func plexGetJSON(url, token string, out any) error {
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		s := strings.TrimSpace(string(body))
-		if len(s) > 200 { s = s[:200] + "…" }
-		return fmt.Errorf("plex %s -> %d: %s", url, resp.StatusCode, s)
+		if len(s) > 200 {
+			s = s[:200] + "…"
+		}
+		return fmt.Errorf("plex %s -> %d: %s", u, resp.StatusCode, s)
 	}
 	return json.Unmarshal(body, out)
-}
-
-// Does this token's account see the configured server?
-func plexUserHasServer(token string) (bool, error) {
-	url := "https://plex.tv/api/resources?includeHttps=1"
-	var devices []plexResource
-	if err := plexGetJSON(url, token, &devices); err != nil {
-		return false, err
-	}
-
-	mid := strings.TrimSpace(plexServerMachineID)
-	sname := strings.TrimSpace(plexServerName)
-
-	for _, d := range devices {
-		// "provides" is a comma-separated string; we only care about "server"
-		if !strings.Contains(strings.ToLower(d.Provides), "server") {
-			continue
-		}
-		if mid != "" && strings.EqualFold(d.ClientIdentifier, mid) {
-			return true, nil
-		}
-		if sname != "" && strings.EqualFold(d.Name, sname) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // plexAccountID returns the numeric/string id for the token's account.
@@ -211,7 +187,7 @@ func plexFetchUser(token string) (plexUser, error) {
 	return u, nil
 }
 
-// plexUserHasServer: true if user's token can see configured server in /resources
+// plexUserHasServer: true if user's token can see configured server in /resources (v2)
 func plexUserHasServer(userToken string) (bool, error) {
 	if userToken == "" {
 		return false, nil
@@ -349,7 +325,7 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		sealedToken = ""
 	}
 
-	// 4) Check authorization: can *this user* see your server in /resources?
+	// 4) Check authorization
 	authorized := false
 	if strings.TrimSpace(plexServerMachineID) != "" || strings.TrimSpace(plexServerName) != "" {
 		if ok, _ := plexUserHasServer(token); ok {
@@ -367,12 +343,12 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	_, _ = upsertUser(User{
 		Username:    username,
 		Email:       nullStringFrom(email),
-		MediaUUID:   nullStringFrom(fmt.Sprintf("plex-%d", user.ID)),
+		MediaUUID:   nullStringFrom(mediaUUID),
 		MediaToken:  nullStringFrom(sealedToken),
 		MediaAccess: authorized,
 	})
 
-	// 6) Session + finish page stays as you had it...
+	// 6) Session + finish page
 	if authorized {
 		_ = setSessionCookie(w, mediaUUID, username)
 	} else {
@@ -418,7 +394,7 @@ func (plexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 		Debugf("plex: server visibility check failed: %v", err)
 	}
 
-	// 2) Fallback: if we have an owner token, consider the owner always authorized
+	// 2) Fallback: owner token match
 	if strings.TrimSpace(plexOwnerToken) != "" {
 		usrID, e1 := plexAccountID(userToken)
 		ownID, e2 := plexAccountID(plexOwnerToken)
@@ -430,7 +406,6 @@ func (plexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 
 	return false, nil
 }
-
 
 /* =======================================================
  *                        EMBY
@@ -585,7 +560,6 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional: verify status with API key (recommended)
 	// Decide authorization
 	authorized := true
 	if embyAPIKey != "" {
@@ -611,7 +585,7 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	// Persist (media_* fields)
 	_, _ = upsertUser(User{
 		Username:    auth.User.Name,
-		Email:       sql.NullString{},           // Emby typically doesn’t return email here
+		Email:       sql.NullString{}, // Emby typically doesn’t return email here
 		MediaUUID:   nullStringFrom(mediaUUID),
 		MediaToken:  nullStringFrom(sealedToken),
 		MediaAccess: authorized,
@@ -819,7 +793,6 @@ func embyGetUserDetail(serverURL, apiKey, userID string) (embyUserDetail, error)
 	}
 	return out, nil
 }
-
 
 /************* tiny util *************/
 func htmlEscape(s string) string {
