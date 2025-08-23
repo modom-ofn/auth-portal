@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -228,19 +229,60 @@ func hasValidSession(r *http.Request) bool {
 // ---------- CSRF-lite for state-changing routes ----------
 func requireSameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		// Allow safe methods
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
 			next.ServeHTTP(w, r)
 			return
 		}
+
+		// Expected origins: (1) from APP_BASE_URL (if set), (2) from request (proxy-aware)
+		allowed := make(map[string]struct{}, 2)
+
+		// (1) APP_BASE_URL origin
+		if u, err := url.Parse(appBaseURL); err == nil && u.Scheme != "" && u.Host != "" {
+			origin := strings.ToLower(u.Scheme + "://" + u.Host)
+			allowed[origin] = struct{}{}
+		}
+
+		// (2) origin derived from request / proxy headers
+		proto := r.Header.Get("X-Forwarded-Proto")
+		host := r.Header.Get("X-Forwarded-Host")
+		if host == "" {
+			host = r.Host
+		}
+		if proto == "" {
+			if r.TLS != nil {
+				proto = "https"
+			} else {
+				proto = "http"
+			}
+		}
+		reqOrigin := strings.ToLower(proto + "://" + host)
+		allowed[reqOrigin] = struct{}{}
+
+		// Helper to compare only scheme://host[:port]
+		matchesAllowed := func(hdr string) bool {
+			if hdr == "" {
+				return false
+			}
+			u, err := url.Parse(hdr)
+			if err != nil || u.Scheme == "" || u.Host == "" {
+				return false
+			}
+			got := strings.ToLower(u.Scheme + "://" + u.Host)
+			_, ok := allowed[got]
+			return ok
+		}
+
 		origin := r.Header.Get("Origin")
 		referer := r.Header.Get("Referer")
-		allowed := (origin != "" && strings.HasPrefix(origin, appBaseURL)) ||
-			(referer != "" && strings.HasPrefix(referer, appBaseURL))
-		if !allowed {
-			http.Error(w, "CSRF check failed", http.StatusForbidden)
+
+		if matchesAllowed(origin) || matchesAllowed(referer) {
+			next.ServeHTTP(w, r)
 			return
 		}
-		next.ServeHTTP(w, r)
+
+		http.Error(w, "CSRF check failed", http.StatusForbidden)
 	})
 }
 
