@@ -1,36 +1,28 @@
-# AuthPortal
+# AuthPortal (dev-r2)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Go Version](https://img.shields.io/badge/Go-1.23.10%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 
-**AuthPortal** is a lightweight, self-hosted authentication gateway for Plex users.
-It reproduces Overseerr’s clean popup login (no code entry), stores the Plex token, and issues a secure session cookie for your intranet portal. It now differentiates between:
+**AuthPortal** is a lightweight, self-hosted authentication gateway for Plex or Emby users.
+It reproduces Overseerr’s clean popup login (no code entry), stores the media server user token, and issues a secure session cookie for your intranet portal. It now differentiates between:
 
-- ✅ Authorized Plex users → directed to the authorized home page.
-- 🚫 Unauthorized Plex users → shown the restricted home page.
+- ✅ Authorized Media Server users → directed to the authorized home page.
+- 🚫 Unauthorized Media Server users → shown the restricted home page.
 
-**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc.”.**
+**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc. or Emby LLC.”.**
 
 It can optionally be expanded to include LDAP integration for downstream app requirements.
 
 👉 Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
 👉 GitHub Repo: https://github.com/modom-ofn/auth-portal
 
-<img width="1147" height="804" alt="auth-portal-login" src="https://github.com/user-attachments/assets/69c8ebad-fd1a-4433-afed-6e929db8b354" />
-
-<img width="642" height="838" alt="auth-portal-signin" src="https://github.com/user-attachments/assets/368f2370-dba3-4a82-b328-e501d4356708" />
-
-<img width="649" height="393" alt="plex-authorized-portal" src="https://github.com/user-attachments/assets/b720766b-49ee-41d9-b223-d6d8bf3e615c" />
-
-<img width="654" height="386" alt="plex-unauthorized-portal" src="https://github.com/user-attachments/assets/4cec68b5-b543-4590-9258-75072d28fb16" />
-
 ---
 
 ## ✨ Features
 
-- 🔐 **Plex popup login** (no `plex.tv/link` code entry)
+- 🔐 **Popup login**
 - 🎨 Overseerr-style dark UI with gradient hero and branded button
 - 🍪 Signed, HTTP-only session cookie
 - 🐳 Single binary, fully containerized
@@ -39,12 +31,135 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ---
 
-## 🚀 Deploy with Docker Compose
+**Plex Portal Page**
 
+<img width="655" height="373" alt="image" src="https://github.com/user-attachments/assets/06fa43ba-dda9-4b79-968e-723606d81ce2" />
 
-### **Docker Compose Full Stack **
-Use the following docker compose for a full stack setup (postgres, auth-portal, openldap, ldap-sync, phpldapadmin). 
-Using `--profile ldap` adds OpenLDAP, sync job, and phpLDAPadmin for downstream LDAP clients.
+**Plex Login Popup**
+
+<img width="745" height="584" alt="image" src="https://github.com/user-attachments/assets/5790b7ce-030f-49d2-8c7e-55d29c69ff60" />
+
+**Plex Authorized Page**
+
+<img width="652" height="396" alt="image" src="https://github.com/user-attachments/assets/99783a41-f9d1-4b9f-ae76-74e9b8c70628" />
+
+**Plex Unauthorized Page**
+
+<img width="648" height="422" alt="image" src="https://github.com/user-attachments/assets/d8f8295d-b2ea-4938-8006-009d6cb7114d" />
+
+**Emby Portal Page**
+
+<img width="657" height="376" alt="image" src="https://github.com/user-attachments/assets/a6f36e0b-75b6-44bd-8858-172497491baa" />
+
+**Emby Login Popup**
+
+<img width="571" height="384" alt="image" src="https://github.com/user-attachments/assets/7180c938-34eb-4f18-8ed9-47dba23f97a7" />
+
+**Emby Authorized Page**
+
+<img width="657" height="401" alt="image" src="https://github.com/user-attachments/assets/93c24488-d6b0-483f-80f8-5a57c36dc1a6" />
+
+---
+
+## Table of Contents
+
+- [What’s New in dev-r2](#whats-new-in-dev-r2)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+  - [Plex](#plex)
+  - [Emby](#emby)
+- [Providers (Plex / Emby)](#providers-plex--emby)
+- [Security Notes](#security-notes)
+- [Database & Migration](#database--migration)
+- [Build & Images](#build--images)
+- [Logging](#logging)
+- [HTTP Routes](#http-routes)
+- [Frontend Bits](#frontend-bits)
+- [How it works](#how-it-works)]
+- [Customization](#customization)]
+- [Security best practices](#security-best-practices)]
+- [Project structure](#project-structure)]
+- [Contributing](#contributing)]
+- [License](#license)
+
+---
+
+## What’s New in dev-r2
+
+- **Media-agnostic user model**  
+  DB columns renamed:
+  - `plex_uuid → media_uuid`
+  - `plex_token → media_token`
+  - `plex_access → media_access`
+
+- **Token sealing at rest**  
+  Access tokens are encrypted (sealed) using `DATA_KEY` before persistence; unsealed only when needed.
+
+- **Robust popup login flow**  
+  Unified `static/login.js` supports **Plex** (PIN flow) and **Emby** (embedded popup form). Works with popup blockers by opening a placeholder synchronously.
+
+- **Provider abstraction**  
+  Common `MediaProvider` interface with `StartWeb`, `Forward`, and `IsAuthorized`.
+
+- **Consistent styling/branding**  
+  Emby popup page uses the existing `static/styles.css` and minimal inline spacing to match Plex look/feel.
+
+- **Security hardening**  
+  Global security headers; popup pages set a scoped CSP; optional HSTS when `APP_BASE_URL` is HTTPS.
+
+- **Logout CSRF protection**  
+  Same-origin check on POST `/logout`. Orphaned sessions no longer redirect-loop.
+
+- **Configurable logging**  
+  App and Postgres logging controlled via env (`LOG_LEVEL` / `log_level`).
+
+- **Modern toolchain**  
+  Go `1.23.10` on `alpine:3.21`; Dockerfile avoids VCS stalls and emits verbose build steps.
+
+---
+
+## Quick Start
+
+1) **.env**
+
+```env
+POSTGRES_PASSWORD=change-me-long-random
+SESSION_SECRET=change-me-32+chars-random
+APP_BASE_URL=http://localhost:8089
+
+# Choose: plex or emby
+MEDIA_SERVER=plex
+
+# App logging (INFO default): DEBUG | INFO | WARN | ERROR
+LOG_LEVEL=INFO
+
+# Force 'Secure' cookie (set to 1 in TLS/prod)
+FORCE_SECURE_COOKIE=0
+
+# 32-byte base64 key: openssl rand -base64 32
+DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
+
+# LDAP (optional; only if using the ldap profile)
+LDAP_ADMIN_PASSWORD=change-me-strong
+
+# Plex
+PLEX_OWNER_TOKEN=
+PLEX_SERVER_MACHINE_ID=
+PLEX_SERVER_NAME=
+
+# Emby
+EMBY_SERVER_URL=http://localhost:8096
+EMBY_APP_NAME=AuthPortal
+EMBY_APP_VERSION=1.0.0
+EMBY_API_KEY=
+EMBY_OWNER_USERNAME=
+EMBY_OWNER_ID=
+
+# Postgres logging (reused by compose command)
+log_level=INFO
+```
+
+2) **docker-compose.yaml**
 
 ```yaml
 version: "3.9"
@@ -57,6 +172,32 @@ services:
       POSTGRES_DB: authportaldb
       POSTGRES_USER: authportal
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
+      # reuse same flag as app
+      log_level: ${log_level:-INFO}
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        case "${log_level:-INFO}" in
+          DEBUG|debug)
+            EXTRA="-c log_min_messages=debug1 -c log_connections=on -c log_disconnections=on -c log_destination=stderr"
+            ;;
+          INFO|info)
+            EXTRA="-c log_min_messages=info -c log_destination=stderr"
+            ;;
+          WARN|warn|WARNING|warning)
+            EXTRA="-c log_min_messages=warning -c log_destination=stderr"
+            ;;
+          ERROR|error)
+            EXTRA="-c log_min_messages=error -c log_destination=stderr"
+            ;;
+          *)
+            EXTRA="-c log_min_messages=warning -c log_destination=stderr"
+            ;;
+        esac
+        # IMPORTANT: call the official entrypoint so initdb still runs on first boot
+        exec docker-entrypoint.sh postgres $EXTRA
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -67,18 +208,34 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:dev
+    image: modomofn/auth-portal:dev-r2
     ports:
       - "8089:8080"
     environment:
+      # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
+      FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
+      MEDIA_SERVER: ${MEDIA_SERVER:-plex}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
-      # Optional (recommended for server-authorization checks):
+
+      # Plex
       PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}
       PLEX_SERVER_MACHINE_ID: ${PLEX_SERVER_MACHINE_ID:-}
       PLEX_SERVER_NAME: ${PLEX_SERVER_NAME:-}
+
+      # Emby (quick connect coming soon)
+      EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
+      EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-1.0.0}
+      # EMBY_QUICKCONNECT: ${EMBY_QUICKCONNECT:-}
+      EMBY_API_KEY: ${EMBY_API_KEY:-}
+      EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
+      EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,71 +307,186 @@ volumes:
 networks:
   authnet:
 ```
-Create a .env next to it:
-```txt
-POSTGRES_PASSWORD=change-me-long-random
-SESSION_SECRET=change-me-32+chars-random
-APP_BASE_URL=http://localhost:8089
 
-# Set 'FORCE_SECURE_COOKIE=1' in prod; Nginx should set 'X-Forwarded-Proto: https' anyway.
-FORCE_SECURE_COOKIE=0
-
-# Generate a strong 32-byte key, base64-encoded 'openssl rand -base64 32'
-DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
-
-# LDAP (if using the ldap profile)
-LDAP_ADMIN_PASSWORD=change-me-strong
-
-# Authz (optional but recommended)
-PLEX_OWNER_TOKEN=plxxxxxxxxxxxxxxxxxxxx
-# Either set machine id or a server name (machine id wins if both present)
-PLEX_SERVER_MACHINE_ID=
-PLEX_SERVER_NAME=
-```
-Run core only:
+3) **Run**
 ```bash
-docker compose up -d
+docker compose up -d --build
+# Visit http://localhost:8089
 ```
-Run with LDAP stack:
+
+*Run with LDAP stack:*
 ```bash
-docker compose --profile ldap up -d
+docker compose --profile ldap up -d --build
+# Visit http://localhost:8089
 ```
-**Open:** http://localhost:8089
+
+## Configuration
+
+- `APP_BASE_URL` — external URL users hit (drives redirects & cookie flags). Use HTTPS in production.
+- `MEDIA_SERVER` — `plex` or `emby`.
+- `SESSION_SECRET` — HMAC secret for JWT cookie (required).
+- `DATA_KEY` — base64 32-byte key for sealing tokens at rest (required).
+- `LOG_LEVEL` / `log_level` — `DEBUG`, `INFO`, `WARN`, or `ERROR`.
+- `FORCE_SECURE_COOKIE` — set to 1 to force Secure on cookies (behind TLS/ingress).
+
+### Plex
+
+- `PLEX_SERVER_MACHINE_ID` — preferred; exact machine identifier of your server.
+- `PLEX_SERVER_NAME` — fallback if machine id not set.
+- `PLEX_OWNER_TOKEN` — optional owner token. If configured, the owner account is always authorized (account id match).
+
+### Emby
+
+- `EMBY_SERVER_URL` — e.g., `http://<host>:8096`.
+If Emby runs in Docker, use your host IP from the app container’s perspective (not localhost).
+- `EMBY_API_KEY` — optional; enables stricter authorization checks (`IsDisabled` policy).
+- `EMBY_APP_NAME`, `EMBY_APP_VERSION` — client headers used in requests.
 
 ---
 
-## ⚙️ Configuration
+## Providers (Plex / Emby)
 
-| Variable                 | Required | Default                     | Description                                                                            |
-|--------------------------|---------:|-----------------------------|----------------------------------------------------------------------------------------|
-| `APP_BASE_URL`           |    ✅    | `http://localhost:8089`     | Public URL of this service. If using HTTPS, cookies will be marked `Secure`.           |
-| `SESSION_SECRET`         |    ✅    | _(none)_                    | Long random string for signing the session cookie (HS256).                             |
-| `DATA_KEY`               |    ✅    | _(none)_                    | Strong 32-byte key, base64-encoded 'openssl rand -base64 32'.                          |
-| `POSTGRS_PASSWORD`       |    ✅    | _(none)_                    | Long random string for postgres access password.                                       |
-| `LDAP_ADMIN_PASSWORD`    |    ✅    | _(none)_                    | Long random string for ldap admin password.                                            |
-| `PLEX_OWNER_TOKEN`       |    ✅    | _(none)_                    | Token from Plex server owner; used to validate server membership.                      |
-| `PLEX_SERVER_MACHINE_ID` |    ✅    | _(none)_                    | Machine ID of your Plex server (preferred over name).                                  |
-| `PLEX_SERVER_NAME`       |    ⛔    | _(none)_                    | Optional: Plex server name (used if machine ID not set).                               |
+- **Plex**:
+`StartWeb` creates a PIN and returns the Plex Auth URL → popup opens.
+`Forward` polls the PIN, fetches user info, seals token, decides authorization:
+   1. User token can see configured server in `/api/v2/resources` (match machine id or name), OR
+   2. Owner fallback if `PLEX_OWNER_TOKEN` is set and account ids match.
 
-> Use a **long, random** `SESSION_SECRET` in production. Example generator: https://www.random.org/strings/
+- **Emby**:
+`StartWeb` returns `/auth/forward?emby=1`.
+`Forward` (GET) serves a small login page; (POST) authenticates, seals token, checks `IsDisabled` via `EMBY_API_KEY` if provided, and posts success back to the opener.
 
----
-
-## 🧩 How it works (high level)
-
-1. User clicks **Sign in with Plex** → JS opens `https://app.plex.tv/auth#?...` in a popup.
-- If user is already logged on, redirect to home is automatic
-2. Plex redirects back to your app at `/auth/forward` inside the popup.  
-3. Server exchanges PIN → gets Plex profile → checks if user is authorized on your Plex server.  
-4. Stores only authorized user's profile in DB
-5. Issues signed cookies with variable TTL (5m for unauthorized, 24h for authorized)
-6. Popup closes; opener navigates to:
-- `/home` → Authorized
-- `/restricted` → logged in, but not authorized
+Both providers implement `IsAuthorized(uuid, username)`; success is cached in `media_access`.
 
 ---
 
-## 🖼️ Customization
+## Security Notes
+
+- Token sealing: tokens are encrypted with `DATA_KEY` before DB insert/update. Unseal on read; failures clear the in-memory token.
+- Cookies: JWT in HTTP-only, SameSite=Lax cookie. `Secure` is enabled automatically when `APP_BASE_URL` is HTTPS, or force with `FORCE_SECURE_COOKIE=1`.
+- CSRF-lite: POST routes like /logout require same-origin via Origin/Referer.
+- Headers:
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
+  Popup pages set a narrowed CSP that allows the tiny inline closing script.
+
+---
+
+## Database & Migration
+
+### Users table (dev-r2):
+```sql
+id BIGSERIAL PRIMARY KEY,
+username     TEXT UNIQUE NOT NULL,
+email        TEXT NULL,
+media_uuid   TEXT UNIQUE,
+media_token  TEXT NULL,
+media_access BOOLEAN NOT NULL DEFAULT FALSE,
+created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+### Indexes:
+```sql
+CREATE INDEX IF NOT EXISTS idx_users_username    ON users (username);
+CREATE INDEX IF NOT EXISTS idx_users_media_uuid  ON users (media_uuid);
+```
+### Plex PINs table (unchanged):
+```sql
+CREATE TABLE IF NOT EXISTS pins (
+  code       TEXT PRIMARY KEY,
+  pin_id     INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+### Migration (rename legacy columns):
+```sql
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='users' AND column_name='plex_uuid') THEN
+    ALTER TABLE users RENAME COLUMN plex_uuid TO media_uuid;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='users' AND column_name='plex_token') THEN
+    ALTER TABLE users RENAME COLUMN plex_token TO media_token;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='users' AND column_name='plex_access') THEN
+    ALTER TABLE users RENAME COLUMN plex_access TO media_access;
+  END IF;
+END $$;
+```
+
+---
+
+## Build & Images
+
+- Go: `1.23.10` on `alpine:3.21`.
+- Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.23`, builds with:
+    - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
+- Runtime: `alpine:3.21`, installs CA certs + tzdata, runs as non-root `uid 10001`.
+
+---
+
+## Logging
+
+- **App**: `LOG_LEVEL=DEBUG|INFO|WARN|ERROR`.
+  Examples:
+```pgsql
+  DEBUG emby/auth POST http://<server>/Users/AuthenticateByName?format=json
+WARN  emby/auth HTTP 401 body="..."
+DEBUG plex: resources match via machine id
+```
+- **Postgres**: `log_level` maps to server params:
+  - `DEBUG` → `log_min_messages=debug1`, connection/disconnection logging on
+  - `INFO` → `log_min_messages=info`
+  - `WARN` → `log_min_messages=warning`
+  - `ERROR` → `log_min_messages=error`
+
+---
+
+## HTTP Routes
+
+- `GET /` — login page (auto-redirects to /home if session present)
+- `POST /auth/start-web` — returns JSON `{ authUrl }` (Plex), or the JS falls back to `/auth/forward?emby=1`
+- `GET|POST /auth/forward` — popup finisher
+  - Plex: completes PIN polling, closes popup
+  - Emby: GET → form; POST → authenticate and close
+- `GET /me` — JSON: `{ username, uuid }` if logged in
+- `GET /home` — portal; server evaluates `IsAuthorized` to render Authorized/Unauthorized
+- `POST /logout` — clears cookie; same-origin required
+- `GET /healthz` — health check
+- `GET /static/*` — static assets
+
+---
+
+## Frontend Bits
+
+- **Styles**: uses your existing static/styles.css.
+- **Login script**: `static/login.js`
+  - Opens a placeholder popup synchronously on click, then navigates it (prevents popup blockers).
+  - Accepts `postMessage` types: `plex-auth`, `emby-auth`, `auth-portal`.
+  - Falls back to full-page navigation if popup is blocked/closed.
+  - Binds robustly whether the script loads before or after the DOM.
+- Ensure your login button is recognizable by the script (e.g., `id="auth-signin"`, `[data-auth-signin]`, `.auth-signin`, or legacy `#startBtn`).
+
+---
+
+## How it works
+*High-level*
+
+1. User clicks **Sign in with Plex/Emby** → JS opens auth flow in a popup.
+    - If user is already logged on, redirect to home is automatic
+3. Media server redirects back to your app at `/auth/forward` inside the popup.  
+4. Server exchanges auth → gets media server profile → checks if user is authorized on your media server.  
+5. Stores only authorized user's profile in DB
+6. Issues signed cookies with variable TTL (5m for unauthorized, 24h for authorized)
+7. Popup closes; opener navigates to:
+    - `/home` → Authorized
+    - `/restricted` → logged in, but not authorized
+
+---
+
+## Customization
 
 - **Hero background:** put your image at `static/bg.jpg` (1920×1080 works great).  
 - **Logo:** in `templates/login.html`, swap the inline SVG for your logo.  
@@ -224,23 +496,7 @@ docker compose --profile ldap up -d
 
 ---
 
-## 🧑‍💻 Local development
-
-```bash
-go run .
-
-# visit http://localhost:8080
-```
-
-With Docker Compose:
-```bash
-docker compose up -dark
-# visit http://localhost:8089
-```
-
----
-
-## 🔒 Security best practices
+## Security best practices
 
 - Put AuthPortal behind **HTTPS** (e.g., Caddy / NGINX / Traefik).
 - Set strong `SESSION_SECRET` and DB credentials.
@@ -249,7 +505,7 @@ docker compose up -dark
 
 ---
 
-## 📂 Project structure
+## Project structure
 
 ```
 .
@@ -267,7 +523,9 @@ docker compose up -dark
 │   ├── Dockerfile
 │   ├── go.mod
 │   ├── handlers.go
+│   ├── logging.go
 │   ├── main.go
+│   ├── providers.go
 │   ├── store.go
 │   ├── LICENSE
 │   ├── README.md
@@ -288,68 +546,15 @@ docker compose up -dark
 
 ---
 
-## 🧑‍💻 Items in the backlog
-
-- ✅ (8/19/2025) Add container image to docker hub
-- ✅ (8/19/2025) Security Hardening
-- Authentication flow robustness
-- App & backend reliability
-- Database & data management improvements
-- Container & runtime hardening
-- UX polish
-- LDAP / directory optimization
-- Scale & deploy optimization
-
----
-
-## 🤝 Contributing
+##  Contributing
 
 Issues and PRs welcome:  
 https://github.com/modom-ofn/auth-portal/issues
 
 ---
 
-## 🧩 Current Dev Release Notes
-
-### 🔒 Authentication & Authorization
-
-- **Authorized Users Only**: Strengthened logic so that only users who successfully authenticate via Plex OAuth are inserted into the database. Unauthorized or partially authenticated attempts no longer create placeholder/null user records.
-
-### 🍪 Session Management
-
-- **Session Cookie TTL**: Introduced explicit `MaxAge` for session cookies (86400 seconds / 24 hours). This ensures sessions expire predictably and stale cookies cannot linger indefinitely.
-- **Secure Defaults**: Session cookies are set with `HttpOnly` and `SameSite=Lax` for improved protection against XSS and CSRF.
-
-### 🔐 Security & Token Management
-
-- **Encrypted Plex tokens**: User Plex tokens are now sealed before being stored in the database using XChaCha20-Poly1305 encryption with a derived key from `DATA_KEY`.
-- **DATA_KEY required**: The application enforces a secret environment variable (`DATA_KEY`) at startup. This ensures all tokens are encrypted consistently.
-- **Key management note**: Changing `DATA_KEY` will invalidate previously stored tokens (users will be prompted to re-authenticate).
-
-### 🔄 Schema Changes
-
-- `updated_at` **column**: Added `TIMESTAMPTZ NOT NULL DEFAULT now()`, ensuring consistent timestamp tracking. Existing tables are migrated so that `UPDATE` statements no longer fail due to a missing column.
-- **Primary key upgrade**: Switched `id` to `BIGSERIAL` for future-proof scalability.
-
-### ⚡ UPSERT Logic Improvements
-
-- **UUID Path**: If a `plex_uuid` is present, it is now used as the natural key (`ON CONFLICT (plex_uuid)`), ensuring reliable identification of users.
-- **Username Path**: In the absence of a `plex_uuid`, we key on `username` and later backfill plex_uuid once known, maintaining continuity across updates.
-- **No Blank Overwrites**: Applied `NULLIF($x, '')` and `COALESCE(NULLIF(EXCLUDED.col,''), users.col)` to prevent empty strings from unintentionally overwriting valid data.
-
-### 🛠️ Data Integrity Fixes
-
-- **Argument Order**: Corrected mismatched `INSERT` placeholders. Previous versions risked inserting values into incorrect columns, which could corrupt user records.
-
-### ⏱️ Timestamps
-
-- **Automatic updates**: Every `UPDATE` now sets `updated_at = now()`, ensuring auditability and consistency in data tracking.
-
-
----
-
-## 📜 License
+##  License
 
 GPL-3.0 — https://opensource.org/license/lgpl-3-0
 
-**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc.”.**
+**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc. or Emby LLC.”.**
