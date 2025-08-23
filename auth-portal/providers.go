@@ -1,4 +1,3 @@
-// auth-portal/providers.go  (drop-in)
 package main
 
 import (
@@ -14,6 +13,7 @@ import (
 	"time"
 )
 
+/************* Provider interface *************/
 type MediaProvider interface {
 	Name() string
 	StartWeb(w http.ResponseWriter, r *http.Request)
@@ -78,7 +78,6 @@ func plexCreatePin(clientID string) (plexPinResponse, error) {
 }
 
 func plexAuthURL(clientID, code, forward string) string {
-	// Include forwardUrl so Plex comes back to /auth/forward on your app.
 	return fmt.Sprintf(
 		"https://app.plex.tv/auth#?clientID=%s&code=%s&forwardUrl=%s&context[device][product]=AuthPortal&context[device][version]=1.0.0&context[device][platform]=Web&context[device][device]=Web",
 		url.QueryEscape(clientID),
@@ -92,7 +91,7 @@ type plexProvider struct{}
 
 func (plexProvider) Name() string { return "plex" }
 
-// StartWeb: create PIN -> return auth URL (JSON and/or redirect) so the popup goes to Plex.
+// IMPORTANT: return { authUrl: ... } (camelCase) for dev-r2 login.js
 func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	clientID := r.Header.Get("X-Client-Id")
 	if clientID == "" {
@@ -107,21 +106,17 @@ func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	}
 	authURL := plexAuthURL(clientID, pin.Code, forward)
 
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "text/html") || r.URL.Query().Get("redirect") == "1" || r.FormValue("redirect") == "1" {
+	// Some UIs prefer a 302 redirect; we keep JSON by default because your JS expects it.
+	if r.URL.Query().Get("redirect") == "1" || r.FormValue("redirect") == "1" {
 		http.Redirect(w, r, authURL, http.StatusFound)
 		return
 	}
 
-	// Be generous with keys to match various UIs.
+	// KEY: authUrl (camelCase) to satisfy static/login.js in dev-r2
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"provider":   "plex",
-		"url":        authURL,
-		"auth_url":   authURL,
-		"redirect":   authURL,
-		"location":   authURL,
-		"forwardUrl": forward,
+		"authUrl":    authURL,  // <- EXACT NAME EXPECTED BY THE JS
 		"pin_id":     pin.ID,
 		"pin_code":   pin.Code,
 		"client_id":  clientID,
@@ -129,12 +124,10 @@ func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Forward: if called *before* Plex (e.g., your UI opened this first), redirect to Plex.
-// If called *after* Plex (referer is app.plex.tv), show a tiny page that notifies the opener and closes.
 func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	referer := strings.ToLower(r.Header.Get("Referer"))
 	if !strings.Contains(referer, "app.plex.tv") {
-		// Not coming from Plex yet → kick off auth here so the popup isn't blank.
+		// If the popup hits /auth/forward before Plex, bootstrap by sending it to Plex.
 		clientID := randClientID()
 		forward := strings.TrimRight(appBaseURL, "/") + "/auth/forward"
 		pin, err := plexCreatePin(clientID)
@@ -146,7 +139,7 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Coming back from Plex → allow inline script on this one page.
+	// Coming back from Plex → relax CSP so inline script can run once.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -156,10 +149,10 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 <body style="font-family:system-ui;padding:2rem">
   <h1>Signing you in…</h1>
   <script>
-    // Let the opener know the Plex UI finished; your app can now poll the PIN and set a cookie server-side.
     try {
       if (window.opener && !window.opener.closed) {
-        window.opener.postMessage({ ok: true, provider: "plex", source: "auth-forward" }, "*");
+        // Your login.js accepts either {type:"auth-portal"} or {type:"plex-auth"} with ok:true
+        window.opener.postMessage({ ok: true, type: "auth-portal" }, window.location.origin);
       }
     } catch (e) {}
     setTimeout(() => { try { window.close(); } catch(e){} }, 800);
@@ -169,24 +162,21 @@ func (plexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 }
 
 func (plexProvider) IsAuthorized(uuid, username string) (bool, error) {
-	// Your middleware already requires a valid session cookie. Keep this simple for now.
+	// Keep simple for now; your authMiddleware enforces a valid session.
 	return true, nil
 }
 
-/************* Emby (still stubbed) *************/
+/************* Emby (stub) *************/
 type embyProvider struct{}
 
 func (embyProvider) Name() string { return "emby" }
-
 func (embyProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":       true,
 		"provider": "emby",
-		"url":      "/auth/forward",
-		"message":  "Emby login stub; replace with real flow.",
+		"authUrl":  "/auth/forward", // for symmetry with the frontend's authUrl read
 	})
 }
-
 func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
@@ -199,7 +189,4 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
   <p>Placeholder; implement real Emby flow here.</p>
 </body>`))
 }
-
-func (embyProvider) IsAuthorized(uuid, username string) (bool, error) {
-	return true, nil
-}
+func (embyProvider) IsAuthorized(uuid, username string) (bool, error) { return true, nil }
