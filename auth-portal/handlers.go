@@ -6,15 +6,50 @@ import (
 	"errors"
 	"log"
 	"net/http"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	// If they still have an old cookie, we'll let /home resolve it.
-	if hasValidSession(r) {
-		http.Redirect(w, r, "/home", http.StatusFound)
+	// If no session, just show login.
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
 		return
 	}
-	render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+
+	// Parse the JWT so we can check if the user row exists.
+	tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
+		return sessionSecret, nil
+	})
+	if err != nil || !tok.Valid {
+		clearSessionCookie(w)
+		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+		return
+	}
+
+	claims, ok := tok.Claims.(*sessionClaims)
+	if !ok || claims.UUID == "" {
+		clearSessionCookie(w)
+		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+		return
+	}
+
+	// If the DB was wiped (no row), treat the cookie as orphaned: clear & show login.
+	if _, err := getUserByUUID(claims.UUID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			clearSessionCookie(w)
+			render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+			return
+		}
+		// On unexpected DB error, don't redirect-loop; just show login.
+		log.Printf("login orphan check failed for %s: %v", claims.UUID, err)
+		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+		return
+	}
+
+	// Row exists → normal path.
+	http.Redirect(w, r, "/home", http.StatusFound)
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {

@@ -235,13 +235,18 @@ func requireSameOrigin(next http.Handler) http.Handler {
 			return
 		}
 
-		// Expected origins: (1) from APP_BASE_URL (if set), (2) from request (proxy-aware)
+		// Allow /logout explicitly to avoid Origin/Referer edge cases.
+		if r.URL.Path == "/logout" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Build allowed origins set.
 		allowed := make(map[string]struct{}, 2)
 
 		// (1) APP_BASE_URL origin
 		if u, err := url.Parse(appBaseURL); err == nil && u.Scheme != "" && u.Host != "" {
-			origin := strings.ToLower(u.Scheme + "://" + u.Host)
-			allowed[origin] = struct{}{}
+			allowed[strings.ToLower(u.Scheme+"://"+u.Host)] = struct{}{}
 		}
 
 		// (2) origin derived from request / proxy headers
@@ -277,9 +282,17 @@ func requireSameOrigin(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		referer := r.Header.Get("Referer")
 
+		// Accept if either header matches an allowed origin…
 		if matchesAllowed(origin) || matchesAllowed(referer) {
 			next.ServeHTTP(w, r)
 			return
+		}
+		// …or if headers are missing but the request origin itself is allowed.
+		if origin == "" && referer == "" {
+			if _, ok := allowed[reqOrigin]; ok {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 
 		http.Error(w, "CSRF check failed", http.StatusForbidden)
