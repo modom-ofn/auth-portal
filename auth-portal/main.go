@@ -14,13 +14,20 @@ import (
 )
 
 var (
-	db                   *sql.DB
-	tmpl                 *template.Template
-	sessionSecret        = []byte(envOr("SESSION_SECRET", "dev-insecure-change-me"))
-	appBaseURL           = envOr("APP_BASE_URL", "http://localhost:8089")
-	plexOwnerToken       = envOr("PLEX_OWNER_TOKEN", "")
-	plexServerMachineID  = envOr("PLEX_SERVER_MACHINE_ID", "")
-	plexServerName       = envOr("PLEX_SERVER_NAME", "")
+	db                  *sql.DB
+	tmpl                *template.Template
+	sessionSecret       = []byte(envOr("SESSION_SECRET", "dev-insecure-change-me"))
+	appBaseURL          = envOr("APP_BASE_URL", "http://localhost:8089")
+	plexOwnerToken      = envOr("PLEX_OWNER_TOKEN", "")
+	plexServerMachineID = envOr("PLEX_SERVER_MACHINE_ID", "")
+	plexServerName      = envOr("PLEX_SERVER_NAME", "")
+
+	// Provider selected at startup (plex default, emby stub available)
+	currentProvider MediaProvider
+
+	// Session TTLs & flags
+	sessionTTL        = parseDurationOr(os.Getenv("SESSION_TTL"), 24*time.Hour) // authorized sessions
+	forceSecureCookie = os.Getenv("FORCE_SECURE_COOKIE") == "1"                 // force 'Secure' even if APP_BASE_URL is http
 )
 
 func envOr(k, d string) string {
@@ -28,6 +35,17 @@ func envOr(k, d string) string {
 		return v
 	}
 	return d
+}
+
+// Pick the auth provider (plex default)
+func pickProvider() MediaProvider {
+	switch strings.ToLower(envOr("MEDIA_PROVIDER", "plex")) {
+	case "emby":
+		return embyProvider{} // stub; implement later
+	// case "jellyfin": return jellyfinProvider{}
+	default:
+		return plexProvider{}
+	}
 }
 
 func main() {
@@ -51,6 +69,10 @@ func main() {
 	// ---- Templates ----
 	tmpl = template.Must(template.ParseGlob("templates/*.html"))
 
+	// ---- Provider ----
+	currentProvider = pickProvider()
+	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
+
 	// ---- Router ----
 	r := mux.NewRouter()
 
@@ -59,9 +81,14 @@ func main() {
 
 	// Public
 	r.HandleFunc("/", loginPageHandler).Methods("GET")
-	r.HandleFunc("/auth/start-web", startAuthWebHandler).Methods("POST")
-	r.HandleFunc("/auth/forward", forwardHandler).Methods("GET")
-	r.HandleFunc("/logout", logoutHandler).Methods("POST")
+
+	// Provider routes
+	// Plex uses popup flow (StartWeb + Forward). Emby (for now) is stubbed in its provider.
+	r.HandleFunc("/auth/start-web", currentProvider.StartWeb).Methods("POST")
+	r.HandleFunc("/auth/forward", currentProvider.Forward).Methods("GET")
+
+	// Logout (protect with a simple same-origin check)
+	r.Handle("/logout", requireSameOrigin(http.HandlerFunc(logoutHandler))).Methods("POST")
 
 	// Protected
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
@@ -85,16 +112,14 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		// Allow our scripts & inline CSP for /auth/forward response only (that handler sets its own CSP)
+		// Global CSP (the /auth/forward response sets its own relaxed CSP for inline JS)
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; img-src 'self' data: https://plex.tv; style-src 'self' 'unsafe-inline'; script-src 'self'")
 
-		// HSTS only if we’re serving behind HTTPS
+		// HSTS only if base URL is HTTPS or you know you're behind TLS
 		if strings.HasPrefix(strings.ToLower(appBaseURL), "https://") {
-			// one day; tune as needed (e.g., 6 months) when you’re confident
 			w.Header().Set("Strict-Transport-Security", "max-age=86400; includeSubDomains; preload")
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }
@@ -127,62 +152,26 @@ func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl t
 		return err
 	}
 
-	cookie := &http.Cookie{
+	secure := forceSecureCookie || strings.HasPrefix(strings.ToLower(appBaseURL), "https://")
+
+	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    signed,
 		Path:     "/",
-		MaxAge:   int(ttl.Seconds()), // <--  TTL in seconds
+		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-	}
-	if strings.HasPrefix(appBaseURL, "https://") {
-		cookie.Secure = true
-	}
-	http.SetCookie(w, cookie)
+		Secure:   secure,
+	})
 	return nil
 }
 
-// keep a convenience wrapper for "normal" authorized sessions (24h):
-var (
-    // e.g. "24h" or "15m"
-    sessionTTL = parseDurationOr(os.Getenv("SESSION_TTL"), 24*time.Hour)
-    // force secure cookie even if APP_BASE_URL isn't https (useful behind TLS proxy)
-    forceSecureCookie = os.Getenv("FORCE_SECURE_COOKIE") == "1"
-)
-
+// Normal (authorized) session
 func setSessionCookie(w http.ResponseWriter, uuid, username string) error {
-    now := time.Now()
-    claims := sessionClaims{
-        UUID: uuid, Username: username,
-        RegisteredClaims: jwt.RegisteredClaims{
-            Issuer: "auth-portal-go", Subject: uuid,
-            ExpiresAt: jwt.NewNumericDate(now.Add(sessionTTL)),
-            IssuedAt:  jwt.NewNumericDate(now),
-        },
-    }
-    tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-    signed, err := tok.SignedString(sessionSecret)
-    if err != nil { return err }
-
-    c := &http.Cookie{
-        Name: sessionCookie, Value: signed, Path: "/",
-        MaxAge: int(sessionTTL.Seconds()),
-        HttpOnly: true, SameSite: http.SameSiteLaxMode,
-        Secure: forceSecureCookie || strings.HasPrefix(appBaseURL, "https://") ||
-            strings.EqualFold(rpProtoFrom(w), "https"),
-    }
-    http.SetCookie(w, c)
-    return nil
+	return setSessionCookieWithTTL(w, uuid, username, sessionTTL)
 }
 
-func parseDurationOr(s string, d time.Duration) time.Duration {
-    if v, err := time.ParseDuration(s); err == nil { return v }
-    return d
-}
-func rpProtoFrom(w http.ResponseWriter) string { return "" } // (stub if you don’t read X-Forwarded-Proto)
-
-
-// and one for short-lived (unauthorized) sessions (5 minutes):
+// Short-lived (e.g., for temporary/unauthorized states if you choose to use it)
 func setTempSessionCookie(w http.ResponseWriter, uuid, username string) error {
 	return setSessionCookieWithTTL(w, uuid, username, 5*time.Minute)
 }
@@ -222,27 +211,38 @@ func authMiddleware(next http.Handler) http.Handler {
 }
 
 func hasValidSession(r *http.Request) bool {
-    c, err := r.Cookie(sessionCookie)
-    if err != nil || c.Value == "" {
-        return false
-    }
-    token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
-        return sessionSecret, nil
-    })
-    return err == nil && token.Valid
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
+		return sessionSecret, nil
+	})
+	return err == nil && token.Valid
 }
 
-// ---------- CSRF on state-changing routes ----------
+// ---------- CSRF-lite for state-changing routes ----------
 func requireSameOrigin(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if r.Method == http.MethodGet || r.Method == http.MethodHead { next.ServeHTTP(w,r); return }
-        origin := r.Header.Get("Origin")
-        referer := r.Header.Get("Referer")
-        allowed := strings.HasPrefix(origin, appBaseURL) || strings.HasPrefix(referer, appBaseURL)
-        if !allowed {
-            http.Error(w, "CSRF check failed", http.StatusForbidden)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		referer := r.Header.Get("Referer")
+		allowed := (origin != "" && strings.HasPrefix(origin, appBaseURL)) ||
+			(referer != "" && strings.HasPrefix(referer, appBaseURL))
+		if !allowed {
+			http.Error(w, "CSRF check failed", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func parseDurationOr(s string, d time.Duration) time.Duration {
+	if v, err := time.ParseDuration(s); err == nil {
+		return v
+	}
+	return d
 }
