@@ -448,11 +448,11 @@ func (embyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	embyUUID := "emby-" + auth.User.ID
 
 	_, _ = upsertUser(User{
-		Username:   auth.User.Name,
-		Email:      sql.NullString{},            // Emby typically doesn't expose email via this API
-		PlexUUID:   nullStringFrom(embyUUID),    // reuse field for "media uuid"
-		PlexToken:  nullStringFrom(sealed),      // sealed Emby token
-		PlexAccess: authorized,
+		Username:    auth.User.Name,
+		Email:       sql.NullString{},            // Emby typically doesn't expose email via this API
+		MediaUUID:   nullStringFrom(mediaUUID),   // "plex-<id>" or "emby-<id>"
+		MediaToken:  nullStringFrom(sealedToken), // sealed with SealToken(...)
+		MediaAccess: authorizedBool,
 	})
 
 	// Session cookie
@@ -490,21 +490,50 @@ func (embyProvider) IsAuthorized(uuid, _username string) (bool, error) {
 		}
 		return false, err
 	}
-	// trust DB if we have it
-	if u.PlexAccess {
+
+	// Trust the cached DB flag if present.
+	if u.MediaAccess {
 		return true, nil
 	}
-	// If owner API key exists, re-check once and cache
-	if embyAPIKey != "" && u.PlexUUID.Valid {
-		id := strings.TrimPrefix(u.PlexUUID.String, "emby-")
-		detail, derr := embyGetUserDetail(embyServerURL, embyAPIKey, id)
-		if derr == nil {
-			ok := !detail.Policy.IsDisabled
-			_ = setUserPlexAccessByUsername(u.Username, ok)
-			return ok, nil
+
+	// If we have an owner API key, re-check the user's current state and cache.
+	if embyAPIKey != "" && u.MediaUUID.Valid {
+		id := strings.TrimPrefix(u.MediaUUID.String, "emby-")
+		if id != "" {
+			detail, derr := embyGetUserDetail(embyServerURL, embyAPIKey, id)
+			if derr == nil {
+				ok := !detail.Policy.IsDisabled
+				_ = setUserMediaAccessByUsername(u.Username, ok) // best-effort cache
+				return ok, nil
+			}
+			// fall through to token-based fallback if available
 		}
 	}
+
+	// Fallback: if we have the user's token, do a lightweight validity probe.
+	if u.MediaToken.Valid && u.MediaToken.String != "" {
+		if ok, derr := embyTokenStillValid(embyServerURL, u.MediaToken.String); derr == nil && ok {
+			_ = setUserMediaAccessByUsername(u.Username, true) // cache success
+			return true, nil
+		}
+	}
+
 	return false, nil
+}
+
+// embyTokenStillValid checks whether the user's token is currently accepted by the server.
+func embyTokenStillValid(serverURL, token string) (bool, error) {
+	base := strings.TrimRight(serverURL, "/")
+	req, _ := http.NewRequest(http.MethodGet, base+"/Users/Me?format=json", nil)
+	req.Header.Set("X-Emby-Token", token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300, nil
 }
 
 /************* Emby HTTP helpers *************/
@@ -588,12 +617,18 @@ func embyAuthAttempt(baseURL, clientID string, body map[string]string) (embyAuth
 	return out, nil
 }
 
+// Emby user details fetch
 func embyGetUserDetail(serverURL, apiKey, userID string) (embyUserDetail, error) {
-	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(serverURL, "/")+"/Users/"+url.PathEscape(userID), nil)
+	base := strings.TrimRight(serverURL, "/")
+	u := base + "/Users/" + url.PathEscape(userID) + "?format=json"
+	req, _ := http.NewRequest(http.MethodGet, u, nil)
 	if apiKey != "" {
 		req.Header.Set("X-Emby-Token", apiKey)
 	}
-	// Without API key this may 401; the caller handles that.
+	req.Header.Set("Accept", "application/json")
+
+	Debugf("emby/user GET %s (apiKey=%v)", u, apiKey != "")
+
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return embyUserDetail{}, err
@@ -601,14 +636,21 @@ func embyGetUserDetail(serverURL, apiKey, userID string) (embyUserDetail, error)
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return embyUserDetail{}, fmt.Errorf("emby user %d", resp.StatusCode)
+		snippet := strings.TrimSpace(string(raw))
+		if len(snippet) > 300 {
+			snippet = snippet[:300] + "…"
+		}
+		Warnf("emby/user HTTP %d body=%q", resp.StatusCode, snippet)
+		return embyUserDetail{}, fmt.Errorf("emby user %d: %s", resp.StatusCode, snippet)
 	}
 	var out embyUserDetail
-	if json.Unmarshal(raw, &out) != nil {
-		return embyUserDetail{}, fmt.Errorf("emby user decode failed")
+	if err := json.Unmarshal(raw, &out); err != nil {
+		Warnf("emby/user decode failed: %v body=%q", err, string(raw))
+		return embyUserDetail{}, fmt.Errorf("emby user decode failed: %w", err)
 	}
 	return out, nil
 }
+
 
 /************* tiny util *************/
 func htmlEscape(s string) string {

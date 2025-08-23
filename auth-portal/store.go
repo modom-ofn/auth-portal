@@ -1,15 +1,13 @@
-// store.go
 package main
 
 import (
 	"context"
-	"time"
 	"database/sql"
+	"time"
 )
 
 const dbTimeout = 5 * time.Second
 
-// --- small internal helper to scan a single user row ---
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -20,9 +18,9 @@ func scanUser(rs rowScanner) (User, error) {
 		&u.ID,
 		&u.Username,
 		&u.Email,
-		&u.PlexUUID,
-		&u.PlexToken,
-		&u.PlexAccess,
+		&u.MediaUUID,
+		&u.MediaToken,
+		&u.MediaAccess,
 	)
 	return u, err
 }
@@ -33,7 +31,7 @@ func getUserByID(id int) (User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 	return scanUser(db.QueryRowContext(ctx, `
-SELECT id, username, email, plex_uuid, plex_token, plex_access
+SELECT id, username, email, media_uuid, media_token, media_access
 FROM users
 WHERE id = $1`, id))
 }
@@ -44,29 +42,27 @@ func getUserByUUID(uuid string) (User, error) {
 
 	var row User
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, email, plex_uuid, plex_token, plex_access
+		SELECT id, username, email, media_uuid, media_token, media_access
 		FROM users
-		WHERE plex_uuid = $1
+		WHERE media_uuid = $1
 	`, uuid).Scan(
 		&row.ID,
 		&row.Username,
 		&row.Email,
-		&row.PlexUUID,
-		&row.PlexToken,
-		&row.PlexAccess,
+		&row.MediaUUID,
+		&row.MediaToken,
+		&row.MediaAccess,
 	)
 	if err != nil {
 		return User{}, err
 	}
 
 	// Decrypt token if present
-	if row.PlexToken.Valid && row.PlexToken.String != "" {
-		if pt, decErr := unsealToken(row.PlexToken.String); decErr != nil {
-			// choose your posture: log and clear, or return an error
-			// log.Printf("decrypt token failed for %s: %v", uuid, decErr)
-			row.PlexToken = sql.NullString{} // clear on failure
+	if row.MediaToken.Valid && row.MediaToken.String != "" {
+		if pt, decErr := unsealToken(row.MediaToken.String); decErr == nil {
+			row.MediaToken = sql.NullString{String: pt, Valid: true}
 		} else {
-			row.PlexToken = sql.NullString{String: pt, Valid: true}
+			row.MediaToken = sql.NullString{}
 		}
 	}
 
@@ -79,27 +75,26 @@ func getUserByUsername(username string) (User, error) {
 
 	var row User
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, email, plex_uuid, plex_token, plex_access
+		SELECT id, username, email, media_uuid, media_token, media_access
 		FROM users
 		WHERE username = $1
 	`, username).Scan(
 		&row.ID,
 		&row.Username,
 		&row.Email,
-		&row.PlexUUID,
-		&row.PlexToken,
-		&row.PlexAccess,
+		&row.MediaUUID,
+		&row.MediaToken,
+		&row.MediaAccess,
 	)
 	if err != nil {
 		return User{}, err
 	}
 
-	if row.PlexToken.Valid && row.PlexToken.String != "" {
-		if pt, decErr := unsealToken(row.PlexToken.String); decErr != nil {
-			// log.Printf("decrypt token failed for %s: %v", username, decErr)
-			row.PlexToken = sql.NullString{}
+	if row.MediaToken.Valid && row.MediaToken.String != "" {
+		if pt, decErr := unsealToken(row.MediaToken.String); decErr == nil {
+			row.MediaToken = sql.NullString{String: pt, Valid: true}
 		} else {
-			row.PlexToken = sql.NullString{String: pt, Valid: true}
+			row.MediaToken = sql.NullString{}
 		}
 	}
 
@@ -108,16 +103,17 @@ func getUserByUsername(username string) (User, error) {
 
 // ---------- Mutators ----------
 
-// Convenience setter when you only have the username.
-// (Preferred path is setUserPlexAccessByUUID in db.go)
-func setUserPlexAccessByUsername(username string, access bool) error {
+func setUserMediaAccessByUsername(username string, access bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 	_, err := db.ExecContext(ctx, `
 UPDATE users
-SET plex_access = $1
+SET media_access = $1
 WHERE username = $2`, access, username)
 	return err
 }
 
-// NOTE: Do NOT define setUserPlexAccess here — it's already in db.go.
+// Back-compat shim (older code still calling Plex-named helper)
+func setUserPlexAccessByUsername(username string, access bool) error {
+	return setUserMediaAccessByUsername(username, access)
+}

@@ -10,45 +10,75 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+func providerUI() (key, name string) {
+	// currentProvider is set at startup; Name() returns "plex" or "emby"
+	k := currentProvider.Name()
+	switch k {
+	case "emby":
+		return "emby", "Emby"
+	default:
+		return "plex", "Plex"
+	}
+}
+
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
-	// If no session, just show login.
+	key, name := providerUI()
+
+	// If no session, just show login with provider branding.
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
-		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+		render(w, "login.html", map[string]any{
+			"BaseURL":      appBaseURL,
+			"ProviderKey":  key,
+			"ProviderName": name,
+		})
 		return
 	}
 
-	// Parse the JWT so we can check if the user row exists.
+	// Parse the JWT so we can check if the user row exists (avoid orphan redirect).
 	tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return sessionSecret, nil
 	})
 	if err != nil || !tok.Valid {
 		clearSessionCookie(w)
-		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+		render(w, "login.html", map[string]any{
+			"BaseURL":      appBaseURL,
+			"ProviderKey":  key,
+			"ProviderName": name,
+		})
 		return
 	}
 
 	claims, ok := tok.Claims.(*sessionClaims)
 	if !ok || claims.UUID == "" {
 		clearSessionCookie(w)
-		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+		render(w, "login.html", map[string]any{
+			"BaseURL":      appBaseURL,
+			"ProviderKey":  key,
+			"ProviderName": name,
+		})
 		return
 	}
 
-	// If the DB was wiped (no row), treat the cookie as orphaned: clear & show login.
 	if _, err := getUserByUUID(claims.UUID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			clearSessionCookie(w)
-			render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+			render(w, "login.html", map[string]any{
+				"BaseURL":      appBaseURL,
+				"ProviderKey":  key,
+				"ProviderName": name,
+			})
 			return
 		}
-		// On unexpected DB error, don't redirect-loop; just show login.
 		log.Printf("login orphan check failed for %s: %v", claims.UUID, err)
-		render(w, "login.html", map[string]any{"BaseURL": appBaseURL})
+		render(w, "login.html", map[string]any{
+			"BaseURL":      appBaseURL,
+			"ProviderKey":  key,
+			"ProviderName": name,
+		})
 		return
 	}
 
-	// Row exists → normal path.
 	http.Redirect(w, r, "/home", http.StatusFound)
 }
 
@@ -61,6 +91,8 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
+	key, name := providerUI()
+
 	uname := usernameFrom(r.Context())
 	uid := uuidFrom(r.Context())
 
@@ -69,7 +101,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("home: no username/uuid in session; treating as not authorized")
 	} else {
 		ok, err := currentProvider.IsAuthorized(uid, uname)
-		// If the DB was wiped (no row), clear the stale cookie and send to login.
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				clearSessionCookie(w)
@@ -81,18 +112,24 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		authorized = ok
 	}
 
-	// Opportunistic upsert ONLY when authorized (keeps DB lean)
 	if authorized {
 		_, _ = upsertUser(User{
-			Username:   uname,
-			PlexUUID:   nullStringFrom(uid),
-			PlexAccess: true,
+			Username:    uname,
+			MediaUUID:   nullStringFrom(uid),
+			MediaAccess: true,
 		})
-		render(w, "portal_authorized.html", map[string]any{"Username": uname})
+		render(w, "portal_authorized.html", map[string]any{
+			"Username":     uname,
+			"ProviderName": name,
+			"ProviderKey":  key,
+		})
 		return
 	}
-
-	render(w, "portal_unauthorized.html", map[string]any{"Username": uname})
+	render(w, "portal_unauthorized.html", map[string]any{
+		"Username":     uname,
+		"ProviderName": name,
+		"ProviderKey":  key,
+	})
 }
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
