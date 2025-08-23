@@ -268,7 +268,7 @@ services:
     networks: [authnet]
 
   ldap-sync:
-    image: modomofn/ldap-sync:dev
+    image: modomofn/ldap-sync:dev-r2
     profiles: ["ldap"]
     depends_on:
       postgres:
