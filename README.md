@@ -183,13 +183,13 @@ services:
       POSTGRES_USER: authportal
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
       # reuse same flag as app
-      log_level: ${log_level:-INFO}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command:
       - sh
       - -c
       - |
         set -e
-        case "${log_level:-INFO}" in
+        case "${LOG_LEVEL:-INFO}" in
           DEBUG|debug)
             EXTRA="-c log_min_messages=debug1 -c log_connections=on -c log_disconnections=on -c log_destination=stderr"
             ;;
@@ -282,7 +282,7 @@ services:
     networks: [authnet]
 
   ldap-sync:
-    image: modomofn/ldap-sync:dev-r2
+    image: modomofn/ldap-sync:dev
     profiles: ["ldap"]
     depends_on:
       postgres:
