@@ -31,13 +31,13 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ---
 
-
+<img width="1279" height="1179" alt="auth-portal-v2 0 0" src="https://github.com/user-attachments/assets/bf85cd0a-dfbb-472a-ba20-4124b4e32aba" />
 
 ---
 
 ## Table of Contents
 
-- [What’s New in dev-r2](#whats-new-in-dev-r2)
+- [What’s New in v2.0.0](#whats-new-in-v2.0.0)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Plex](#plex)
@@ -59,7 +59,7 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ---
 
-## What’s New in dev-r2
+## What’s New in v2.0.0
 
 - **Media-agnostic user model**  
   DB columns renamed:
