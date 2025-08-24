@@ -553,6 +553,8 @@ DEBUG plex: resources match via machine id
 │   ├── store.go
 │   ├── LICENSE
 │   ├── README.md
+│   ├── health/ # health check function
+│   	├── health.go
 │   ├── templates/
 │   	├── login.html
 │   	├── portal_authorized.html
