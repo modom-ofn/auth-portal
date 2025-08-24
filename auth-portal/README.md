@@ -37,7 +37,7 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ## Table of Contents
 
-- [What’s New in v2.0.0](#whats-new-in-v2.0.0)
+- [What’s New in v2.0.0](#whats-new-in-v200)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Plex](#plex)
