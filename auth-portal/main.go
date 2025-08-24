@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
@@ -13,6 +15,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+
+	// Adjust this import path to match your module name from go.mod
+	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
+	"auth-portal/health"
 )
 
 var (
@@ -23,11 +29,11 @@ var (
 	plexOwnerToken      = envOr("PLEX_OWNER_TOKEN", "")
 	plexServerMachineID = envOr("PLEX_SERVER_MACHINE_ID", "")
 	plexServerName      = envOr("PLEX_SERVER_NAME", "")
-	
+
 	// Optional extra link on the login page
 	loginExtraLinkURL  = envOr("LOGIN_EXTRA_LINK_URL", "/some-internal-app")
 	loginExtraLinkText = envOr("LOGIN_EXTRA_LINK_TEXT", "Open Internal App")
-	
+
 	// Unauthorized-page "Request Access" mailto link (optional)
 	unauthRequestEmail   = envOr("UNAUTH_REQUEST_EMAIL", "admin@example.com")
 	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
@@ -58,6 +64,19 @@ func pickProvider() MediaProvider {
 	default:
 		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", v)
 		return plexProvider{}
+	}
+}
+
+// --- Health check helpers (minimal, local to main.go) ---
+
+func dbChecker(db *sql.DB) health.Checker {
+	return func(ctx context.Context) error {
+		if db == nil {
+			return errors.New("db not initialized")
+		}
+		ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		return db.PingContext(ctx)
 	}
 }
 
@@ -107,6 +126,16 @@ func main() {
 	// Protected
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
+
+	// --- Health endpoints ---
+	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
+	// Use the same checks for startup and readiness unless you plan to diverge later
+	readyChecks := map[string]health.Checker{
+		"db": dbChecker(db),
+		// add more later, e.g. "ldap": ldapChecker(pool), "provider": providerChecker(...)
+	}
+	r.HandleFunc("/startupz", health.ReadinessHandler(readyChecks)).Methods("GET")
+	r.HandleFunc("/readyz", health.ReadinessHandler(readyChecks)).Methods("GET")
 
 	// Wrap with security headers and request logging
 	handler := withSecurityHeaders(WithRequestLogging(r))
