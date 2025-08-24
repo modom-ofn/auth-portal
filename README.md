@@ -31,7 +31,6 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ---
 
-<img width="1279" height="1179" alt="auth-portal-v2 0 0" src="https://github.com/user-attachments/assets/bf85cd0a-dfbb-472a-ba20-4124b4e32aba" />
 
 ---
 
