@@ -69,7 +69,7 @@ func plexGetJSON(u, token string, out any) error {
 	req.Header.Set("X-Plex-Token", token)
 	// Friendly identification (optional)
 	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "1.0.0")
+	req.Header.Set("X-Plex-Version", "2.0.0")
 	req.Header.Set("X-Plex-Client-Identifier", "auth-portal")
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
@@ -110,7 +110,7 @@ func plexCreatePin(clientID string) (plexPin, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "1.0.0")
+	req.Header.Set("X-Plex-Version", "2.0.0")
 	req.Header.Set("X-Plex-Client-Identifier", clientID)
 	req.Header.Set("X-Plex-Device", "Web")
 	req.Header.Set("X-Plex-Platform", "Web")
@@ -137,7 +137,7 @@ func plexPollPin(clientID string, id int, timeout time.Duration) (token string, 
 		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("https://plex.tv/api/v2/pins/%d", id), nil)
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-Plex-Product", "AuthPortal")
-		req.Header.Set("X-Plex-Version", "1.0.0")
+		req.Header.Set("X-Plex-Version", "2.0.0")
 		req.Header.Set("X-Plex-Client-Identifier", clientID)
 		req.Header.Set("X-Plex-Device", "Web")
 		req.Header.Set("X-Plex-Platform", "Web")
@@ -168,7 +168,7 @@ func plexFetchUser(token string) (plexUser, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", token)
 	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "1.0.0")
+	req.Header.Set("X-Plex-Version", "2.0.0")
 	req.Header.Set("X-Plex-Client-Identifier", "authportal-userinfo")
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
@@ -196,7 +196,7 @@ func plexUserHasServer(userToken string) (bool, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", userToken)
 	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "1.0.0")
+	req.Header.Set("X-Plex-Version", "2.0.0")
 	req.Header.Set("X-Plex-Client-Identifier", "authportal-check")
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
@@ -254,13 +254,13 @@ func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 	authURL := fmt.Sprintf(
-		"https://app.plex.tv/auth#?clientID=%s&code=%s&forwardUrl=%s&context[device][product]=AuthPortal&context[device][version]=1.0.0&context[device][platform]=Web&context[device][device]=Web",
+		"https://app.plex.tv/auth#?clientID=%s&code=%s&forwardUrl=%s&context[device][product]=AuthPortal&context[device][version]=2.0.0&context[device][platform]=Web&context[device][device]=Web",
 		url.QueryEscape(clientID), url.QueryEscape(pin.Code), url.QueryEscape(forward),
 	)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true, "provider": "plex",
-		"authUrl":    authURL,
-		"pin_id":     pin.ID, "client_id": clientID, "expires_in": 120,
+		"ok":      true, "provider": "plex",
+		"authUrl": authURL,
+		"pin_id":  pin.ID, "client_id": clientID, "expires_in": 120,
 	})
 }
 
@@ -414,7 +414,7 @@ func (plexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 var (
 	embyServerURL     = envOr("EMBY_SERVER_URL", "http://localhost:8096")
 	embyAppName       = envOr("EMBY_APP_NAME", "AuthPortal")
-	embyAppVersion    = envOr("EMBY_APP_VERSION", "1.0.0")
+	embyAppVersion    = envOr("EMBY_APP_VERSION", "2.0.0")
 	embyAPIKey        = envOr("EMBY_API_KEY", "")
 	embyOwnerUsername = envOr("EMBY_OWNER_USERNAME", "")
 	embyOwnerID       = envOr("EMBY_OWNER_ID", "")
@@ -649,18 +649,11 @@ func (embyProvider) IsAuthorized(uuid, _username string) (bool, error) {
 				_ = setUserMediaAccessByUsername(u.Username, ok) // best-effort cache
 				return ok, nil
 			}
-			// fall through to token-based fallback if available
+			// fall through if owner check failed
 		}
 	}
 
-	// Fallback: if we have the user's token, do a lightweight validity probe.
-	if u.MediaToken.Valid && u.MediaToken.String != "" {
-		if ok, derr := embyTokenStillValid(embyServerURL, u.MediaToken.String); derr == nil && ok {
-			_ = setUserMediaAccessByUsername(u.Username, true) // cache success
-			return true, nil
-		}
-	}
-
+	// No owner API key or failed check: rely on cached flag only.
 	return false, nil
 }
 
@@ -804,4 +797,380 @@ func htmlEscape(s string) string {
 		`'`, "&#39;",
 	)
 	return repl.Replace(s)
+}
+
+/* =======================================================
+ *                      JELLYFIN
+ * ======================================================= */
+
+var (
+	jellyfinServerURL  = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
+	jellyfinAppName    = envOr("JELLYFIN_APP_NAME", "AuthPortal")
+	jellyfinAppVersion = envOr("JELLYFIN_APP_VERSION", "2.0.0")
+	// Optional owner/admin token. If unset, we will not do owner checks at sign-in.
+	// If set but the request fails (e.g., wrong token), we fall back to the user token
+	// instead of hard-failing authorization.
+	jellyfinAPIKey = envOr("JELLYFIN_API_KEY", "")
+)
+
+// Jellyfin uses the same MediaBrowser header schema; keep separate knobs so we can diverge later.
+func jellyfinAuthHeader(clientID string) string {
+	return fmt.Sprintf(`MediaBrowser Client="%s", Device="Web", DeviceId="%s", Version="%s"`,
+		jellyfinAppName, clientID, jellyfinAppVersion)
+}
+
+type jellyfinAuthResp struct {
+	AccessToken string `json:"AccessToken"`
+	User        struct {
+		ID   string `json:"Id"`
+		Name string `json:"Name"`
+	} `json:"User"`
+}
+
+type jellyfinUserDetail struct {
+	ID     string `json:"Id"`
+	Name   string `json:"Name"`
+	Policy struct {
+		IsDisabled bool `json:"IsDisabled"`
+	} `json:"Policy"`
+}
+
+type jellyfinProvider struct{}
+
+func (jellyfinProvider) Name() string { return "jellyfin" }
+
+// StartWeb: open our popup-hosted login page
+func (jellyfinProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"provider": "jellyfin",
+		"authUrl":  "/auth/forward?jellyfin=1",
+	})
+}
+
+// Forward (GET): render small login form; (POST): authenticate → set cookie → close
+func (jellyfinProvider) Forward(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		page := `<!doctype html>
+	<html lang="en">
+	<head>
+	  <meta charset="utf-8" />
+	  <title>Sign in to Jellyfin — AuthPortal</title>
+	  <meta name="viewport" content="width=device-width, initial-scale=1" />
+	  <link rel="stylesheet" href="/static/styles.css" />
+	</head>
+	<body class="bg">
+	  <main class="container" style="max-width:28rem;margin:2rem auto">
+		<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+		  <img src="/static/jellyfin.svg" alt="Jellyfin" width="24" height="24" />
+		  <h1 class="title" style="margin:0;font-size:1.25rem">Sign in to Jellyfin</h1>
+		</header>
+
+		<p class="subtitle" style="margin:.25rem 0 1rem">Continue to <strong>AuthPortal</strong></p>
+
+		<form method="post" action="/auth/forward?jellyfin=1" class="card" style="padding:1rem">
+		  <label style="display:block;margin:.5rem 0">
+			<span>Username</span><br/>
+			<input name="username" required autofocus style="width:100%;padding:.5rem"/>
+		  </label>
+		  <label style="display:block;margin:.5rem 0">
+			<span>Password</span><br/>
+			<input type="password" name="password" required style="width:100%;padding:.5rem"/>
+		  </label>
+		  <button type="submit" class="btn" style="margin-top:.75rem">Sign in</button>
+		</form>
+
+		<p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(jellyfinServerURL) + `</p>
+	  </main>
+	</body>
+	</html>`
+		_, _ = w.Write([]byte(page))
+		return
+	}
+
+	// POST: authenticate with Jellyfin
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+	if username == "" || password == "" {
+		http.Error(w, "missing credentials", http.StatusBadRequest)
+		return
+	}
+
+	clientID := randClientID()
+	auth, err := jellyfinAuthenticate(jellyfinServerURL, clientID, username, password)
+	if err != nil || auth.AccessToken == "" || auth.User.ID == "" {
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+
+		page := `<!doctype html>
+		<html lang="en">
+		<head>
+		  <meta charset="utf-8" />
+		  <title>Jellyfin sign-in failed — AuthPortal</title>
+		  <meta name="viewport" content="width=device-width, initial-scale=1" />
+		  <link rel="stylesheet" href="/static/styles.css" />
+		</head>
+		<body class="bg">
+		  <main class="container" style="max-width:28rem;margin:2rem auto">
+			<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+			  <img src="/static/jellyfin.svg" alt="Jellyfin" width="24" height="24" />
+			  <h1 class="title" style="margin:0;font-size:1.25rem">Sign in to Jellyfin</h1>
+			</header>
+
+			<div class="card" style="padding:1rem">
+			  <p class="error" style="color:#b91c1c;margin:0 0 .75rem"><strong>Login failed.</strong> Please try again.</p>
+			  <form method="post" action="/auth/forward?jellyfin=1">
+				<label style="display:block;margin:.5rem 0">
+				  <span>Username</span><br/>
+				  <input name="username" required autofocus style="width:100%;padding:.5rem"/>
+				</label>
+				<label style="display:block;margin:.5rem 0">
+				  <span>Password</span><br/>
+				  <input type="password" name="password" required style="width:100%;padding:.5rem"/>
+				</label>
+				<div style="display:flex;gap:.5rem;align-items:center;margin-top:.75rem">
+				  <button type="submit" class="btn">Try again</button>
+				  <a href="/auth/forward?jellyfin=1" class="muted">Reset</a>
+				</div>
+			  </form>
+			</div>
+
+			<p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(jellyfinServerURL) + `</p>
+		  </main>
+		</body>
+		</html>`
+		_, _ = w.Write([]byte(page))
+		return
+	}
+
+	// Authorization (prefer the fresh user token; owner check can only downgrade)
+	authorized := false
+	if ok, terr := jellyfinTokenStillValid(jellyfinServerURL, auth.AccessToken); terr == nil && ok {
+		authorized = true
+	}
+
+	if jellyfinAPIKey != "" {
+		if detail, derr := jellyfinGetUserDetail(jellyfinServerURL, jellyfinAPIKey, auth.User.ID); derr == nil {
+			if detail.Policy.IsDisabled {
+				authorized = false
+			}
+		} else {
+			Warnf("jellyfin owner check failed for %s: %v", username, derr)
+		}
+	}
+
+	// Seal token (best effort)
+	sealedToken, serr := SealToken(auth.AccessToken)
+	if serr != nil {
+		log.Printf("WARN: jellyfin token seal failed: %v", serr)
+		sealedToken = ""
+	}
+
+	mediaUUID := "jellyfin-" + auth.User.ID
+
+	// Persist
+	_, _ = upsertUser(User{
+		Username:    auth.User.Name,
+		Email:       sql.NullString{},
+		MediaUUID:   nullStringFrom(mediaUUID),
+		MediaToken:  nullStringFrom(sealedToken),
+		MediaAccess: authorized,
+	})
+
+	// Session
+	if authorized {
+		_ = setSessionCookie(w, mediaUUID, auth.User.Name)
+	} else {
+		_ = setTempSessionCookie(w, mediaUUID, auth.User.Name)
+	}
+
+	// Finish popup
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8">
+	<title>Signed in — AuthPortal</title>
+	<link rel="stylesheet" href="/static/styles.css" />
+	<body class="bg">
+	  <main class="container" style="max-width:28rem;margin:2rem auto">
+		<header style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+		  <img src="/static/jellyfin.svg" alt="Jellyfin" width="24" height="24" />
+		  <h1 class="title" style="margin:0;font-size:1.25rem">Signed in to Jellyfin</h1>
+		</header>
+		<p>You can close this window.</p>
+	  </main>
+	  <script>
+		try {
+		  if (window.opener && !window.opener.closed) {
+			window.opener.postMessage({ ok: true, type: "jellyfin-auth", redirect: "/home" }, window.location.origin);
+		  }
+		} catch (e) {}
+		setTimeout(() => { try { window.close(); } catch(e){} }, 600);
+	  </script>
+	</body>`))
+}
+
+func (jellyfinProvider) IsAuthorized(uuid, _username string) (bool, error) {
+	u, err := getUserByUUID(uuid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	// Trust cached flag first
+	if u.MediaAccess {
+		return true, nil
+	}
+
+	// Fallback: owner API key policy check (if configured)
+	if jellyfinAPIKey != "" && u.MediaUUID.Valid {
+		id := strings.TrimPrefix(u.MediaUUID.String, "jellyfin-")
+		if id != "" {
+			if detail, derr := jellyfinGetUserDetail(jellyfinServerURL, jellyfinAPIKey, id); derr == nil {
+				ok := !detail.Policy.IsDisabled
+				_ = setUserMediaAccessByUsername(u.Username, ok)
+				return ok, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+/************* Jellyfin HTTP helpers *************/
+
+// Authenticate to Jellyfin (separate from Emby for future divergence)
+func jellyfinAuthenticate(serverURL, clientID, username, password string) (jellyfinAuthResp, error) {
+	base := strings.TrimRight(serverURL, "/")
+	Debugf("jellyfin/auth start server=%s user=%q", base, username)
+
+	// Primary: Username + Pw
+	if out, err := jellyfinAuthAttempt(base, clientID, map[string]string{
+		"Username": username,
+		"Pw":       password,
+	}); err == nil && out.AccessToken != "" && out.User.ID != "" {
+		Debugf("jellyfin/auth success (Pw) userID=%s", out.User.ID)
+		return out, nil
+	} else if err != nil {
+		Warnf("jellyfin/auth Pw failed: %v", err)
+	}
+
+	// Fallback: Username + Password
+	out2, err2 := jellyfinAuthAttempt(base, clientID, map[string]string{
+		"Username": username,
+		"Password": password,
+	})
+	if err2 == nil && out2.AccessToken != "" && out2.User.ID != "" {
+		Debugf("jellyfin/auth success (Password) userID=%s", out2.User.ID)
+		return out2, nil
+	}
+	if err2 != nil {
+		return jellyfinAuthResp{}, err2
+	}
+	return jellyfinAuthResp{}, fmt.Errorf("jellyfin auth unknown failure")
+}
+
+func jellyfinAuthAttempt(baseURL, clientID string, body map[string]string) (jellyfinAuthResp, error) {
+	b, _ := json.Marshal(body)
+	loginURL := baseURL + "/Users/AuthenticateByName?format=json"
+
+	req, _ := http.NewRequest(http.MethodPost, loginURL, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	authHdr := jellyfinAuthHeader(clientID)
+	// Jellyfin also accepts MediaBrowser headers under X-Emby-Authorization
+	req.Header.Set("X-Emby-Authorization", authHdr)
+	req.Header.Set("Authorization", authHdr)
+
+	req.Header.Set("X-Emby-Client", jellyfinAppName)
+	req.Header.Set("X-Emby-Device-Name", "Web")
+	req.Header.Set("X-Emby-Device-Id", clientID)
+	req.Header.Set("X-Emby-Client-Version", jellyfinAppVersion)
+
+	Debugf("jellyfin/auth POST %s", loginURL)
+
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return jellyfinAuthResp{}, err
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := strings.TrimSpace(string(raw))
+		if len(snippet) > 300 {
+			snippet = snippet[:300] + "…"
+		}
+		Warnf("jellyfin/auth HTTP %d body=%q", resp.StatusCode, snippet)
+		return jellyfinAuthResp{}, fmt.Errorf("jellyfin auth %d: %s", resp.StatusCode, snippet)
+	}
+
+	var out jellyfinAuthResp
+	if err := json.Unmarshal(raw, &out); err != nil {
+		Warnf("jellyfin/auth decode failed: %v body=%q", err, string(raw))
+		return jellyfinAuthResp{}, fmt.Errorf("jellyfin auth decode failed: %w", err)
+	}
+	return out, nil
+}
+
+func jellyfinGetUserDetail(serverURL, apiKey, userID string) (jellyfinUserDetail, error) {
+	base := strings.TrimRight(serverURL, "/")
+	u := base + "/Users/" + url.PathEscape(userID) + "?format=json"
+	req, _ := http.NewRequest(http.MethodGet, u, nil)
+
+	if apiKey != "" {
+		// Modern
+		req.Header.Set("Authorization", fmt.Sprintf(`MediaBrowser Token="%s"`, apiKey))
+		req.Header.Set("X-MediaBrowser-Token", apiKey)
+		// Legacy fallback (harmless if ignored)
+		req.Header.Set("X-Emby-Token", apiKey)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return jellyfinUserDetail{}, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return jellyfinUserDetail{}, fmt.Errorf("jellyfin user %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	var out jellyfinUserDetail
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return jellyfinUserDetail{}, fmt.Errorf("jellyfin user decode failed: %w", err)
+	}
+	return out, nil
+}
+
+func jellyfinTokenStillValid(serverURL, token string) (bool, error) {
+	base := strings.TrimRight(serverURL, "/")
+	req, _ := http.NewRequest(http.MethodGet, base+"/Users/Me?format=json", nil)
+	// Modern
+	req.Header.Set("Authorization", fmt.Sprintf(`MediaBrowser Token="%s"`, token))
+	req.Header.Set("X-MediaBrowser-Token", token)
+	// Legacy fallback
+	req.Header.Set("X-Emby-Token", token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300, nil
 }

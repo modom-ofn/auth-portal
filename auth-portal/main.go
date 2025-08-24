@@ -38,7 +38,7 @@ var (
 	unauthRequestEmail   = envOr("UNAUTH_REQUEST_EMAIL", "admin@example.com")
 	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
 
-	// Provider selected at startup (plex default, emby stub available)
+	// Provider selected at startup (plex default; emby and jellyfin are distinct)
 	currentProvider MediaProvider
 
 	// Session TTLs & flags
@@ -53,16 +53,18 @@ func envOr(k, d string) string {
 	return d
 }
 
-// Pick the auth provider (plex default)
+// Pick the auth provider (plex default). MEDIA_SERVER: plex | emby | jellyfin
 func pickProvider() MediaProvider {
-	v := strings.ToLower(os.Getenv("MEDIA_SERVER"))
-	switch v {
+	switch strings.ToLower(os.Getenv("MEDIA_SERVER")) {
+	case "jellyfin":
+		// Separate provider implementation (no Emby reuse)
+		return jellyfinProvider{}
 	case "emby":
 		return embyProvider{}
 	case "plex", "":
 		return plexProvider{}
 	default:
-		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", v)
+		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", os.Getenv("MEDIA_SERVER"))
 		return plexProvider{}
 	}
 }
@@ -117,7 +119,8 @@ func main() {
 	// Provider routes
 	// Plex uses popup flow (StartWeb + Forward).
 	r.HandleFunc("/auth/start-web", currentProvider.StartWeb).Methods("POST", "GET")
-	// Emby uses GET (show form) and POST (submit credentials) on /auth/forward
+	// Emby and Jellyfin use GET (show form/page) and POST (submit credentials) on /auth/forward,
+	// implemented by their own provider.Forward.
 	r.HandleFunc("/auth/forward", currentProvider.Forward).Methods("GET", "POST")
 
 	// Logout (protect with a simple same-origin check)
@@ -129,10 +132,8 @@ func main() {
 
 	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
-	// Use the same checks for startup and readiness unless you plan to diverge later
 	readyChecks := map[string]health.Checker{
 		"db": dbChecker(db),
-		// add more later, e.g. "ldap": ldapChecker(pool), "provider": providerChecker(...)
 	}
 	r.HandleFunc("/startupz", health.ReadinessHandler(readyChecks)).Methods("GET")
 	r.HandleFunc("/readyz", health.ReadinessHandler(readyChecks)).Methods("GET")
@@ -153,7 +154,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		// Global CSP (the /auth/forward response sets its own relaxed CSP for inline JS)
+		// Global CSP (the /auth/forward response can set its own relaxed CSP for inline JS)
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; img-src 'self' data: https://plex.tv; style-src 'self' 'unsafe-inline'; script-src 'self'")
 
@@ -218,6 +219,7 @@ func setTempSessionCookie(w http.ResponseWriter, uuid, username string) error {
 }
 
 func clearSessionCookie(w http.ResponseWriter) {
+	// FIX: pass the ResponseWriter as the first argument
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    "",

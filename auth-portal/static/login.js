@@ -15,12 +15,42 @@
   window.addEventListener("message", (ev) => {
     if (ev.origin !== window.location.origin) return;
     const d = ev.data || {};
-    if (d && d.ok && (d.type === "plex-auth" || d.type === "emby-auth" || d.type === "auth-portal")) {
+    if (d && d.ok && (d.type === "plex-auth" || d.type === "emby-auth" || d.type === "jellyfin-auth" || d.type === "auth-portal")) {
       window.location.assign(d.redirect || "/home");
     }
   });
 
+  // --- Minimal addition: figure out current provider from the button ---
+  function detectProvider(btn) {
+    // 1) Prefer explicit data attribute if ever added
+    const dp = (btn?.getAttribute("data-provider") || "").toLowerCase();
+    if (dp) return dp;
+
+    // 2) Infer from class name pattern "{{.ProviderKey}}-btn"
+    const cl = [...(btn?.classList || [])].map(c => c.toLowerCase());
+    if (cl.includes("plex-btn")) return "plex";
+    if (cl.includes("emby-btn")) return "emby";
+    if (cl.includes("jellyfin-btn")) return "jellyfin";
+
+    // 3) Try the icon filename
+    const img = btn?.querySelector("img");
+    const src = (img?.getAttribute("src") || "").toLowerCase();
+    if (src.includes("plex")) return "plex";
+    if (src.includes("emby")) return "emby";
+    if (src.includes("jellyfin")) return "jellyfin";
+
+    // 4) Last resort: button text
+    const txt = (btn?.textContent || "").toLowerCase();
+    if (txt.includes("plex")) return "plex";
+    if (txt.includes("emby")) return "emby";
+    if (txt.includes("jellyfin")) return "jellyfin";
+
+    return "plex"; // default
+  }
+
   async function startFlow(btn) {
+    const provider = detectProvider(btn); // "plex" | "emby" | "jellyfin"
+
     // Open placeholder popup synchronously (prevents popup blockers)
     let popup = openPopup("about:blank");
     try {
@@ -33,22 +63,29 @@
 
     btn.disabled = true;
     try {
-      // Primary (Plex) path
       let authUrl = null;
-      try {
-        const res = await fetch("/auth/start-web", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Accept": "application/json" }
-        });
-        if (res.ok) {
-          const j = await res.json().catch(() => ({}));
-          authUrl = j.authUrl || j.url || j.location || null;
-        }
-      } catch {}
 
-      // Fallback (Emby) path
-      if (!authUrl) authUrl = "/auth/forward?emby=1";
+      if (provider === "plex") {
+        // Primary (Plex) path unchanged
+        try {
+          const res = await fetch("/auth/start-web", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Accept": "application/json" }
+          });
+          if (res.ok) {
+            const j = await res.json().catch(() => ({}));
+            authUrl = j.authUrl || j.url || j.location || null;
+          }
+        } catch {}
+
+        // Fallback (legacy) if start-web didn't return a URL
+        if (!authUrl) authUrl = "/auth/forward?emby=1";
+      } else {
+        // Minimal change: treat Jellyfin like Emby and use its own forward flag
+        // (requires a backend route alias: /auth/jellyfin/login or /auth/forward?jellyfin=1)
+        authUrl = provider === "jellyfin" ? "/auth/forward?jellyfin=1" : "/auth/forward?emby=1";
+      }
 
       if (popup && !popup.closed) {
         try { popup.location.replace(authUrl); } catch { popup.location.href = authUrl; }

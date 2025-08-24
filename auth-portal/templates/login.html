@@ -27,11 +27,14 @@
 			{{ if eq .ProviderKey "plex" }}
 			  <!-- Use a masked span so we can force pure black -->
 			  <span class="plex-logo-mask" aria-hidden="true"></span>
+			{{ else if eq .ProviderKey "jellyfin"}}
+			  <img src="/static/jellyfin.svg" alt="{{ .ProviderName }} logo" />
 			{{ else }}
-			  <!-- Emby stays as an img as before -->
 			  <img src="/static/emby.svg" alt="{{ .ProviderName }} logo" />
 			{{ end }}
-			{{ if eq .ProviderKey "emby" }}Sign in with Emby{{ else }}Sign in with Plex{{ end }}
+			{{ if eq .ProviderKey "emby" }}Sign in with Emby
+			{{ else if eq .ProviderKey "jellyfin" }}Sign in with Jellyfin
+			{{ else }}Sign in with Plex{{ end }}
 		  </button>
       </div>
     </section>

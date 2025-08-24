@@ -1,0 +1,5 @@
+<!-- /static/jellyfin.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <!-- Jellyfin triangular mark, no background; inherits currentColor -->
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2.2L21.2 19.8H2.8L12 2.2ZM12 7.4L16.7 16.6H7.3L12 7.4Z"></path>
+</svg>
