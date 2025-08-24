@@ -340,7 +340,7 @@ docker compose --profile ldap up -d --build
 - `MEDIA_SERVER` — `plex` or `emby`.
 - `SESSION_SECRET` — HMAC secret for JWT cookie (required).
 - `DATA_KEY` — base64 32-byte key for sealing tokens at rest (required).
-- `LOG_LEVEL` / `log_level` — `DEBUG`, `INFO`, `WARN`, or `ERROR`.
+- `LOG_LEVEL` — `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 - `FORCE_SECURE_COOKIE` — set to 1 to force Secure on cookies (behind TLS/ingress).
 - `LOGIN_EXTRA_LINK_URL` — external URL on authorized page.
 - `LOGIN_EXTRA_LINK_TEXT` — text for external URL on authorized page.
@@ -454,7 +454,7 @@ END $$;
 WARN  emby/auth HTTP 401 body="..."
 DEBUG plex: resources match via machine id
 ```
-- **Postgres**: `log_level` maps to server params:
+- **Postgres**: `LOG_LEVEL` maps to server params:
   - `DEBUG` → `log_min_messages=debug1`, connection/disconnection logging on
   - `INFO` → `log_min_messages=info`
   - `WARN` → `log_min_messages=warning`
