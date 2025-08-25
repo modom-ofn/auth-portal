@@ -197,7 +197,7 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.0
+    image: modomofn/auth-portal:latest
     ports:
       - "8089:8080"
     environment:
@@ -273,7 +273,7 @@ services:
     networks: [authnet]
 
   ldap-sync:
-    image: modomofn/ldap-sync:v2.0.0
+    image: modomofn/ldap-sync:latest
     profiles: ["ldap"]
     depends_on:
       postgres:
