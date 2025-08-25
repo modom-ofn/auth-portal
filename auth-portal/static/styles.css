@@ -92,7 +92,7 @@ h1{font-size:1.6rem;margin:0}
 .plex-btn {
   background: #e5a00d; /* Plex orange */
   border: 1px solid #d48f0b;
-  color: #ffffff; /* white text for contrast */
+  color: #000000; /* black text + icon */
   font-size: 18px;
   font-weight: 700;
   padding: 14px 22px;
@@ -102,10 +102,11 @@ h1{font-size:1.6rem;margin:0}
   justify-content: center;
   gap: 12px;
   box-shadow: 0 6px 20px rgba(229, 160, 13, 0.25);
-  transition: transform .18s ease, 
-              box-shadow .18s ease, 
-              background-color .18s ease, 
-              border-color .18s ease;
+  transition:
+    transform .18s ease,
+    box-shadow .18s ease,
+    background-color .18s ease,
+    border-color .18s ease;
 }
 
 .plex-btn:hover {
@@ -121,9 +122,43 @@ h1{font-size:1.6rem;margin:0}
   border-color: #a86400;
 }
 
-.plex-logo {
-  width: 22px;
-  height: 22px;
+/* ---------- Icon sizing inside the button (applies to Emby/Jellyfin <img>, inline <svg>, and Plex mask) */
+.plex-btn img,
+.plex-btn svg,
+.plex-btn .plex-logo-mask{
+  width:22px;
+  height:22px;
+  max-width:22px;
+  max-height:22px;
+  flex:0 0 22px;
+  display:inline-block;
+  object-fit:contain;
+  vertical-align:middle;
+}
+
+/* Inline SVG logo → force black (Plex mask already black via background) */
+.plex-btn .plex-logo,
+.plex-btn .plex-logo *{
+  fill:#000 !important;
+  stroke:#000 !important;
+}
+
+/* If you happen to use an <img> for the Plex logo, make it black via filter */
+.plex-btn img.plex-logo{
+  filter:brightness(0) saturate(100%) !important;
+}
+
+/* Monochrome Plex icon, painted by background-color (always black) */
+.plex-btn .plex-logo-mask{
+  background-color:#000;                 /* <- icon color */
+  -webkit-mask-image:url('/static/plex.svg');
+  -webkit-mask-repeat:no-repeat;
+  -webkit-mask-position:center;
+  -webkit-mask-size:contain;
+  mask-image:url('/static/plex.svg');
+  mask-repeat:no-repeat;
+  mask-position:center;
+  mask-size:contain;
 }
 
 /* badges for portal auth state */
@@ -151,6 +186,20 @@ h1{font-size:1.6rem;margin:0}
 }
 .badge.ok{background:#052e1a;border-color:#0a5a35;color:#b2f5cf}
 .badge.warn{background:#2c1605;border-color:#8a4b16;color:#ffd8b3}
+
+/* (Optional/unused) Jellyfin button skeleton — keep sizes consistent if you ever switch classes */
+.jellyfin-btn{
+  background:#7a45ff;
+  border:1px solid #5933c2;
+  color:#fff;
+  font-size:18px;
+  font-weight:700;
+  padding:14px 22px;
+  border-radius:12px;
+  display:inline-flex;
+  align-items:center;
+  gap:12px;
+}
 
 /* ========== Footer ========== */
 .footer{

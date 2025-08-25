@@ -12,26 +12,37 @@
     <section class="card">
       <div class="brand">
         <!-- You can swap this for your logo -->
-        <svg viewBox="0 0 24 24" aria-hidden="true" class="logo">
-          <path d="M3 3h18v18H3z" fill="#111827"/>
-          <path d="M9 6l7 6-7 6V6z" fill="#f59e0b"/>
-        </svg>
+		<svg viewBox="0 0 24 24" aria-hidden="true" class="logo">
+		  <rect x="3" y="3" width="18" height="18" rx="3" fill="#111827"/>
+		  <circle cx="12" cy="12" r="6.25" fill="none" stroke="#10B981" stroke-width="1.5"/>
+		  <path d="M9 10V9a3 3 0 1 1 6 0v1" fill="none" stroke="#F59E0B" stroke-width="1.5" stroke-linecap="round"/>
+		  <rect x="8" y="10" width="8" height="7" rx="1.6" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
+		</svg>
         <h1>AuthPortal</h1>
-        <p class="muted">Sign in with your Plex account to continue</p>
+        <p class="muted">Sign in with your {{.ProviderName}} account to continue.</p>
       </div>
 
       <div style="display: flex; justify-content: center; align-items: center">
-        <button id="startBtn" class="plex-btn">
-          <img src="/static/login.svg" alt="Plex Logo" class="plex-logo">
-          Sign in with Plex
-        </button>
+		  <button id="auth-signin" class="plex-btn">
+			{{ if eq .ProviderKey "plex" }}
+			  <!-- Use a masked span so we can force pure black -->
+			  <span class="plex-logo-mask" aria-hidden="true"></span>
+			{{ else if eq .ProviderKey "jellyfin"}}
+			  <img src="/static/jellyfin.svg" alt="{{ .ProviderName }} logo" />
+			{{ else }}
+			  <img src="/static/emby.svg" alt="{{ .ProviderName }} logo" />
+			{{ end }}
+			{{ if eq .ProviderKey "emby" }}Sign in with Emby
+			{{ else if eq .ProviderKey "jellyfin" }}Sign in with Jellyfin
+			{{ else }}Sign in with Plex{{ end }}
+		  </button>
       </div>
     </section>
   </main>
 
   <!-- Footer -->
   <footer class="footer">
-    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with Plex, Inc.”.</p>
+    <p><a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a> created by Modom. “Use at your own risk. This project is unaffiliated with {{.ProviderName}}”.</p>
   </footer>
 
   <script src="/static/login.js" defer></script>

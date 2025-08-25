@@ -1,81 +1,143 @@
-(function () {
-  const baseMeta = (document.querySelector('meta[name="app-base-url"]') || {}).content || '';
-  const base = baseMeta || '';
-  // Derive the expected origin from BaseURL (fallback to current)
-  let appOrigin = window.location.origin;
-  try { appOrigin = new URL(base || window.location.href).origin; } catch (e) {}
-
-  const btn = document.getElementById('startBtn');
-
-  function openCenteredPopup(url, title) {
-    const w = 520, h = 680;
-    const y = window.top.outerHeight / 2 + window.top.screenY - (h / 2);
-    const x = window.top.outerWidth / 2 + window.top.screenX - (w / 2);
-    return window.open(url, title, `width=${w},height=${h},left=${x},top=${y},resizable,scrollbars`);
+// /static/login.js
+(() => {
+  function openPopup(url) {
+    const w = 600, h = 700;
+    const y = (window.top?.outerHeight || 800) / 2 + (window.top?.screenY || 0) - h / 2;
+    const x = (window.top?.outerWidth || 1200) / 2 + (window.top?.screenX || 0) - w / 2;
+    return window.open(
+      url,
+      "mediaAuth",
+      `width=${w},height=${h},left=${x},top=${y},resizable=yes,scrollbars=yes`
+    );
   }
 
-  function redirectHome() {
-    window.location = `${base}/home`;
+  // Only accept messages from our own origin
+  window.addEventListener("message", (ev) => {
+    if (ev.origin !== window.location.origin) return;
+    const d = ev.data || {};
+    if (d && d.ok && (d.type === "plex-auth" || d.type === "emby-auth" || d.type === "jellyfin-auth" || d.type === "auth-portal")) {
+      window.location.assign(d.redirect || "/home");
+    }
+  });
+
+  // --- Minimal addition: figure out current provider from the button ---
+  function detectProvider(btn) {
+    // 1) Prefer explicit data attribute if ever added
+    const dp = (btn?.getAttribute("data-provider") || "").toLowerCase();
+    if (dp) return dp;
+
+    // 2) Infer from class name pattern "{{.ProviderKey}}-btn"
+    const cl = [...(btn?.classList || [])].map(c => c.toLowerCase());
+    if (cl.includes("plex-btn")) return "plex";
+    if (cl.includes("emby-btn")) return "emby";
+    if (cl.includes("jellyfin-btn")) return "jellyfin";
+
+    // 3) Try the icon filename
+    const img = btn?.querySelector("img");
+    const src = (img?.getAttribute("src") || "").toLowerCase();
+    if (src.includes("plex")) return "plex";
+    if (src.includes("emby")) return "emby";
+    if (src.includes("jellyfin")) return "jellyfin";
+
+    // 4) Last resort: button text
+    const txt = (btn?.textContent || "").toLowerCase();
+    if (txt.includes("plex")) return "plex";
+    if (txt.includes("emby")) return "emby";
+    if (txt.includes("jellyfin")) return "jellyfin";
+
+    return "plex"; // default
   }
 
-  // Fallback: poll session for a few seconds. If logged in, redirect.
-  function startSessionPoll() {
-    const end = Date.now() + 12_000; // ~12s
-    const timer = setInterval(async () => {
-      if (Date.now() > end) { clearInterval(timer); return; }
-      try {
-        const r = await fetch(`${base}/me`, { credentials: 'include' });
-        if (r.ok) {
-          const j = await r.json().catch(() => ({}));
-          if (j && (j.username || j.uuid)) {
-            clearInterval(timer);
-            redirectHome();
-          }
-        }
-      } catch (_) {}
-    }, 800);
-  }
+  async function startFlow(btn) {
+    const provider = detectProvider(btn); // "plex" | "emby" | "jellyfin"
 
-  async function startWeb() {
-    if (!btn) return;
-    btn.disabled = true;
-
+    // Open placeholder popup synchronously (prevents popup blockers)
+    let popup = openPopup("about:blank");
     try {
-      const res = await fetch(`${base}/auth/start-web`, { method: 'POST', credentials: 'include' });
-      if (!res.ok) throw new Error('start failed');
-      const { authUrl } = await res.json();
+      if (popup?.document) {
+        popup.document.write(`<!doctype html><meta charset="utf-8"><title>Starting sign-in…</title>
+          <body style="font-family:system-ui;padding:1rem">Starting sign-in…</body>`);
+        popup.document.close();
+      }
+    } catch {}
 
-      // Try popup first
-      let popup = openCenteredPopup(authUrl, 'AuthPortal Login');
-      if (!popup || popup.closed) {
-        // Popup blocked → navigate current tab
-        window.location = authUrl;
-        // session poll still helps us get back
+    btn.disabled = true;
+    try {
+      let authUrl = null;
+
+      if (provider === "plex") {
+        // Primary (Plex) path unchanged
+        try {
+          const res = await fetch("/auth/start-web", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Accept": "application/json" }
+          });
+          if (res.ok) {
+            const j = await res.json().catch(() => ({}));
+            authUrl = j.authUrl || j.url || j.location || null;
+          }
+        } catch {}
+
+        // Fallback (legacy) if start-web didn't return a URL
+        if (!authUrl) authUrl = "/auth/forward?emby=1";
+      } else {
+        // Minimal change: treat Jellyfin like Emby and use its own forward flag
+        // (requires a backend route alias: /auth/jellyfin/login or /auth/forward?jellyfin=1)
+        authUrl = provider === "jellyfin" ? "/auth/forward?jellyfin=1" : "/auth/forward?emby=1";
       }
 
-      // Primary path: wait for postMessage from the popup/forward page
-      const handler = (evt) => {
-        try {
-          if (evt.origin !== appOrigin) return;
-          const data = evt.data || {};
-          const ok = (data.type === 'plex-auth' || data.type === 'auth-portal') && data.ok === true;
-          if (ok) {
-            window.removeEventListener('message', handler);
-            redirectHome();
-          }
-        } catch (e) {}
-      };
-      window.addEventListener('message', handler);
+      if (popup && !popup.closed) {
+        try { popup.location.replace(authUrl); } catch { popup.location.href = authUrl; }
+      } else {
+        // Popup blocked → full-page navigation
+        window.location.assign(authUrl);
+        return;
+      }
 
-      // Backup path: poll the session briefly in case the message is missed
-      startSessionPoll();
+      // If user closes the popup, head to /home
+      const iv = setInterval(() => {
+        if (!popup || popup.closed) {
+          clearInterval(iv);
+          window.location.assign("/home");
+        }
+      }, 1200);
 
-    } catch (e) {
-      console.error(e);
-      alert('Could not start login. Please try again.');
+    } catch (err) {
+      console.error(err);
+      try {
+        if (popup && !popup.closed && popup.document) {
+          popup.document.body.innerHTML =
+            `<p style="font-family:system-ui;color:#b91c1c">Could not start login. Please try again.</p>`;
+        }
+      } catch {}
+      alert("Could not start login. Please try again.");
+    } finally {
       btn.disabled = false;
     }
   }
 
-  btn && btn.addEventListener('click', startWeb);
+  function bind() {
+    const btn =
+      document.getElementById("auth-signin") ||
+      document.querySelector("[data-auth-signin]") ||
+      document.querySelector(".auth-signin");
+    if (!btn) return false;
+
+    // If inside a form, prevent default submit
+    const form = btn.closest("form");
+    if (form) {
+      form.addEventListener("submit", (e) => { e.preventDefault(); startFlow(btn); });
+    }
+
+    btn.addEventListener("click", (e) => { e.preventDefault(); startFlow(btn); });
+    return true;
+  }
+
+  // Bind now; if not yet in DOM, bind on DOMContentLoaded; as a last resort, poll briefly
+  if (!bind()) {
+    document.addEventListener("DOMContentLoaded", bind);
+    let tries = 0;
+    const t = setInterval(() => { if (bind() || ++tries > 10) clearInterval(t); }, 150);
+  }
 })();

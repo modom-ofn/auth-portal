@@ -2,24 +2,29 @@
 FROM golang:1.23.10-alpine3.21 AS build
 WORKDIR /src
 
-# 1) Prime module cache (optional if go.sum doesn’t exist yet)
-COPY go.mod ./
-# COPY go.sum ./           # include only if it exists in your context
+# Tools needed for fetching modules over HTTPS
+RUN apk add --no-cache git ca-certificates && update-ca-certificates
+
+# 1) Prime module cache (copies go.mod/go.sum if present)
+COPY go.* ./
+ENV GOPROXY=https://proxy.golang.org,direct \
+    GOSUMDB=sum.golang.org
 RUN go mod download
 
-# 2) Now copy the actual sources, then tidy to compute go.sum fully
+# 2) Copy sources and ensure sums are tidy
 COPY . .
-RUN go mod tidy
+RUN go mod tidy -compat=1.23
 
-# 3) Build static binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/auth-portal .
+# 3) Build static binary (verbose, no VCS scan)
+RUN mkdir -p /out && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -v -x -buildvcs=false -trimpath -ldflags="-s -w" -o /out/auth-portal .
 
 # ---- runtime ----
 FROM alpine:3.21
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates && apk --no-cache upgrade musl
+RUN apk add --no-cache ca-certificates tzdata && apk --no-cache upgrade musl && update-ca-certificates
 
 COPY --from=build /out/auth-portal /app/auth-portal
 COPY templates ./templates
