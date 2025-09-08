@@ -16,14 +16,6 @@ import (
 	"time"
 )
 
-/************* Provider interface (unchanged) *************/
-type MediaProvider interface {
-	Name() string
-	StartWeb(w http.ResponseWriter, r *http.Request)
-	Forward(w http.ResponseWriter, r *http.Request)
-	IsAuthorized(uuid, username string) (bool, error)
-}
-
 /************* shared helpers *************/
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -258,7 +250,7 @@ func (plexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 		url.QueryEscape(clientID), url.QueryEscape(pin.Code), url.QueryEscape(forward),
 	)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":      true, "provider": "plex",
+		"ok": true, "provider": "plex",
 		"authUrl": authURL,
 		"pin_id":  pin.ID, "client_id": clientID, "expires_in": 120,
 	})
