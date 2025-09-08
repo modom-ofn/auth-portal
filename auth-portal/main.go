@@ -19,6 +19,7 @@ import (
 	// Adjust this import path to match your module name from go.mod
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
 	"auth-portal/health"
+	"auth-portal/providers"
 )
 
 var (
@@ -30,6 +31,18 @@ var (
 	plexServerMachineID = envOr("PLEX_SERVER_MACHINE_ID", "")
 	plexServerName      = envOr("PLEX_SERVER_NAME", "")
 
+	embyServerURL     = envOr("EMBY_SERVER_URL", "http://localhost:8096")
+	embyAppName       = envOr("EMBY_APP_NAME", "AuthPortal")
+	embyAppVersion    = envOr("EMBY_APP_VERSION", "2.0.0")
+	embyAPIKey        = envOr("EMBY_API_KEY", "")
+	embyOwnerUsername = envOr("EMBY_OWNER_USERNAME", "")
+	embyOwnerID       = envOr("EMBY_OWNER_ID", "")
+
+	jellyfinServerURL  = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
+	jellyfinAppName    = envOr("JELLYFIN_APP_NAME", "AuthPortal")
+	jellyfinAppVersion = envOr("JELLYFIN_APP_VERSION", "2.0.0")
+	jellyfinAPIKey     = envOr("JELLYFIN_API_KEY", "")
+
 	// Optional extra link on the login page
 	loginExtraLinkURL  = envOr("LOGIN_EXTRA_LINK_URL", "/some-internal-app")
 	loginExtraLinkText = envOr("LOGIN_EXTRA_LINK_TEXT", "Open Internal App")
@@ -39,7 +52,7 @@ var (
 	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
 
 	// Provider selected at startup (plex default; emby and jellyfin are distinct)
-	currentProvider MediaProvider
+	currentProvider providers.MediaProvider
 
 	// Session TTLs & flags
 	sessionTTL        = parseDurationOr(os.Getenv("SESSION_TTL"), 24*time.Hour) // authorized sessions
@@ -57,15 +70,14 @@ func envOr(k, d string) string {
 func pickProvider() MediaProvider {
 	switch strings.ToLower(os.Getenv("MEDIA_SERVER")) {
 	case "jellyfin":
-		// Separate provider implementation (no Emby reuse)
-		return jellyfinProvider{}
+		return providers.JellyfinProvider{}
 	case "emby":
-		return embyProvider{}
+		return providers.EmbyProvider{}
 	case "plex", "":
-		return plexProvider{}
+		return providers.PlexProvider{}
 	default:
 		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", os.Getenv("MEDIA_SERVER"))
-		return plexProvider{}
+		return providers.PlexProvider{}
 	}
 }
 
@@ -102,6 +114,51 @@ func main() {
 
 	// ---- Templates ----
 	tmpl = template.Must(template.ParseGlob("templates/*.html"))
+
+	// ---- Provider configuration ----
+	providers.PlexOwnerToken = plexOwnerToken
+	providers.PlexServerMachineID = plexServerMachineID
+	providers.PlexServerName = plexServerName
+	providers.EmbyServerURL = embyServerURL
+	providers.EmbyAppName = embyAppName
+	providers.EmbyAppVersion = embyAppVersion
+	providers.EmbyAPIKey = embyAPIKey
+	providers.EmbyOwnerUsername = embyOwnerUsername
+	providers.EmbyOwnerID = embyOwnerID
+	providers.JellyfinServerURL = jellyfinServerURL
+	providers.JellyfinAppName = jellyfinAppName
+	providers.JellyfinAppVersion = jellyfinAppVersion
+	providers.JellyfinAPIKey = jellyfinAPIKey
+
+	providers.UpsertUser = func(u providers.User) error {
+		_, err := upsertUser(User{
+			Username:    u.Username,
+			Email:       nullStringFrom(u.Email),
+			MediaUUID:   nullStringFrom(u.MediaUUID),
+			MediaToken:  nullStringFrom(u.MediaToken),
+			MediaAccess: u.MediaAccess,
+		})
+		return err
+	}
+	providers.GetUserByUUID = func(uuid string) (providers.User, error) {
+		u, err := getUserByUUID(uuid)
+		if err != nil {
+			return providers.User{}, err
+		}
+		return providers.User{
+			Username:    u.Username,
+			Email:       u.Email.String,
+			MediaUUID:   u.MediaUUID.String,
+			MediaToken:  u.MediaToken.String,
+			MediaAccess: u.MediaAccess,
+		}, nil
+	}
+	providers.SetUserMediaAccessByUsername = setUserMediaAccessByUsername
+	providers.SetSessionCookie = setSessionCookie
+	providers.SetTempSessionCookie = setTempSessionCookie
+	providers.SealToken = SealToken
+	providers.Debugf = Debugf
+	providers.Warnf = Warnf
 
 	// ---- Provider ----
 	currentProvider = pickProvider()
