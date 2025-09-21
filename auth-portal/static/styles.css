@@ -30,7 +30,7 @@ body{margin:0;color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,R
   overflow: hidden;
 }
 
-/* Optional blurred hero art glow — supply /static/bg.jpg for a subtle, soft-focus vibe */
+/* Optional blurred hero art glow â€” supply /static/bg.jpg for a subtle, soft-focus vibe */
 .bg::before{
   content:"";
   position:absolute; inset:-10% -10% -10% -10%;
@@ -88,6 +88,41 @@ h1{font-size:1.6rem;margin:0}
 .footnote{margin-top:1rem;color:var(--muted);font-size:.9rem}
 
 /* ========== Buttons ========== */
+.auth-btn {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 14px 22px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  line-height: 1;
+  transition:
+    transform .18s ease,
+    box-shadow .18s ease,
+    background-color .18s ease,
+    border-color .18s ease;
+}
+.auth-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+.auth-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.auth-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+.auth-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.65);
+  outline-offset: 2px;
+}
+
 /* Overseerr-style Plex CTA in Plex Orange */
 .plex-btn {
   background: #e5a00d; /* Plex orange */
@@ -135,8 +170,20 @@ h1{font-size:1.6rem;margin:0}
   object-fit:contain;
   vertical-align:middle;
 }
+.auth-btn img,
+.auth-btn svg,
+.auth-btn .plex-logo-mask{
+  width:22px;
+  height:22px;
+  max-width:22px;
+  max-height:22px;
+  flex:0 0 22px;
+  display:inline-block;
+  object-fit:contain;
+  vertical-align:middle;
+}
 
-/* Inline SVG logo → force black (Plex mask already black via background) */
+/* Inline SVG logo â†’ force black (Plex mask already black via background) */
 .plex-btn .plex-logo,
 .plex-btn .plex-logo *{
   fill:#000 !important;
@@ -187,7 +234,7 @@ h1{font-size:1.6rem;margin:0}
 .badge.ok{background:#052e1a;border-color:#0a5a35;color:#b2f5cf}
 .badge.warn{background:#2c1605;border-color:#8a4b16;color:#ffd8b3}
 
-/* (Optional/unused) Jellyfin button skeleton — keep sizes consistent if you ever switch classes */
+/* (Optional/unused) Jellyfin button skeleton â€” keep sizes consistent if you ever switch classes */
 .jellyfin-btn{
   background:#7a45ff;
   border:1px solid #5933c2;

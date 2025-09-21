@@ -1,5 +1,5 @@
 # ---- builder ----
-FROM golang:1.23.10-alpine3.21 AS build
+FROM golang:1.23.12-alpine3.21 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS

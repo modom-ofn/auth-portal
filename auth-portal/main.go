@@ -19,6 +19,7 @@ import (
 	// Adjust this import path to match your module name from go.mod
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
 	"auth-portal/health"
+	"auth-portal/providers"
 )
 
 var (
@@ -30,6 +31,18 @@ var (
 	plexServerMachineID = envOr("PLEX_SERVER_MACHINE_ID", "")
 	plexServerName      = envOr("PLEX_SERVER_NAME", "")
 
+	embyServerURL     = envOr("EMBY_SERVER_URL", "http://localhost:8096")
+	embyAppName       = envOr("EMBY_APP_NAME", "AuthPortal")
+	embyAppVersion    = envOr("EMBY_APP_VERSION", "2.0.0")
+	embyAPIKey        = envOr("EMBY_API_KEY", "")
+	embyOwnerUsername = envOr("EMBY_OWNER_USERNAME", "")
+	embyOwnerID       = envOr("EMBY_OWNER_ID", "")
+
+	jellyfinServerURL  = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
+	jellyfinAppName    = envOr("JELLYFIN_APP_NAME", "AuthPortal")
+	jellyfinAppVersion = envOr("JELLYFIN_APP_VERSION", "2.0.0")
+	jellyfinAPIKey     = envOr("JELLYFIN_API_KEY", "")
+
 	// Optional extra link on the login page
 	loginExtraLinkURL  = envOr("LOGIN_EXTRA_LINK_URL", "/some-internal-app")
 	loginExtraLinkText = envOr("LOGIN_EXTRA_LINK_TEXT", "Open Internal App")
@@ -39,7 +52,7 @@ var (
 	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
 
 	// Provider selected at startup (plex default; emby and jellyfin are distinct)
-	currentProvider MediaProvider
+	currentProvider providers.MediaProvider
 
 	// Session TTLs & flags
 	sessionTTL        = parseDurationOr(os.Getenv("SESSION_TTL"), 24*time.Hour) // authorized sessions
@@ -54,18 +67,21 @@ func envOr(k, d string) string {
 }
 
 // Pick the auth provider (plex default). MEDIA_SERVER: plex | emby | jellyfin
-func pickProvider() MediaProvider {
-	switch strings.ToLower(os.Getenv("MEDIA_SERVER")) {
+func pickProvider() providers.MediaProvider {
+	raw := os.Getenv("MEDIA_SERVER")
+	switch l := strings.ToLower(raw); l {
 	case "jellyfin":
-		// Separate provider implementation (no Emby reuse)
-		return jellyfinProvider{}
-	case "emby":
-		return embyProvider{}
+		return providers.JellyfinProvider{}
+	case "emby", "emby-connect", "embyconnect", "emby_connect":
+		if l != "emby" {
+			log.Printf("MEDIA_SERVER value %q no longer selects Emby Connect; using standard Emby provider", raw)
+		}
+		return providers.EmbyProvider{}
 	case "plex", "":
-		return plexProvider{}
+		return providers.PlexProvider{}
 	default:
-		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", os.Getenv("MEDIA_SERVER"))
-		return plexProvider{}
+		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", raw)
+		return providers.PlexProvider{}
 	}
 }
 
@@ -103,6 +119,53 @@ func main() {
 	// ---- Templates ----
 	tmpl = template.Must(template.ParseGlob("templates/*.html"))
 
+	// ---- Provider configuration (DI init) ----
+    providers.Init(providers.ProviderDeps{
+		PlexOwnerToken:      plexOwnerToken,
+		PlexServerMachineID: plexServerMachineID,
+		PlexServerName:      plexServerName,
+		EmbyServerURL:       embyServerURL,
+		EmbyAppName:         embyAppName,
+		EmbyAppVersion:      embyAppVersion,
+		EmbyAPIKey:          embyAPIKey,
+		EmbyOwnerUsername:   embyOwnerUsername,
+		EmbyOwnerID:         embyOwnerID,
+		JellyfinServerURL:   jellyfinServerURL,
+		JellyfinAppName:     jellyfinAppName,
+		JellyfinAppVersion:  jellyfinAppVersion,
+		JellyfinAPIKey:      jellyfinAPIKey,
+        UpsertUser: func(u providers.User) error {
+            _, err := upsertUserIdentity(
+                u.Username,
+                u.Email,
+                strings.TrimSpace(u.Provider),
+                u.MediaUUID,
+                u.MediaToken,
+                u.MediaAccess,
+            )
+            return err
+        },
+        GetUserByUUID: func(uuid string) (providers.User, error) {
+            u, err := getUserByUUIDPreferred(uuid)
+            if err != nil {
+                return providers.User{}, err
+            }
+            return providers.User{
+                Username:    u.Username,
+				Email:       u.Email.String,
+				MediaUUID:   u.MediaUUID.String,
+				MediaToken:  u.MediaToken.String,
+				MediaAccess: u.MediaAccess,
+			}, nil
+		},
+		SetUserMediaAccessByUsername: setUserMediaAccessByUsername,
+		SetSessionCookie:             setSessionCookie,
+		SetTempSessionCookie:         setTempSessionCookie,
+		SealToken:                    SealToken,
+		Debugf:                       Debugf,
+		Warnf:                        Warnf,
+	})
+
 	// ---- Provider ----
 	currentProvider = pickProvider()
 	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
@@ -115,13 +178,67 @@ func main() {
 
 	// Public
 	r.HandleFunc("/", loginPageHandler).Methods("GET")
+	r.HandleFunc("/whoami", whoamiHandler).Methods("GET")
 
-	// Provider routes
-	// Plex uses popup flow (StartWeb + Forward).
-	r.HandleFunc("/auth/start-web", currentProvider.StartWeb).Methods("POST", "GET")
-	// Emby and Jellyfin use GET (show form/page) and POST (submit credentials) on /auth/forward,
-	// implemented by their own provider.Forward.
-	r.HandleFunc("/auth/forward", currentProvider.Forward).Methods("GET", "POST")
+	// Provider routes (v2 adapter wraps legacy providers and returns responses we write).
+	v2 := providers.AdaptV2(currentProvider)
+	if err := v2.Health(); err != nil {
+		log.Printf("Provider health warning: %v", err)
+	}
+	r.HandleFunc("/auth/start-web", func(w http.ResponseWriter, r *http.Request) {
+		res, _ := v2.Start(r.Context(), r)
+		providers.WriteHTTPResult(w, res)
+	}).Methods("POST", "GET")
+	r.HandleFunc("/auth/forward", func(w http.ResponseWriter, r *http.Request) {
+		// Prefer structured outcome if provider implements it
+		if op, ok := currentProvider.(providers.OutcomeProvider); ok {
+			out, resp, err := op.CompleteOutcome(r.Context(), r)
+			if resp != nil {
+				providers.WriteHTTPResult(w, *resp)
+				return
+			}
+			if err != nil {
+				http.Error(w, "Auth failed", http.StatusUnauthorized)
+				return
+			}
+			// Upsert & cookie handling in handler layer
+			if providers.UpsertUser != nil {
+				_ = providers.UpsertUser(providers.User{
+					Username:    out.Username,
+					Email:       out.Email,
+					MediaUUID:   out.MediaUUID,
+					MediaToken:  out.SealedToken,
+					MediaAccess: out.Authorized,
+				})
+			}
+			if out.Authorized {
+				_ = providers.SetSessionCookie(w, out.MediaUUID, out.Username)
+			} else {
+				_ = providers.SetTempSessionCookie(w, out.MediaUUID, out.Username)
+			}
+			// Standard success page
+			prov := out.Provider
+			if prov == "" {
+				prov = v2.Name()
+			}
+			w.Header().Set("Content-Security-Policy",
+				"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			// Post a message back to opener, keep type stable (e.g., "plex-auth")
+			_, _ = w.Write([]byte("<!doctype html><meta charset=\"utf-8\"><title>Signed in — AuthPortal</title>" +
+				"<body style=\"font-family:system-ui;padding:2rem\"><h1>Signed in — you can close this window.</h1>" +
+				"<script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ok:true,type:\"" + prov + "-auth\",redirect:\"/home\"},window.location.origin)}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script>" +
+				"</body>"))
+			return
+		}
+		// Fallback to v2 adapter
+		res, _ := v2.Complete(r.Context(), r)
+		providers.WriteHTTPResult(w, res)
+	}).Methods("GET", "POST")
+
+	// Plex fallback: JSON poll to complete auth if forwardUrl navigation fails
+	r.HandleFunc("/auth/poll", providers.PlexPoll).Methods("GET")
 
 	// Logout (protect with a simple same-origin check)
 	r.Handle("/logout", requireSameOrigin(http.HandlerFunc(logoutHandler))).Methods("POST")
@@ -320,12 +437,12 @@ func requireSameOrigin(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		referer := r.Header.Get("Referer")
 
-		// Accept if either header matches an allowed origin…
+		// Accept if either header matches an allowed origin.
 		if matchesAllowed(origin) || matchesAllowed(referer) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// …or if headers are missing but the request origin itself is allowed.
+		// ...or if headers are missing but the request origin itself is allowed.
 		if origin == "" && referer == "" {
 			if _, ok := allowed[reqOrigin]; ok {
 				next.ServeHTTP(w, r)

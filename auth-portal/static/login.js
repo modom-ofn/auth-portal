@@ -65,25 +65,20 @@
     try {
       let authUrl = null;
 
-      if (provider === "plex") {
-        // Primary (Plex) path unchanged
-        try {
-          const res = await fetch("/auth/start-web", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Accept": "application/json" }
-          });
-          if (res.ok) {
-            const j = await res.json().catch(() => ({}));
-            authUrl = j.authUrl || j.url || j.location || null;
-          }
-        } catch {}
-
-        // Fallback (legacy) if start-web didn't return a URL
-        if (!authUrl) authUrl = "/auth/forward?emby=1";
-      } else {
-        // Minimal change: treat Jellyfin like Emby and use its own forward flag
-        // (requires a backend route alias: /auth/jellyfin/login or /auth/forward?jellyfin=1)
+      // Ask backend for the correct URL for the active provider
+      try {
+        const res = await fetch("/auth/start-web", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" }
+        });
+        if (res.ok) {
+          const j = await res.json().catch(() => ({}));
+          authUrl = j.authUrl || j.url || j.location || null;
+        }
+      } catch {}
+      // Fallbacks by provider if backend didn't return a URL
+      if (!authUrl) {
         authUrl = provider === "jellyfin" ? "/auth/forward?jellyfin=1" : "/auth/forward?emby=1";
       }
 
@@ -95,10 +90,32 @@
         return;
       }
 
+      // Fallback for Plex: poll backend to finish PIN flow if Plex doesn't redirect to /auth/forward
+      let pollTimer = null;
+      if (provider === "plex") {
+        pollTimer = setInterval(async () => {
+          try {
+            const r = await fetch("/auth/poll", {
+              method: "GET",
+              credentials: "same-origin",
+              headers: { "Accept": "application/json" }
+            });
+            if (!r.ok) return;
+            const j = await r.json().catch(() => ({}));
+            if (j && j.ok) {
+              clearInterval(pollTimer);
+              try { if (popup && !popup.closed) popup.close(); } catch {}
+              window.location.assign(j.redirect || "/home");
+            }
+          } catch {}
+        }, 1200);
+      }
+
       // If user closes the popup, head to /home
       const iv = setInterval(() => {
         if (!popup || popup.closed) {
           clearInterval(iv);
+          if (pollTimer) clearInterval(pollTimer);
           window.location.assign("/home");
         }
       }, 1200);
