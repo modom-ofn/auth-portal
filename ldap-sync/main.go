@@ -63,21 +63,37 @@ func main() {
 		}
 	}
 
-	// Only sync authorized users (dev-r2: media_access)
-	const q = `
-SELECT username, email, media_uuid
-FROM users
-WHERE media_access = TRUE
-ORDER BY username
-`
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
+    // Prefer identities (multi-provider) when available; fallback to legacy users
+    ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+    defer cancel()
 
-	rows, err := db.QueryContext(ctx, q)
-	if err != nil {
-		log.Fatalf("query users: %v", err)
-	}
-	defer rows.Close()
+    var useIdentities bool
+    if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM identities WHERE media_access = TRUE)`).Scan(&useIdentities); err != nil {
+        log.Fatalf("identities exists: %v", err)
+    }
+
+    var rows *sql.Rows
+    if useIdentities {
+        rows, err = db.QueryContext(ctx, `
+SELECT u.username, u.email, i.media_uuid, i.provider
+  FROM identities i
+  JOIN users u ON u.id = i.user_id
+ WHERE i.media_access = TRUE
+ ORDER BY u.username`)
+        if err != nil {
+            log.Fatalf("query identities: %v", err)
+        }
+    } else {
+        rows, err = db.QueryContext(ctx, `
+SELECT username, email, media_uuid
+  FROM users
+ WHERE media_access = TRUE
+ ORDER BY username`)
+        if err != nil {
+            log.Fatalf("query users: %v", err)
+        }
+    }
+    defer rows.Close()
 
 	// ---- LDAP connect & bind
 	l, err := dialLDAP(ldapHost)
@@ -101,19 +117,30 @@ ORDER BY username
 		log.Fatalf("ensureOUExists(%s): %v", baseDN, err)
 	}
 
-	// Process rows
-	for rows.Next() {
-		var u rowUser
-		if err := rows.Scan(&u.Username, &u.Email, &u.MediaUUID); err != nil {
-			log.Printf("scan row: %v", err)
-			continue
-		}
+    // Process rows
+    for rows.Next() {
+        var username string
+        var email sql.NullString
+        var mediaUUID sql.NullString
+        var provider string
+        if useIdentities {
+            if err := rows.Scan(&username, &email, &mediaUUID, &provider); err != nil {
+                log.Printf("scan row (identities): %v", err)
+                continue
+            }
+        } else {
+            if err := rows.Scan(&username, &email, &mediaUUID); err != nil {
+                log.Printf("scan row (users): %v", err)
+                continue
+            }
+            provider = inferProviderFromUUID(mediaUUID.String)
+        }
 
-		username := strings.TrimSpace(u.Username)
-		if username == "" {
-			log.Println("skipping user with empty username")
-			continue
-		}
+        username = strings.TrimSpace(username)
+        if username == "" {
+            log.Println("skipping user with empty username")
+            continue
+        }
 
 		// Build DN
 		userDN := fmt.Sprintf("uid=%s,%s", ldapEscape(username), baseDN)
@@ -126,14 +153,17 @@ ORDER BY username
 		}
 
 		// Build auxiliary attributes
-		mailVals := []string{}
-		if u.Email.Valid && strings.TrimSpace(u.Email.String) != "" {
-			mailVals = []string{strings.TrimSpace(u.Email.String)}
-		}
-		descVals := []string{}
-		if u.MediaUUID.Valid && strings.TrimSpace(u.MediaUUID.String) != "" {
-			descVals = []string{"media_uuid=" + strings.TrimSpace(u.MediaUUID.String)}
-		}
+        mailVals := []string{}
+        if email.Valid && strings.TrimSpace(email.String) != "" {
+            mailVals = []string{strings.TrimSpace(email.String)}
+        }
+        descVals := []string{}
+        if strings.TrimSpace(provider) != "" {
+            descVals = append(descVals, "provider="+strings.TrimSpace(provider))
+        }
+        if mediaUUID.Valid && strings.TrimSpace(mediaUUID.String) != "" {
+            descVals = append(descVals, "media_uuid="+strings.TrimSpace(mediaUUID.String))
+        }
 
 		if !exists {
 			// Add new inetOrgPerson (include standard aux classes for compatibility)
@@ -281,4 +311,19 @@ func firstRDNValue(dnLower, key string) string {
 		}
 	}
 	return ""
+}
+
+// inferProviderFromUUID returns provider based on a media_uuid prefix.
+func inferProviderFromUUID(u string) string {
+    s := strings.ToLower(strings.TrimSpace(u))
+    switch {
+    case strings.HasPrefix(s, "plex-"):
+        return "plex"
+    case strings.HasPrefix(s, "emby-"):
+        return "emby"
+    case strings.HasPrefix(s, "jellyfin-"):
+        return "jellyfin"
+    default:
+        return ""
+    }
 }

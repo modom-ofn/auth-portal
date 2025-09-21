@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"time"
 )
 
 // providerUI returns the provider key used by code ("plex"/"emby")
@@ -23,7 +24,7 @@ func providerUI() (key, display string) {
 		switch l {
 		case "plex":
 			return "plex", raw // display keeps user-provided casing
-		case "emby":
+		case "emby", "emby-connect", "embyconnect", "emby_connect":
 			return "emby", raw
 		default:
 			// Unknown value: keep raw for display, fall back to currentProvider for key
@@ -141,6 +142,85 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 		"username": usernameFrom(r.Context()),
 		"uuid":     uuidFrom(r.Context()),
 	})
+}
+
+// whoamiHandler returns a normalized identity payload for the frontend.
+// It is safe to call without an authenticated session; in that case
+// it returns authenticated=false along with provider info so the UI can
+// render the correct login button.
+func whoamiHandler(w http.ResponseWriter, r *http.Request) {
+	type resp struct {
+		OK              bool   `json:"ok"`
+		Authenticated   bool   `json:"authenticated"`
+		Provider        string `json:"provider"`
+		ProviderDisplay string `json:"providerDisplay"`
+		Username        string `json:"username,omitempty"`
+		UUID            string `json:"uuid,omitempty"`
+		Email           string `json:"email,omitempty"`
+		MediaAccess     bool   `json:"mediaAccess"`
+		LoginPath       string `json:"loginPath"`
+		IssuedAt        string `json:"issuedAt,omitempty"`
+		Expiry          string `json:"expiry,omitempty"`
+	}
+
+	key, display := providerUI()
+	out := resp{OK: true, Provider: key, ProviderDisplay: display, LoginPath: "/auth/start-web"}
+
+	// Try to extract identity from session cookie first
+	var uname, uid string
+	var issuedAtStr, expiryStr string
+	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+		if tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) { return sessionSecret, nil }); err == nil && tok.Valid {
+			if claims, ok := tok.Claims.(*sessionClaims); ok {
+				uname = claims.Username
+				uid = claims.UUID
+				if claims.IssuedAt != nil {
+					issuedAtStr = claims.IssuedAt.Time.Format(time.RFC3339)
+				}
+				if claims.ExpiresAt != nil {
+					expiryStr = claims.ExpiresAt.Time.Format(time.RFC3339)
+				}
+			}
+		}
+	}
+	// Fallback to context (if this handler is ever wrapped by authMiddleware)
+	if uname == "" && uid == "" {
+		uname = usernameFrom(r.Context())
+		uid = uuidFrom(r.Context())
+	}
+
+	if uname == "" && uid == "" {
+		// No session; return provider info only
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+		return
+	}
+
+	out.Authenticated = true
+	out.Username = uname
+	out.UUID = uid
+	out.IssuedAt = issuedAtStr
+	out.Expiry = expiryStr
+
+	// Authorization check (provider-specific rules)
+	authorized, err := currentProvider.IsAuthorized(uid, uname)
+	if err != nil {
+		// Log but continue with best-effort
+		log.Printf("whoami authz check failed for %s (%s): %v", uname, uid, err)
+	}
+	out.MediaAccess = authorized
+
+	// Try to populate email from DB if present
+    if uid != "" {
+        if u, err := getUserByUUIDPreferred(uid); err == nil {
+            if u.Email.Valid {
+                out.Email = strings.TrimSpace(u.Email.String)
+            }
+        }
+    }
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {

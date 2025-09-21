@@ -1,33 +1,33 @@
-# AuthPortal (v2.0.0)
+# AuthPortal (v2.0.1)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.23.10%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.23.12%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway for Plex, Jellyfin, or Emby.
-It reproduces Overseerr’s clean popup login (no code entry), stores a sealed media-server token, and issues a secure session cookie for your intranet portal.
+It reproduces Overseerr's clean popup login (no code entry), stores a sealed media-server token, and issues a secure session cookie for your intranet portal.
 
-- ✅ Authorized Media Server users → directed to the authorized home page.
-- 🚫 Unauthorized Media Server users → shown the restricted home page.
+- Authorized Media Server users are directed to the authorized home page.
+- Unauthorized Media Server users are shown the restricted home page.
 
-**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc. or Emby LLC. or Jellyfin”.**
+**Use at your own risk. This project uses Vibe Coding and AI-Assistance. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.**
 
 It can optionally be expanded to include LDAP integration for downstream app requirements.
 
-👉 Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
-👉 GitHub Repo: https://github.com/modom-ofn/auth-portal
+ Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
+ GitHub Repo: https://github.com/modom-ofn/auth-portal
 
 ---
 
-## ✨ Features
+## Features
 
-- 🔐 **Popup login** (Plex PIN, Emby/Jellyfin username+password in a small popup form)
-- 🎨 Overseerr-style dark UI with branded button (Plex/Emby/Jellyfin)
-- 🍪 Signed, HTTP-only JWT session cookie
-- 🐳 Single binary, fully containerized
-- ⚙️ Simple env-based config
-- 🏠 Two distinct home pages: authorized vs. unauthorized
+- **Popup login** (Plex PIN, Emby/Jellyfin username+password in a small popup form)
+- Overseerr-style dark UI with branded button (Plex/Emby/Jellyfin)
+- Signed, HTTP-only JWT session cookie
+- Single binary, fully containerized
+- Simple env-based config
+- Two distinct home pages: authorized vs. unauthorized
 
 ---
 
@@ -37,7 +37,7 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ## Table of Contents
 
-- [What’s New in v2.0.0](#whats-new-in-v200)
+- [What's New in v2.0.1](#whats-new-in-v201)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Plex](#plex)
@@ -45,48 +45,27 @@ It can optionally be expanded to include LDAP integration for downstream app req
   - [Emby](#emby)
 - [Providers (Plex / Jellyfin / Emby)](#providers-plex--jellyfin--emby)
 - [Security Notes](#security-notes)
-- [Database ](#database)
+- [Database](#database)
 - [Build & Images](#build--images)
 - [Logging](#logging)
 - [HTTP Routes](#http-routes)
 - [Frontend Bits](#frontend-bits)
-- [How it works](#how-it-works)]
-- [Customization](#customization)]
-- [Security best practices](#security-best-practices)]
-- [Project structure](#project-structure)]
-- [Contributing](#contributing)]
+- [How it works](#how-it-works)
+- [Customization](#customization)
+- [Security best practices](#security-best-practices)
+- [Project structure](#project-structure)
+- [Contributing](#contributing)
 - [License](#license)
 
 ---
 
-## What’s New in v2.0.0
+## What's New in v2.0.1
 
-- **Media-agnostic user model**  
-  DB columns renamed:
-  - `plex_uuid → media_uuid`
-  - `plex_token → media_token`
-  - `plex_access → media_access`
-
-- **Token sealing at rest**  
-  Access tokens are encrypted (sealed) using `DATA_KEY` before persistence; unsealed only when needed.
-
-- **Robust popup login flow**  
-  Unified `static/login.js` supports **Plex** (PIN flow) and **Emby** (embedded popup form). Works with popup blockers by opening a placeholder synchronously.
-
-- **Provider abstraction**  
-  Common `MediaProvider` interface with `StartWeb`, `Forward`, and `IsAuthorized`.
-
-- **Consistent styling/branding**  
-  Emby popup page uses the existing `static/styles.css` and minimal inline spacing to match Plex look/feel.
-
-- **Security hardening**  
-  Global security headers; popup pages set a scoped CSP; optional HSTS when `APP_BASE_URL` is HTTPS.
-
-- **Logout CSRF protection**  
-  Same-origin check on POST `/logout`. Orphaned sessions no longer redirect-loop.
-
-- **Configurable logging**  
-  App and Postgres logging controlled via env (`LOG_LEVEL` / postgres flags).
+- **Security:** upgraded Go to 1.23.12 (CE-2025-47906). Rebuild images to pick up the patched toolchain.
+- **New endpoint:** `GET /whoami` returns normalized identity plus session metadata (`issuedAt`, `expiry`).
+- **Multi-provider identities:** new `identities` table with automatic backfill; reads prefer identities and fall back to legacy `users` when needed.
+- **Provider layer refactor:** return-value API, structured outcomes (cookies set in app), minimal `Health()` checks, shared HTTP helpers with one-retry on transient errors.
+- **UI:** consistent sign-in button base across providers; Jellyfin icon sizing/text fixed.
 
 ---
 
@@ -108,17 +87,17 @@ LOGIN_EXTRA_LINK_TEXT=Open Internal App
 UNAUTH_REQUEST_EMAIL=support@example.com
 UNAUTH_REQUEST_SUBJECT=AuthPortal Access Request
 
-# Set 'MEDIA_SERVER=' options: plex | emby (jellyfin later)
-MEDIA_SERVER=plex
+# Set 'MEDIA_SERVER=' options: Plex | Emby | Jellyfin
+MEDIA_SERVER=Plex
 
 # Set 'FORCE_SECURE_COOKIE=1' in prod; if behind TLS/NGINX with X-Forwarded-Proto use 1
 FORCE_SECURE_COOKIE=0
 
-# 32-byte base64 key (e.g.,: openssl rand -base64 32)
+# 32-byte base64 key (e.g.,: openssl rand -base64 32) (Do Not Reuse Example Below)
 DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
 
 # Logging # DEBUG | INFO | WARN | ERROR
-LOG_LEVEL=DEBUG
+LOG_LEVEL=INFO
 
 # ---------- LDAP (only if using `--profile ldap`) ----------
 LDAP_ADMIN_PASSWORD=change-me-strong
@@ -134,9 +113,8 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.0
-# EMBY_QUICKCONNECT=1  # (not yet implemented)
-EMBY_API_KEY=
+EMBY_APP_VERSION=2.0.1
+# EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
 
@@ -145,7 +123,7 @@ JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 # optional JellyFin changes
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.0
+JELLYFIN_APP_VERSION=2.0.1
 ```
 
 2) **docker-compose.yaml**
@@ -225,13 +203,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.0}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.1}
 
-      # Emby (quick connect coming soon)
+      # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.0}
-      # EMBY_QUICKCONNECT: ${EMBY_QUICKCONNECT:-}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.1}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -327,43 +304,43 @@ docker compose --profile ldap up -d --build
 
 ## Configuration
 
-- `APP_BASE_URL` — external URL users hit (drives redirects & cookie flags). Use HTTPS in production.
-- `MEDIA_SERVER` — `plex` or `jellyfin` or `emby`.
-- `SESSION_SECRET` — HMAC secret for JWT cookie (required).
-- `DATA_KEY` — base64 32-byte key for sealing tokens at rest (required).
-- `LOG_LEVEL` — `DEBUG`, `INFO`, `WARN`, or `ERROR`.
-- `FORCE_SECURE_COOKIE` — set to 1 to force Secure on cookies (behind TLS/ingress).
-- `LOGIN_EXTRA_LINK_URL` — external URL on authorized page.
-- `LOGIN_EXTRA_LINK_TEXT` — text for external URL on authorized page.
-- `UNAUTH_REQUEST_EMAIL` — email address for unauthorized page request access link
-- `UNAUTH_REQUEST_SUBJECT` — subject for unuathorized page request access email
+- `APP_BASE_URL`  external URL users hit (drives redirects & cookie flags). Use HTTPS in production.
+- `MEDIA_SERVER`  `plex` or `jellyfin` or `emby`.
+- `SESSION_SECRET`  HMAC secret for JWT cookie (required).
+- `DATA_KEY`  base64 32-byte key for sealing tokens at rest (required).
+- `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
+- `FORCE_SECURE_COOKIE`  set to 1 to force Secure on cookies (behind TLS/ingress).
+- `LOGIN_EXTRA_LINK_URL`  external URL on authorized page.
+- `LOGIN_EXTRA_LINK_TEXT`  text for external URL on authorized page.
+- `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page request access link
+- `UNAUTH_REQUEST_SUBJECT`  subject for unuathorized page request access email
 
 ### Plex
 
-- `PLEX_SERVER_MACHINE_ID` — preferred; exact machine identifier of your server.
-- `PLEX_SERVER_NAME` — fallback if machine id not set.
-- `PLEX_OWNER_TOKEN` — optional owner token. If configured, the owner account is always authorized (account id match).
+- `PLEX_SERVER_MACHINE_ID`  preferred; exact machine identifier of your server.
+- `PLEX_SERVER_NAME`  fallback if machine id not set.
+- `PLEX_OWNER_TOKEN`  optional owner token. If configured, the owner account is always authorized (account id match).
 
 ### Jellyfin
 
-- `JELLYFIN_SERVER_URL` — e.g., `http://<host>:8096`.
-	If Jellyfin runs in Docker, use your host IP from the app container’s perspective (not `localhost`).
-- `JELLYFIN_API_KEY` — optional; enables stricter authorization checks (`IsDisabled` policy).
-- `JELLYFIN_APP_NAME`, `JELLYFIN_APP_VERSION` — client headers used in requests.
+- `JELLYFIN_SERVER_URL`  e.g., `http://<host>:8096`.
+	If Jellyfin runs in Docker, use your host IP from the app containers perspective (not `localhost`).
+- `JELLYFIN_API_KEY`  optional; enables stricter authorization checks (`IsDisabled` policy).
+- `JELLYFIN_APP_NAME`, `JELLYFIN_APP_VERSION`  client headers used in requests.
 
 ### Emby
 
-- `EMBY_SERVER_URL` — e.g., `http://<host>:8096`.
-	If Emby runs in Docker, use your host IP from the app container’s perspective (not `localhost`).
-- `EMBY_API_KEY` — optional; enables stricter authorization checks (`IsDisabled` policy).
-- `EMBY_APP_NAME`, `EMBY_APP_VERSION` — client headers used in requests.
+- `EMBY_SERVER_URL`  e.g., `http://<host>:8096`.
+	If Emby runs in Docker, use your host IP from the app containers perspective (not `localhost`).
+- `EMBY_API_KEY`  optional; enables stricter authorization checks (`IsDisabled` policy).
+- `EMBY_APP_NAME`, `EMBY_APP_VERSION`  client headers used in requests.
 
 ---
 
 ## Providers (Plex / Jelly Fin / Emby)
 
 - **Plex**:
-`StartWeb` creates a PIN and returns the Plex Auth URL → popup opens.
+`StartWeb` creates a PIN and returns the Plex Auth URL  popup opens.
 `Forward` polls the PIN, fetches user info, seals token, decides authorization:
    1. User token can see configured server in `/api/v2/resources` (match machine id or name), OR
    2. Owner fallback if `PLEX_OWNER_TOKEN` is set and account ids match.
@@ -393,9 +370,9 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 
 ## Database
 
-### Users table (dev-r2):
+### Users table (legacy-compatible):
 ```sql
-id BIGSERIAL PRIMARY KEY,
+id 			 BIGSERIAL PRIMARY KEY,
 username     TEXT UNIQUE NOT NULL,
 email        TEXT NULL,
 media_uuid   TEXT UNIQUE,
@@ -418,11 +395,20 @@ CREATE TABLE IF NOT EXISTS pins (
 );
 ```
 
+### Identities (new in v2.0.1)
+
+- Purpose: multi-provider identity linking (one row per provider per user).
+- Columns: `user_id (FK)`, `provider`, `media_uuid`, `media_token`, `media_access`, timestamps.
+- Uniqueness: `(provider, media_uuid)`, `(user_id, provider)`.
+- Backfill: on startup, rows are inserted from `users.media_uuid` when present.
+- Writes: app upserts into both `users` and `identities` (transition-friendly).
+- Reads: prefer `identities` then fallback to `users` where needed.
+
 ---
 
 ## Build & Images
 
-- Go: `1.23.10` on `alpine:3.21`.
+- Go: `1.23.12` on `alpine:3.21`.
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.23`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
 - Runtime: `alpine:3.21`, installs CA certs + tzdata, runs as non-root `uid 10001`.
@@ -439,35 +425,34 @@ WARN  emby/auth HTTP 401 body="..."
 DEBUG plex: resources match via machine id
 ```
 - **Postgres**: `LOG_LEVEL` maps to server params:
-  - `DEBUG` → `log_min_messages=debug1`, connection/disconnection logging on
-  - `INFO` → `log_min_messages=info`
-  - `WARN` → `log_min_messages=warning`
-  - `ERROR` → `log_min_messages=error`
+  - `DEBUG`  `log_min_messages=debug1`, connection/disconnection logging on
+  - `INFO`  `log_min_messages=info`
+  - `WARN`  `log_min_messages=warning`
+  - `ERROR`  `log_min_messages=error`
 
 ---
 
 ## HTTP Routes
 
-- `GET /` — login page (auto-redirects to /home if session present)
-- `POST /auth/start-web` — JSON `{ authUrl }`
+- `GET /`  login page (auto-redirects to /home if session present)
+- `POST /auth/start-web`  JSON `{ authUrl }`
 	- Plex: returns Plex Auth URL (PIN flow)
 	- Jellyfin/Emby: returns `/auth/forward?jellyfin=1` or `/auth/forward?emby=1`
-- `GET|POST /auth/forward` — popup finisher
+- `GET|POST /auth/forward`  popup finisher
 	- Plex: completes PIN polling, closes popup
-	- Jellyfin: GET → form; POST → authenticate and close
-	- Emby: GET → form; POST → authenticate and close
-- `GET /me` — JSON: `{ username, uuid }` if logged in
-- `GET /home` — renders Authorized / Unauthorized based on `IsAuthorized`
-- `POST /logout` — clears cookie; same-origin required
-- `GET /healthz` — health check
-- `GET /statupz`, `GET /readyz` — readiness (DB)
-- `GET /static/*` — static assets
+	- Jellyfin: GET  form; POST  authenticate and close
+	- Emby: GET  form; POST  authenticate and close
+- `GET /me`  JSON: `{ username, uuid }` if logged in
+- `GET /home`  renders Authorized / Unauthorized based on `IsAuthorized`
+- `POST /logout`  clears cookie; same-origin required
+- `GET /healthz`  health check
+- `GET /readyz`  readiness (DB)
+- `GET /static/*`  static assets
+- `GET /whoami`  JSON: normalized identity and session metadata
 
 ---
 
-## Frontend Bits
-
-- **Styles**: `static/styles.css` (icons clamped to 22×22 inside the sign-in button)
+- **Styles**: `static/styles.css` (icons clamped to 22"22 inside the sign-in button)
 - **Login script**: `static/login.js`
   - Opens a placeholder popup synchronously on click, then navigates it (prevents popup blockers).
   - Accepts `postMessage` types: `plex-auth`, `emby-auth`, `jellyfin-auth`, `auth-portal`.
@@ -479,21 +464,21 @@ DEBUG plex: resources match via machine id
 ## How it works
 *High-level*
 
-1. User clicks **Sign in with Plex/Emby/Jellyfin** → JS opens auth flow in a popup.
+1. User clicks **Sign in with Plex/Emby/Jellyfin**  JS opens auth flow in a popup.
     - If user is already logged on, redirect to home is automatic
 2. Server completes provider-specific auth, seals/stores token, and decides authorization.  
 4. Session cookie is set (24h default for authorized, 5m for unauthorized).  
 5. Stores only authorized user's profile in DB
 6. Issues signed cookies with variable TTL (5m for unauthorized, 24h for authorized)
 7. Popup posts a success message to the opener and closes; opener goes to:
-    - `/home` → Authorized
-    - `/home` → logged in, but NOT authorized
+    - `/home`  Authorized
+    - `/home`  logged in, but NOT authorized
 
 ---
 
 ## Customization
 
-- **Hero background:** put your image at `static/bg.jpg` (1920×1080 works great).  
+- **Hero background:** put your image at `static/bg.jpg` (1920"1080 works great).  
 - **Logo:** in `templates/login.html`, swap the inline SVG for your logo.  
 - **Colors & button:** tweak in `static/styles.css` (`--brand` etc.).
 - **Authorized / Unauthorized pages:** edit `templates/portal_authorized.html` and `templates/portal_unauthorized.html`
@@ -504,7 +489,7 @@ DEBUG plex: resources match via machine id
 
 - Put AuthPortal behind **HTTPS** (e.g., Caddy / NGINX / Traefik).
 - Set strong `SESSION_SECRET`, `DATA_KEY`, and DB credentials.
-- Don’t expose Postgres or LDAP externally unless necessary.
+- Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
 
 ---
@@ -513,44 +498,45 @@ DEBUG plex: resources match via machine id
 
 ```
 .
-├── ldap-seed/ # optional LDAP seed
-│   └── 01-ou-users.ldif
-├── ldap-sync/ # optional LDAP sync service
-│   ├── Dockerfile
-│   ├── go.mod
-│   └── main.go
-├── auth-portal/
-│   ├── context_helpers.go
-│   ├── crypto.go
-│   ├── crypto_tokens.go
-│   ├── db.go
-│   ├── Dockerfile
-│   ├── go.mod
-│   ├── handlers.go
-│   ├── logging.go
-│   ├── main.go
-│   ├── providers.go
-│   ├── store.go
-│   ├── LICENSE
-│   ├── README.md
-│   ├── health/ # health check function
-│   	├── health.go
-│   ├── templates/
-│   	├── login.html
-│   	├── portal_authorized.html
-│   	└── portal_unauthorized.html
-│   ├── static/
-│   	├── styles.css
-│   	├── login.js
-│   	├── login.svg     # optional login button svg icon
-│   	├── plex.svg      # optional plex button svg icon
-│   	├── emby.svg      # optional emby button svg icon
-│   	├── jellyfin.svg  # optional jellyfin button svg icon
-│   	└── bg.jpg        # optional hero image
-├── auth-portal-full-stack-dev.env					# full stack docker-compose env template
-├── auth-portal-full-stack-dev_docker-compose.yml	# full stack docker-compose template
-├── LICENSE
-└── README.md
+" ldap-seed/ # optional LDAP seed
+    01-ou-users.ldif
+" ldap-sync/ # optional LDAP sync service
+   " Dockerfile
+   " go.mod
+    main.go
+" auth-portal/
+   " context_helpers.go
+   " crypto.go
+   " crypto_tokens.go
+   " db.go
+   " Dockerfile
+   " go.mod
+   " handlers.go
+   " logging.go
+   " main.go
+   " providers.go
+   " store.go
+   " LICENSE
+   " README.md
+   " health/ # health check function
+   	" health.go
+   " templates/
+   	" login.html
+   	" portal_authorized.html
+	" portal_unauthorized.html
+   " static/
+   	" styles.css
+   	" login.js
+   	" login.svg     # optional login button svg icon
+   	" plex.svg      # optional plex button svg icon
+   	" emby.svg      # optional emby button svg icon
+   	" jellyfin.svg  # optional jellyfin button svg icon
+   	 bg.jpg         # optional hero image
+" auth-portal-full-stack-dev.env					# full stack docker-compose env template
+" auth-portal-full-stack-dev_docker-compose.yml	    # full stack docker-compose template
+" CHANGELOG.md
+" LICENSE
+" README.md
 ```
 
 ---
@@ -564,6 +550,18 @@ https://github.com/modom-ofn/auth-portal/issues
 
 ##  License
 
-GPL-3.0 — https://opensource.org/license/lgpl-3-0
+GPL-3.0  https://opensource.org/license/lgpl-3-0
 
-**“Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc. or Emby LLC. or Jellyfin”.**
+**"Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc. or Emby LLC. or Jellyfin."**
+
+---
+
+## Upgrade Guide (v2.0.1)
+
+1) Rebuild all images to pull `golang:1.23.12-alpine3.21`.
+2) No manual DB migration required: schema/backfill for `identities` runs at startup.
+3) Verify deployment:
+   - Sign in via your media provider.
+   - Call `GET /whoami` and confirm: `authenticated=true`, correct `provider`, and accurate `mediaAccess`.
+   - In DB, `SELECT * FROM identities LIMIT 5;` should show rows for recent sign-ins.
+4) LDAP: ldap-sync now prefers `identities`; LDAP `description` contains `provider=<name>` and `media_uuid=<uuid>`.

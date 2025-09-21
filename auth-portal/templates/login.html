@@ -23,7 +23,7 @@
       </div>
 
       <div style="display: flex; justify-content: center; align-items: center">
-		  <button id="auth-signin" class="plex-btn">
+		  <button id="auth-signin" class="auth-btn {{.ProviderKey}}-btn" data-provider="{{.ProviderKey}}">
 			{{ if eq .ProviderKey "plex" }}
 			  <!-- Use a masked span so we can force pure black -->
 			  <span class="plex-logo-mask" aria-hidden="true"></span>

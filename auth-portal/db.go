@@ -65,6 +65,49 @@ CREATE INDEX IF NOT EXISTS idx_users_media_uuid  ON users (media_uuid);
 		return err
 	}
 
+	// Identities table to support multi-provider identities
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS identities (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider      TEXT   NOT NULL,
+  media_uuid    TEXT   NOT NULL,
+  media_token   TEXT,
+  media_access  BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (provider, media_uuid),
+  UNIQUE (user_id, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_ident_provider_uuid ON identities (provider, media_uuid);
+CREATE INDEX IF NOT EXISTS idx_ident_user_provider ON identities (user_id, provider);
+`); err != nil {
+		return err
+	}
+
+	// Backfill identities from legacy users columns when present
+	if _, err := db.Exec(`
+INSERT INTO identities (user_id, provider, media_uuid, media_token, media_access)
+SELECT u.id,
+       CASE
+         WHEN media_uuid LIKE 'plex-%' THEN 'plex'
+         WHEN media_uuid LIKE 'emby-%' THEN 'emby'
+         WHEN media_uuid LIKE 'jellyfin-%' THEN 'jellyfin'
+         ELSE 'media'
+       END AS provider,
+       media_uuid,
+       media_token,
+       media_access
+  FROM users u
+ WHERE media_uuid IS NOT NULL AND media_uuid <> ''
+ON CONFLICT (provider, media_uuid) DO UPDATE
+   SET media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), identities.media_token),
+       media_access = EXCLUDED.media_access,
+       updated_at   = now();
+`); err != nil {
+		return err
+	}
+
 	// Pins table (unchanged)
 	if _, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS pins (
