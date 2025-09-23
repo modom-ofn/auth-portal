@@ -1,0 +1,13 @@
+name-template: "auth-portal v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+categories:
+  - title: "🚀 Features"
+    labels: [ "feat", "feature" ]
+  - title: "🐛 Fixes"
+    labels: [ "fix", "bug" ]
+  - title: "🧰 Maintenance"
+    labels: [ "chore", "refactor", "docs", "ci" ]
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+template: |
+  ## Changes
+  $CHANGES

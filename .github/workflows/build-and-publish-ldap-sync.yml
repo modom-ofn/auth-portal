@@ -1,0 +1,92 @@
+name: build-and-publish-ldap-sync
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+    paths:
+      - "ldap-sync/**"
+      - ".github/workflows/build-and-publish-ldap-sync.yml"
+    tags:
+      - "ldap-sync-v*"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "ldap-sync/**"
+      - ".github/workflows/build-and-publish-ldap-sync.yml"
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    env:
+      IMAGE: modomofn/ldap-sync
+      CONTEXT_DIR: ldap-sync
+      DOCKERFILE: ldap-sync/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute tags
+        id: vars
+        shell: bash
+        run: |
+          SHA="${GITHUB_SHA::7}"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+          # channel tags for branches
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "channel=latest" >> $GITHUB_OUTPUT
+          elif [[ "$GITHUB_REF" == "refs/heads/dev" ]]; then
+            echo "channel=edge" >> $GITHUB_OUTPUT
+          fi
+
+          # semver if tag matches ldap-sync-vX.Y.Z
+          if [[ "$GITHUB_REF" =~ refs/tags/ldap-sync-v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            VER="${BASH_REMATCH[0]#refs/tags/ldap-sync-}"   # vX.Y.Z
+            MAJOR="v${BASH_REMATCH[1]}"
+            MINOR="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+            echo "ver=$VER" >> $GITHUB_OUTPUT
+            echo "major=$MAJOR" >> $GITHUB_OUTPUT
+            echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push (multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.CONTEXT_DIR }}
+          file: ${{ env.DOCKERFILE }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          provenance: true
+          sbom: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}
+            ${{ steps.vars.outputs.channel && format('{0}:{1}', env.IMAGE, steps.vars.outputs.channel) || '' }}
+            ${{ steps.vars.outputs.ver && format('{0}:{1}', env.IMAGE, steps.vars.outputs.ver) || '' }}
+            ${{ steps.vars.outputs.minor && format('{0}:{1}', env.IMAGE, steps.vars.outputs.minor) || '' }}
+            ${{ steps.vars.outputs.major && format('{0}:{1}', env.IMAGE, steps.vars.outputs.major) || '' }}
+
+      - name: Create GitHub Release (for ldap-sync tags)
+        if: startsWith(github.ref, 'refs/tags/ldap-sync-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ldap-sync ${{ github.ref_name }}
+          generate_release_notes: true

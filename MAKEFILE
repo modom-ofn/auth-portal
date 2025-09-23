@@ -1,0 +1,37 @@
+APP ?= auth-portal
+IMAGE ?= modomofn/$(APP)
+SHA := $(shell git rev-parse --short HEAD)
+VERSION ?= $(shell cat VERSION 2>/dev/null || echo "0.0.0")
+
+.PHONY: help
+help:
+	@echo "make build        # go build"
+	@echo "make test         # go test"
+	@echo "make docker       # local docker build (amd64)"
+	@echo "make tag          # create signed git tag v$(VERSION)"
+	@echo "make release      # push tag to trigger CI release"
+
+.PHONY: build
+build:
+	@echo "==> go build"
+	go build ./...
+
+.PHONY: test
+test:
+	@echo "==> go test"
+	go test ./...
+
+.PHONY: docker
+docker:
+	@echo "==> docker build $(IMAGE):$(SHA)"
+	docker build -t $(IMAGE):$(SHA) .
+
+.PHONY: tag
+tag:
+	@echo "==> tagging v$(VERSION)"
+	git tag v$(VERSION) -m "$(APP) v$(VERSION)"
+
+.PHONY: release
+release:
+	@echo "==> pushing tag v$(VERSION)"
+	git push origin v$(VERSION)
