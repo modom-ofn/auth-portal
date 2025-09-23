@@ -1,5 +1,6 @@
 # Require review from Modom-ofn on core service & Docker build
-/internal/*   @modom-ofn
-/cmd/*        @modom-ofn
-Dockerfile    @modom-ofn
-.github/*     @modom-ofn
+/internal/*   				@modom-ofn
+/cmd/*        				@modom-ofn
+/auth-portal/Dockerfile    	@modom-ofn
+Dockerfile					@modom-ofn
+.github/*     				@modom-ofn
