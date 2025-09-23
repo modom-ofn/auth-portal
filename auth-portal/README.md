@@ -69,6 +69,13 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ---
 
+## ldap-sync
+
+- **Note:** ldap-sync has been moved to its own repository.  
+- You can now find it at: https://github.com/modom-ofn/ldap-sync
+
+---
+
 ## Quick Start
 
 1) **.env**
@@ -500,10 +507,6 @@ DEBUG plex: resources match via machine id
 .
 " ldap-seed/ # optional LDAP seed
     01-ou-users.ldif
-" ldap-sync/ # optional LDAP sync service
-   " Dockerfile
-   " go.mod
-    main.go
 " auth-portal/
    " context_helpers.go
    " crypto.go
@@ -520,6 +523,13 @@ DEBUG plex: resources match via machine id
    " README.md
    " health/ # health check function
    	" health.go
+   " providers/
+    " emby.go
+	" httpx.go
+	" httpx_test.go
+	" jellyfin.go
+	" plex.go
+	" provider.go
    " templates/
    	" login.html
    	" portal_authorized.html
@@ -536,7 +546,9 @@ DEBUG plex: resources match via machine id
 " auth-portal-full-stack-dev_docker-compose.yml	    # full stack docker-compose template
 " CHANGELOG.md
 " LICENSE
+" MAKEFILE
 " README.md
+" VERSION
 ```
 
 ---
