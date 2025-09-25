@@ -1,0 +1,113 @@
+name: build-and-publish
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # create releases
+      packages: write
+      id-token: write    # for provenance
+    env:
+      IMAGE: modomofn/auth-portal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go cache (optional)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute tags
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SHA="${GITHUB_SHA::7}"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+          VERSION_FILE="VERSION"
+          VERSION=""
+          if [[ -f "$VERSION_FILE" ]]; then
+            VERSION=$(tr -d '\r\n' < "$VERSION_FILE")
+            VERSION=${VERSION#v}
+          fi
+          if [[ -n "$VERSION" ]]; then
+            echo "version_plain=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              echo "channel=latest" >> $GITHUB_OUTPUT
+              if [[ -n "$VERSION" ]]; then
+                echo "version_tag=v$VERSION" >> $GITHUB_OUTPUT
+              fi
+              ;;
+            refs/heads/dev)
+              echo "channel=edge" >> $GITHUB_OUTPUT
+              if [[ -n "$VERSION" ]]; then
+                echo "dev_version_tag=v${VERSION}-dev-$SHA" >> $GITHUB_OUTPUT
+              fi
+              ;;
+          esac
+
+          if [[ "$GITHUB_REF" =~ refs/tags/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            VER="${BASH_REMATCH[0]#refs/tags/}"
+            MAJOR="v${BASH_REMATCH[1]}"
+            MINOR="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+            echo "ver=$VER" >> $GITHUB_OUTPUT
+            echo "major=$MAJOR" >> $GITHUB_OUTPUT
+            echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push (multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: auth-portal
+          file: auth-portal/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          provenance: true
+          sbom: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}
+            ${{ steps.vars.outputs.channel && format('{0}:{1}', env.IMAGE, steps.vars.outputs.channel) || '' }}
+            ${{ steps.vars.outputs.version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.version_tag) || '' }}
+            ${{ steps.vars.outputs.dev_version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.dev_version_tag) || '' }}
+            ${{ steps.vars.outputs.ver && format('{0}:{1}', env.IMAGE, steps.vars.outputs.ver) || '' }}
+            ${{ steps.vars.outputs.minor && format('{0}:{1}', env.IMAGE, steps.vars.outputs.minor) || '' }}
+            ${{ steps.vars.outputs.major && format('{0}:{1}', env.IMAGE, steps.vars.outputs.major) || '' }}
+
+
+      - name: Create GitHub Release (for tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
