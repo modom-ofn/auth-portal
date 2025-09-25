@@ -48,17 +48,36 @@ jobs:
         id: vars
         shell: bash
         run: |
+          set -euo pipefail
+
           SHA="${GITHUB_SHA::7}"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-          # channel
-          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "channel=latest" >> $GITHUB_OUTPUT
-          elif [[ "$GITHUB_REF" == "refs/heads/dev" ]]; then
-            echo "channel=edge" >> $GITHUB_OUTPUT
+          VERSION_FILE="VERSION"
+          VERSION=""
+          if [[ -f "$VERSION_FILE" ]]; then
+            VERSION=$(tr -d '\r\n' < "$VERSION_FILE")
+            VERSION=${VERSION#v}
+          fi
+          if [[ -n "$VERSION" ]]; then
+            echo "version_plain=$VERSION" >> $GITHUB_OUTPUT
           fi
 
-          # semver tags if ref is a tag like v2.1.0
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              echo "channel=latest" >> $GITHUB_OUTPUT
+              if [[ -n "$VERSION" ]]; then
+                echo "version_tag=v$VERSION" >> $GITHUB_OUTPUT
+              fi
+              ;;
+            refs/heads/dev)
+              echo "channel=edge" >> $GITHUB_OUTPUT
+              if [[ -n "$VERSION" ]]; then
+                echo "dev_version_tag=v${VERSION}-dev-$SHA" >> $GITHUB_OUTPUT
+              fi
+              ;;
+          esac
+
           if [[ "$GITHUB_REF" =~ refs/tags/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             VER="${BASH_REMATCH[0]#refs/tags/}"
             MAJOR="v${BASH_REMATCH[1]}"
@@ -80,9 +99,12 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}
             ${{ steps.vars.outputs.channel && format('{0}:{1}', env.IMAGE, steps.vars.outputs.channel) || '' }}
+            ${{ steps.vars.outputs.version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.version_tag) || '' }}
+            ${{ steps.vars.outputs.dev_version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.dev_version_tag) || '' }}
             ${{ steps.vars.outputs.ver && format('{0}:{1}', env.IMAGE, steps.vars.outputs.ver) || '' }}
             ${{ steps.vars.outputs.minor && format('{0}:{1}', env.IMAGE, steps.vars.outputs.minor) || '' }}
             ${{ steps.vars.outputs.major && format('{0}:{1}', env.IMAGE, steps.vars.outputs.major) || '' }}
+
 
       - name: Create GitHub Release (for tags)
         if: startsWith(github.ref, 'refs/tags/v')
