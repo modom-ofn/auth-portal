@@ -517,7 +517,6 @@ DEBUG plex: resources match via machine id
    " handlers.go
    " logging.go
    " main.go
-   " providers.go
    " store.go
    " LICENSE
    " README.md
