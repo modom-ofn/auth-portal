@@ -43,6 +43,11 @@ var (
 	jellyfinAppVersion = envOr("JELLYFIN_APP_VERSION", "2.0.0")
 	jellyfinAPIKey     = envOr("JELLYFIN_API_KEY", "")
 
+	// MFA configuration
+	mfaIssuer             = envOr("MFA_ISSUER", "AuthPortal")
+	mfaEnrollmentEnabled  = envBool("MFA_ENABLE", true)
+	mfaEnforceForAllUsers = envBool("MFA_ENFORCE", false)
+
 	// Optional extra link on the login page
 	loginExtraLinkURL  = envOr("LOGIN_EXTRA_LINK_URL", "/some-internal-app")
 	loginExtraLinkText = envOr("LOGIN_EXTRA_LINK_TEXT", "Open Internal App")
@@ -64,6 +69,28 @@ func envOr(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func envBool(key string, def bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
+}
+
+func init() {
+	if mfaEnforceForAllUsers && !mfaEnrollmentEnabled {
+		log.Println("MFA_ENFORCE=1 but MFA_ENABLE=0; enabling enrollment so enforcement can proceed")
+		mfaEnrollmentEnabled = true
+	}
 }
 
 // Pick the auth provider (plex default). MEDIA_SERVER: plex | emby | jellyfin
