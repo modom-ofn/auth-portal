@@ -211,13 +211,13 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 	out.MediaAccess = authorized
 
 	// Try to populate email from DB if present
-    if uid != "" {
-        if u, err := getUserByUUIDPreferred(uid); err == nil {
-            if u.Email.Valid {
-                out.Email = strings.TrimSpace(u.Email.String)
-            }
-        }
-    }
+	if uid != "" {
+		if u, err := getUserByUUIDPreferred(uid); err == nil {
+			if u.Email.Valid {
+				out.Email = strings.TrimSpace(u.Email.String)
+			}
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -275,4 +275,20 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	clearSessionCookie(w)
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func mfaChallengePage(w http.ResponseWriter, r *http.Request) {
+	claims, err := pendingClaimsFromRequest(r)
+	if err != nil {
+		if !errors.Is(err, http.ErrNoCookie) {
+			clearPendingMFACookie(w)
+		}
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	render(w, "mfa_challenge.html", map[string]any{
+		"Username": strings.TrimSpace(claims.Username),
+		"Issuer":   mfaIssuer,
+	})
 }

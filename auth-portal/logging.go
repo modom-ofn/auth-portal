@@ -45,10 +45,26 @@ func parseLogLevel(s string) logLevel {
 
 func lvlOK(want logLevel) bool { return curLevel <= want }
 
-func Debugf(format string, v ...any) { if lvlOK(levelDEBUG) { log.Printf("DEBUG "+format, v...) } }
-func Infof(format string, v ...any)  { if lvlOK(levelINFO)  { log.Printf("INFO  "+format, v...) } }
-func Warnf(format string, v ...any)  { if lvlOK(levelWARN)  { log.Printf("WARN  "+format, v...) } }
-func Errorf(format string, v ...any) { if lvlOK(levelERROR) { log.Printf("ERROR "+format, v...) } }
+func Debugf(format string, v ...any) {
+	if lvlOK(levelDEBUG) {
+		log.Printf("DEBUG "+format, v...)
+	}
+}
+func Infof(format string, v ...any) {
+	if lvlOK(levelINFO) {
+		log.Printf("INFO  "+format, v...)
+	}
+}
+func Warnf(format string, v ...any) {
+	if lvlOK(levelWARN) {
+		log.Printf("WARN  "+format, v...)
+	}
+}
+func Errorf(format string, v ...any) {
+	if lvlOK(levelERROR) {
+		log.Printf("ERROR "+format, v...)
+	}
+}
 
 // Wrap the app to emit per-request logs in DEBUG.
 func WithRequestLogging(next http.Handler) http.Handler {

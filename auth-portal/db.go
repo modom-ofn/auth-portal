@@ -349,5 +349,7 @@ UPDATE users
 }
 
 // Legacy shims (keep old callers working)
-func setUserPlexAccessByUUID(uuid string, access bool) error { return setUserMediaAccessByUUID(uuid, access) }
-func setUserPlexAccess(uuid string, access bool) error       { return setUserMediaAccessByUUID(uuid, access) }
+func setUserPlexAccessByUUID(uuid string, access bool) error {
+	return setUserMediaAccessByUUID(uuid, access)
+}
+func setUserPlexAccess(uuid string, access bool) error { return setUserMediaAccessByUUID(uuid, access) }

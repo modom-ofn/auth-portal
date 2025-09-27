@@ -1,14 +1,14 @@
 package providers
 
 import (
-    "bytes"
-    "encoding/json"
-    "fmt"
-    "io"
-    "net"
-    "net/http"
-    "strings"
-    "time"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"time"
 )
 
 // shared HTTP client with sane timeout
@@ -58,40 +58,40 @@ func mediaAuthAttempt(prefix, baseURL, appName, appVersion, clientID string, bod
 	if Debugf != nil {
 		Debugf("%s/auth POST %s", prefix, loginURL)
 	}
-    // one retry on net error or 5xx
-    var resp *http.Response
-    var err error
-    for attempt := 0; attempt < 2; attempt++ {
-        resp, err = httpx.Do(req)
-        if err != nil {
-            if ne, ok := err.(net.Error); ok && ne.Timeout() {
-                time.Sleep(120 * time.Millisecond)
-                continue
-            }
-            // retry once for any network error
-            if attempt == 0 {
-                time.Sleep(120 * time.Millisecond)
-                continue
-            }
-            return mediaAuthResp{}, err
-        }
-        if resp.StatusCode >= 500 && resp.StatusCode < 600 && attempt == 0 {
-            // read+discard to allow connection reuse before retry
-            io.Copy(io.Discard, resp.Body)
-            resp.Body.Close()
-            time.Sleep(120 * time.Millisecond)
-            continue
-        }
-        break
-    }
-    defer resp.Body.Close()
-    raw, _ := io.ReadAll(resp.Body)
-    if resp.StatusCode != 200 {
-        if Warnf != nil {
-            Warnf("%s/auth HTTP %d body=%q", prefix, resp.StatusCode, snippet(raw, 200))
-        }
-        return mediaAuthResp{}, fmt.Errorf("%s auth %d: %s", prefix, resp.StatusCode, snippet(raw, 200))
-    }
+	// one retry on net error or 5xx
+	var resp *http.Response
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, err = httpx.Do(req)
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				time.Sleep(120 * time.Millisecond)
+				continue
+			}
+			// retry once for any network error
+			if attempt == 0 {
+				time.Sleep(120 * time.Millisecond)
+				continue
+			}
+			return mediaAuthResp{}, err
+		}
+		if resp.StatusCode >= 500 && resp.StatusCode < 600 && attempt == 0 {
+			// read+discard to allow connection reuse before retry
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			time.Sleep(120 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		if Warnf != nil {
+			Warnf("%s/auth HTTP %d body=%q", prefix, resp.StatusCode, snippet(raw, 200))
+		}
+		return mediaAuthResp{}, fmt.Errorf("%s auth %d: %s", prefix, resp.StatusCode, snippet(raw, 200))
+	}
 	var out mediaAuthResp
 	if err := json.Unmarshal(raw, &out); err != nil {
 		if Warnf != nil {
@@ -114,38 +114,38 @@ func mediaGetUserDetail(prefix, serverURL, token, userID string) (mediaUserDetai
 	if Debugf != nil {
 		Debugf("%s/user GET %s (token=%v)", prefix, u, token != "")
 	}
-    // one retry on net error or 5xx
-    var resp *http.Response
-    var err error
-    for attempt := 0; attempt < 2; attempt++ {
-        resp, err = httpx.Do(req)
-        if err != nil {
-            if ne, ok := err.(net.Error); ok && ne.Timeout() {
-                time.Sleep(120 * time.Millisecond)
-                continue
-            }
-            if attempt == 0 {
-                time.Sleep(120 * time.Millisecond)
-                continue
-            }
-            return mediaUserDetail{}, err
-        }
-        if resp.StatusCode >= 500 && resp.StatusCode < 600 && attempt == 0 {
-            io.Copy(io.Discard, resp.Body)
-            resp.Body.Close()
-            time.Sleep(120 * time.Millisecond)
-            continue
-        }
-        break
-    }
-    defer resp.Body.Close()
-    raw, _ := io.ReadAll(resp.Body)
-    if resp.StatusCode != 200 {
-        if Warnf != nil {
-            Warnf("%s/user HTTP %d body=%q", prefix, resp.StatusCode, snippet(raw, 200))
-        }
-        return mediaUserDetail{}, fmt.Errorf("%s user %d: %s", prefix, resp.StatusCode, snippet(raw, 200))
-    }
+	// one retry on net error or 5xx
+	var resp *http.Response
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, err = httpx.Do(req)
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				time.Sleep(120 * time.Millisecond)
+				continue
+			}
+			if attempt == 0 {
+				time.Sleep(120 * time.Millisecond)
+				continue
+			}
+			return mediaUserDetail{}, err
+		}
+		if resp.StatusCode >= 500 && resp.StatusCode < 600 && attempt == 0 {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			time.Sleep(120 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		if Warnf != nil {
+			Warnf("%s/user HTTP %d body=%q", prefix, resp.StatusCode, snippet(raw, 200))
+		}
+		return mediaUserDetail{}, fmt.Errorf("%s user %d: %s", prefix, resp.StatusCode, snippet(raw, 200))
+	}
 	var out mediaUserDetail
 	if err := json.Unmarshal(raw, &out); err != nil {
 		if Warnf != nil {
@@ -158,32 +158,32 @@ func mediaGetUserDetail(prefix, serverURL, token, userID string) (mediaUserDetai
 
 // mediaTokenStillValid checks whether X-Emby-Token is currently accepted by the server.
 func mediaTokenStillValid(prefix, serverURL, token string) (bool, error) {
-    req, _ := http.NewRequest(http.MethodGet, strings.TrimSuffix(serverURL, "/")+"/users/Me", nil)
-    req.Header.Set("X-Emby-Token", token)
+	req, _ := http.NewRequest(http.MethodGet, strings.TrimSuffix(serverURL, "/")+"/users/Me", nil)
+	req.Header.Set("X-Emby-Token", token)
 
-    var resp *http.Response
-    var err error
-    for attempt := 0; attempt < 2; attempt++ {
-        resp, err = httpx.Do(req)
-        if err != nil {
-            if ne, ok := err.(net.Error); ok && ne.Timeout() {
-                time.Sleep(120 * time.Millisecond)
-                continue
-            }
-            if attempt == 0 {
-                time.Sleep(120 * time.Millisecond)
-                continue
-            }
-            return false, err
-        }
-        if resp.StatusCode >= 500 && resp.StatusCode < 600 && attempt == 0 {
-            io.Copy(io.Discard, resp.Body)
-            resp.Body.Close()
-            time.Sleep(120 * time.Millisecond)
-            continue
-        }
-        break
-    }
-    defer resp.Body.Close()
-    return resp.StatusCode == 200, nil
+	var resp *http.Response
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, err = httpx.Do(req)
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				time.Sleep(120 * time.Millisecond)
+				continue
+			}
+			if attempt == 0 {
+				time.Sleep(120 * time.Millisecond)
+				continue
+			}
+			return false, err
+		}
+		if resp.StatusCode >= 500 && resp.StatusCode < 600 && attempt == 0 {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			time.Sleep(120 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == 200, nil
 }
