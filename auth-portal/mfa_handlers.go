@@ -34,6 +34,17 @@ type mfaVerifyResponse struct {
 	RecoveryCodes []string `json:"recoveryCodes"`
 }
 
+type mfaChallengeVerifyRequest struct {
+	Code string `json:"code"`
+}
+
+type mfaChallengeVerifyResponse struct {
+	OK                     bool   `json:"ok"`
+	Redirect               string `json:"redirect"`
+	RecoveryUsed           bool   `json:"recoveryUsed"`
+	RemainingRecoveryCodes int    `json:"remainingRecoveryCodes"`
+}
+
 func mfaEnrollmentStartHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
@@ -219,6 +230,132 @@ func mfaEnrollmentVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, mfaVerifyResponse{OK: true, RecoveryCodes: recoveryCodes})
+}
+
+func mfaChallengeVerifyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		return
+	}
+
+	claims, err := pendingClaimsFromRequest(r)
+	if err != nil {
+		respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "challenge expired"})
+		return
+	}
+
+	var req mfaChallengeVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid payload"})
+		return
+	}
+
+	rawCode := strings.TrimSpace(req.Code)
+	if rawCode == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "code required"})
+		return
+	}
+
+	user, err := getUserByUUIDPreferred(claims.UUID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "user not found"})
+			return
+		}
+		log.Printf("mfa challenge: user lookup failed for %s (%s): %v", claims.Username, claims.UUID, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "lookup failed"})
+		return
+	}
+
+	rec, err := getMFARecord(user.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": "mfa not enrolled"})
+			return
+		}
+		log.Printf("mfa challenge: load record failed for %s (%s): %v", claims.Username, claims.UUID, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "lookup failed"})
+		return
+	}
+	if !rec.IsVerified {
+		respondJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": "mfa enrollment incomplete"})
+		return
+	}
+
+	digits := rec.Digits
+	if digits <= 0 {
+		digits = defaultMFADigits
+	}
+	period := rec.PeriodSeconds
+	if period <= 0 {
+		period = defaultMFAPeriodSeconds
+	}
+	skew := rec.DriftSteps
+	if skew < 0 {
+		skew = 0
+	}
+
+	var secret string
+	if rec.SecretEnc.Valid {
+		secret, err = OpenToken(rec.SecretEnc.String)
+		if err != nil {
+			log.Printf("mfa challenge: open secret failed for %s (%s): %v", claims.Username, claims.UUID, err)
+			respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "secret invalid"})
+			return
+		}
+	}
+
+	normalized := normalizeMFACode(rawCode)
+	validated := false
+	if secret != "" && normalized != "" {
+		if validateTOTP(normalized, secret, time.Now(), period, skew, digits) {
+			validated = true
+		}
+	}
+
+	recoveryUsed := false
+	if !validated {
+		hashed := hashRecoveryCode(rawCode)
+		consumed, err := consumeMFARecoveryCode(user.ID, hashed)
+		if err != nil {
+			log.Printf("mfa challenge: consume recovery failed for %s (%s): %v", claims.Username, claims.UUID, err)
+			respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "recovery validation failed"})
+			return
+		}
+		if consumed {
+			validated = true
+			recoveryUsed = true
+		}
+	}
+
+	if !validated {
+		respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "invalid or expired code"})
+		return
+	}
+
+	if err := touchMFALastUsed(user.ID); err != nil {
+		log.Printf("mfa challenge: touch last used failed for %s (%s): %v", claims.Username, claims.UUID, err)
+	}
+
+	if err := setSessionCookie(w, claims.UUID, claims.Username); err != nil {
+		log.Printf("mfa challenge: set session failed for %s (%s): %v", claims.Username, claims.UUID, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "session setup failed"})
+		return
+	}
+
+	remaining := 0
+	if count, err := countUnusedMFARecoveryCodes(user.ID); err == nil {
+		remaining = count
+	} else {
+		log.Printf("mfa challenge: count recovery codes failed for %s (%s): %v", claims.Username, claims.UUID, err)
+	}
+
+	respondJSON(w, http.StatusOK, mfaChallengeVerifyResponse{
+		OK:                     true,
+		Redirect:               "/home",
+		RecoveryUsed:           recoveryUsed,
+		RemainingRecoveryCodes: remaining,
+	})
 }
 
 func normalizeMFACode(code string) string {

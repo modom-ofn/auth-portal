@@ -366,6 +366,8 @@ func main() {
 
 	r.HandleFunc("/mfa/challenge", mfaChallengePage).Methods("GET")
 
+	r.Handle("/mfa/challenge/verify", requireSameOrigin(http.HandlerFunc(mfaChallengeVerifyHandler))).Methods("POST")
+
 	// Provider routes (v2 adapter wraps legacy providers and returns responses we write).
 
 	v2 := providers.AdaptV2(currentProvider)
