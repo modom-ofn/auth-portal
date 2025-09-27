@@ -249,3 +249,224 @@ ON CONFLICT (provider, media_uuid) DO UPDATE
     }
     return uid, nil
 }
+
+
+// MFARecord captures the stored MFA configuration for a user.
+type MFARecord struct {
+    UserID        int
+    SecretEnc     sql.NullString
+    SecretAlgo    string
+    Digits        int
+    PeriodSeconds int
+    DriftSteps    int
+    IsVerified    bool
+    IssuedAt      time.Time
+    VerifiedAt    sql.NullTime
+    LastUsedAt    sql.NullTime
+    CreatedAt     time.Time
+    UpdatedAt     time.Time
+}
+
+func getMFARecord(userID int) (MFARecord, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+    defer cancel()
+
+    var rec MFARecord
+    err := db.QueryRowContext(ctx, `
+SELECT user_id, secret_enc, secret_algo, digits, period_seconds, drift_steps,
+       is_verified, issued_at, verified_at, last_used_at, created_at, updated_at
+  FROM user_mfa
+ WHERE user_id = $1
+`, userID).Scan(
+        &rec.UserID,
+        &rec.SecretEnc,
+        &rec.SecretAlgo,
+        &rec.Digits,
+        &rec.PeriodSeconds,
+        &rec.DriftSteps,
+        &rec.IsVerified,
+        &rec.IssuedAt,
+        &rec.VerifiedAt,
+        &rec.LastUsedAt,
+        &rec.CreatedAt,
+        &rec.UpdatedAt,
+    )
+    if err != nil {
+        return MFARecord{}, err
+    }
+    return rec, nil
+}
+
+// beginMFAEnrollment stores a new sealed secret for the user and resets MFA state.
+func beginMFAEnrollment(userID int, sealedSecret string, algo string, digits, period, drift int) error {
+    ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+    defer cancel()
+
+    tx, err := db.BeginTx(ctx, nil)
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    if _, err = tx.ExecContext(ctx, `
+INSERT INTO user_mfa (user_id, secret_enc, secret_algo, digits, period_seconds, drift_steps,
+                      is_verified, issued_at, verified_at, last_used_at, created_at, updated_at)
+VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, FALSE, now(), NULL, NULL, now(), now())
+ON CONFLICT (user_id) DO UPDATE
+   SET secret_enc     = NULLIF(EXCLUDED.secret_enc, ''),
+       secret_algo    = EXCLUDED.secret_algo,
+       digits         = EXCLUDED.digits,
+       period_seconds = EXCLUDED.period_seconds,
+       drift_steps    = EXCLUDED.drift_steps,
+       is_verified    = FALSE,
+       issued_at      = now(),
+       verified_at    = NULL,
+       last_used_at   = NULL,
+       updated_at     = now()
+`, userID, strings.TrimSpace(sealedSecret), strings.TrimSpace(algo), digits, period, drift); err != nil {
+        return err
+    }
+
+    if _, err = tx.ExecContext(ctx, `
+DELETE FROM user_mfa_recovery_codes
+ WHERE user_id = $1
+`, userID); err != nil {
+        return err
+    }
+
+    if _, err = tx.ExecContext(ctx, `
+UPDATE users
+   SET mfa_enabled = FALSE,
+       mfa_enrolled_at = NULL,
+       mfa_recovery_last_rotated = NULL
+ WHERE id = $1
+`, userID); err != nil {
+        return err
+    }
+
+    return tx.Commit()
+}
+
+// markMFASecretVerified flags the stored MFA secret as verified and enables MFA.
+func markMFASecretVerified(userID int) error {
+    ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+    defer cancel()
+
+    tx, err := db.BeginTx(ctx, nil)
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    res, err := tx.ExecContext(ctx, `
+UPDATE user_mfa
+   SET is_verified = TRUE,
+       verified_at = now(),
+       updated_at  = now()
+ WHERE user_id = $1
+`, userID)
+    if err != nil {
+        return err
+    }
+    rows, err := res.RowsAffected()
+    if err != nil {
+        return err
+    }
+    if rows == 0 {
+        return sql.ErrNoRows
+    }
+
+    if _, err = tx.ExecContext(ctx, `
+UPDATE users
+   SET mfa_enabled = TRUE,
+       mfa_enrolled_at = COALESCE(mfa_enrolled_at, now())
+ WHERE id = $1
+`, userID); err != nil {
+        return err
+    }
+
+    return tx.Commit()
+}
+
+// replaceMFARecoveryCodes swaps in a new set of hashed recovery codes for the user.
+func replaceMFARecoveryCodes(userID int, hashedCodes []string) error {
+    ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+    defer cancel()
+
+    tx, err := db.BeginTx(ctx, nil)
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    if _, err = tx.ExecContext(ctx, `
+DELETE FROM user_mfa_recovery_codes
+ WHERE user_id = $1
+`, userID); err != nil {
+        return err
+    }
+
+    for _, hash := range hashedCodes {
+        hash = strings.TrimSpace(hash)
+        if hash == "" {
+            continue
+        }
+        if _, err = tx.ExecContext(ctx, `
+INSERT INTO user_mfa_recovery_codes (user_id, code_hash)
+VALUES ($1, $2)
+ON CONFLICT (user_id, code_hash) DO NOTHING
+`, userID, hash); err != nil {
+            return err
+        }
+    }
+
+    if _, err = tx.ExecContext(ctx, `
+UPDATE users
+   SET mfa_recovery_last_rotated = now()
+ WHERE id = $1
+`, userID); err != nil {
+        return err
+    }
+
+    return tx.Commit()
+}
+
+// consumeMFARecoveryCode marks a recovery code as used. It returns true when a code was consumed.
+func consumeMFARecoveryCode(userID int, hash string) (bool, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+    defer cancel()
+
+    res, err := db.ExecContext(ctx, `
+UPDATE user_mfa_recovery_codes
+   SET used_at = now()
+ WHERE user_id = $1
+   AND code_hash = $2
+   AND used_at IS NULL
+`, userID, strings.TrimSpace(hash))
+    if err != nil {
+        return false, err
+    }
+    rows, err := res.RowsAffected()
+    if err != nil {
+        return false, err
+    }
+    return rows > 0, nil
+}
+
+// countUnusedMFARecoveryCodes returns the number of remaining (unused) recovery codes.
+func countUnusedMFARecoveryCodes(userID int) (int, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+    defer cancel()
+
+    var count int
+    err := db.QueryRowContext(ctx, `
+        SELECT COUNT(*)
+          FROM user_mfa_recovery_codes
+         WHERE user_id = $1
+           AND used_at IS NULL
+    `, userID).Scan(&count)
+    if err != nil {
+        return 0, err
+    }
+    return count, nil
+}

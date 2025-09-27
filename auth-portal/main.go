@@ -274,6 +274,9 @@ func main() {
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
 
+	r.Handle("/mfa/enroll/start", authMiddleware(requireSameOrigin(http.HandlerFunc(mfaEnrollmentStartHandler)))).Methods("POST")
+	r.Handle("/mfa/enroll/verify", authMiddleware(requireSameOrigin(http.HandlerFunc(mfaEnrollmentVerifyHandler)))).Methods("POST")
+
 	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
 	readyChecks := map[string]health.Checker{
