@@ -158,6 +158,18 @@ var (
 	Warnf                        func(format string, v ...any)
 )
 
+func finalizeAuthorizedLogin(w http.ResponseWriter, mediaUUID, username string) (bool, error) {
+	if FinalizeLogin != nil {
+		return FinalizeLogin(w, mediaUUID, username)
+	}
+	if SetSessionCookie != nil {
+		if err := SetSessionCookie(w, mediaUUID, username); err != nil {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
 // Configuration values for the providers; populated by main.
 var (
 	PlexOwnerToken      string

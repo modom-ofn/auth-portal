@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -364,12 +365,16 @@ func (PlexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 			MediaUUID:   mediaUUID,
 			MediaToken:  sealedToken,
 			MediaAccess: authorized,
-		Provider: "plex",})
+			Provider:    "plex"})
 	}
 
+	requiresMFA := false
 	if authorized {
-		if SetSessionCookie != nil {
-			_ = SetSessionCookie(w, mediaUUID, username)
+		var err error
+		requiresMFA, err = finalizeAuthorizedLogin(w, mediaUUID, username)
+		if err != nil {
+			http.Error(w, "Login finalization failed", http.StatusInternalServerError)
+			return
 		}
 	} else {
 		if SetTempSessionCookie != nil {
@@ -381,7 +386,17 @@ func (PlexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>Signed in — AuthPortal</title><body style="font-family:system-ui;padding:2rem"><h1>Signed in — you can close this window.</h1><script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ok:true,type:"plex-auth",redirect:"/home"},window.location.origin)}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script></body>`))
+	redirect := "/home"
+	message := "Signed in - you can close this window."
+	if requiresMFA {
+		redirect = "/mfa/challenge"
+		message = "Continue in the main window to finish multi-factor authentication."
+	}
+	payload := fmt.Sprintf(`<!doctype html><meta charset="utf-8"><title>Signed in - AuthPortal</title>`+
+		`<body style="font-family:system-ui;padding:2rem"><h1>%s</h1>`+
+		`<script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ok:true,type:"plex-auth",redirect:"%s",mfa:%t},window.location.origin)}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script>`+
+		`</body>`, template.HTMLEscapeString(message), redirect, requiresMFA)
+	_, _ = w.Write([]byte(payload))
 }
 
 // PlexPoll provides a JSON polling endpoint to complete the PIN flow when
@@ -442,9 +457,13 @@ func PlexPoll(w http.ResponseWriter, r *http.Request) {
 	if UpsertUser != nil {
 		_ = UpsertUser(User{Username: username, Email: email, MediaUUID: mediaUUID, MediaToken: sealedToken, MediaAccess: authorized, Provider: "plex"})
 	}
+	requiresMFA := false
 	if authorized {
-		if SetSessionCookie != nil {
-			_ = SetSessionCookie(w, mediaUUID, username)
+		var err error
+		requiresMFA, err = finalizeAuthorizedLogin(w, mediaUUID, username)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "login finalization failed"})
+			return
 		}
 	} else {
 		if SetTempSessionCookie != nil {
@@ -455,7 +474,11 @@ func PlexPoll(w http.ResponseWriter, r *http.Request) {
 	if Debugf != nil {
 		Debugf("plex poll success: pin=%d user=%s authorized=%t", pinID, username, authorized)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "redirect": "/home"})
+	redirect := "/home"
+	if requiresMFA {
+		redirect = "/mfa/challenge"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "redirect": redirect, "mfa": requiresMFA})
 }
 
 func (PlexProvider) IsAuthorized(uuid, _username string) (bool, error) {
@@ -502,4 +525,3 @@ func (PlexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 
 	return false, nil
 }
-

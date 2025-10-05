@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuthPortal - MFA Enrollment</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    .page-frame { min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+    .page-content { flex: 1; width: 100%; display: flex; justify-content: center; padding: 3rem 1rem 6rem; }
+    .mfa-card { max-width: 720px; width: 100%; background: linear-gradient(180deg, rgba(17,24,39,.92), rgba(17,24,39,.94)); border: 1px solid var(--border); border-radius: 16px; padding: 2rem; box-shadow: 0 12px 40px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 1.5rem; }
+    .mfa-status { text-align: center; color: var(--muted); }
+    .mfa-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
+    .mfa-panel { display: none; flex-direction: column; gap: 1.25rem; }
+    .mfa-panel.active { display: flex; }
+    .mfa-qr { display: flex; justify-content: center; }
+    .mfa-qr img { max-width: 220px; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+    .mfa-secret { text-align: center; }
+    .mfa-secret code { display: inline-block; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 1.1rem; }
+    .mfa-recovery { display: none; flex-direction: column; gap: 0.75rem; }
+    .mfa-recovery.active { display: flex; }
+    .mfa-recovery-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .mfa-recovery-grid div { padding: 0.75rem; border-radius: 10px; background: rgba(15,23,42,.82); border: 1px solid rgba(148,163,184,.35); text-align: center; font-weight: 600; letter-spacing: .08em; }
+    .btn-row { display: flex; justify-content: center; margin-top: 0.5rem; }
+  </style>
+</head>
+<body class="bg">
+  <div class="page-frame">
+    <main class="page-content">
+      <section class="mfa-card">
+        <div class="brand" style="margin-bottom:0">
+          <h1>Multi-factor Authentication</h1>
+          <p class="muted">Signed in as {{ .Username }}. Issuer: {{ .Issuer }}.</p>
+        </div>
+
+        <div id="status-block" class="mfa-status">Loading MFA status…</div>
+
+        <div class="mfa-actions">
+          <button id="start-enroll" type="button" class="auth-btn" style="font-size:16px;padding:10px 18px">Start enrollment</button>
+          <button id="reset-enroll" type="button" class="auth-btn" style="font-size:16px;padding:10px 18px;display:none">Reset secret</button>
+        </div>
+
+        <div id="pending-panel" class="mfa-panel">
+          <div style="display:flex;flex-direction:column;gap:.75rem">
+            <h2 style="margin:0">Step 1: Add to your authenticator</h2>
+            <p class="muted">Scan the QR code or paste the secret below into your authenticator app.</p>
+            <div id="qr-container" class="mfa-qr"></div>
+            <div class="mfa-secret">
+              <code id="totp-secret"></code>
+            </div>
+            <p class="muted" style="text-align:center">Authenticator URI:<br><a id="otpauth-link" href="#" target="_blank" rel="noopener">Open in authenticator</a></p>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:.75rem">
+            <h2 style="margin:0">Step 2: Verify your code</h2>
+            <form id="verify-form" autocomplete="off" style="display:flex;flex-direction:column;gap:.75rem">
+              <input id="verify-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="10" placeholder="Enter 6-digit code" required style="padding:12px;border-radius:10px;border:1px solid var(--border);background:#0f172a;color:var(--text)">
+              <button type="submit" class="auth-btn" style="font-size:16px;padding:10px 18px">Verify and finish</button>
+            </form>
+            <div id="verify-message" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+        <div id="recovery-panel" class="mfa-panel mfa-recovery">
+          <h2 style="margin:0">Recovery codes</h2>
+          <p class="muted">Store these codes somewhere safe. Each code can be used once if you lose access to your authenticator.</p>
+          <div id="recovery-codes" class="mfa-recovery-grid"></div>
+        </div>
+
+        <div class="btn-row">
+          <a class="btn ghost" href="/home">&larr; Back to portal</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        <a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a>
+        created by Modom. "Use at your own risk."
+      </p>
+    </footer>
+  </div>
+
+  <script src="/static/mfa_enroll.js" defer></script>
+</body>
+</html>

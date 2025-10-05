@@ -17,17 +17,23 @@
           <rect x="8" y="10" width="8" height="7" rx="1.6" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
         </svg>
         <h1>Welcome, {{ .Username }}</h1>
-        <p class="muted">You’re authorized on this {{ .ProviderName }} server.</p>
+        <p class="muted">You are authorized on this server.</p>
       </div>
 
-      <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
-        <span class="badge ok">{{ .ProviderName }} Authorized</span>
-        <a class="btn" href="{{ .ExtraLinkURL }}">{{ .ExtraLinkText }}</a>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:10px">
+        <a class="badge ok" style="text-decoration:none" href="{{ .ExtraLinkURL }}">{{ .ExtraLinkText }}</a>
       </div>
 
-      <form action="/logout" method="post" style="margin-top:16px;text-align:center">
-        <button class="btn ghost" type="submit">Log out</button>
-      </form>
+      <div style="height:10px"></div>
+
+      <div style="display:flex;justify-content:center;gap:12px;margin-top:16px">
+        <form action="/logout" method="post">
+          <button class="btn ghost" type="submit">Log out</button>
+        </form>
+        <form action="/mfa/enroll" method="get">
+          <button class="btn ghost" type="submit">Manage MFA</button>
+        </form>
+      </div>
     </section>
   </main>
 

@@ -27,7 +27,8 @@ body{margin:0;color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,R
     radial-gradient(70% 60% at 10% 10%, #1e293b 0%, transparent 60%),
     radial-gradient(70% 60% at 90% 20%, #0b1220 0%, transparent 55%),
     linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Optional blurred hero art glow â€” supply /static/bg.jpg for a subtle, soft-focus vibe */

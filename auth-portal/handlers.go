@@ -292,3 +292,14 @@ func mfaChallengePage(w http.ResponseWriter, r *http.Request) {
 		"Issuer":   mfaIssuer,
 	})
 }
+func mfaEnrollPage(w http.ResponseWriter, r *http.Request) {
+	uname := strings.TrimSpace(usernameFrom(r.Context()))
+	if uname == "" {
+		http.Redirect(w, r, "/home", http.StatusFound)
+		return
+	}
+	render(w, "mfa_enroll.html", map[string]any{
+		"Username": uname,
+		"Issuer":   mfaIssuer,
+	})
+}

@@ -215,6 +215,8 @@ func main() {
 	r.HandleFunc("/whoami", whoamiHandler).Methods("GET")
 	r.HandleFunc("/mfa/challenge", mfaChallengePage).Methods("GET")
 	r.Handle("/mfa/challenge/verify", requireSameOrigin(http.HandlerFunc(mfaChallengeVerifyHandler))).Methods("POST")
+	r.Handle("/mfa/enroll", authMiddleware(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
+	r.Handle("/mfa/enroll/status", authMiddleware(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
 
 	// Provider routes (v2 adapter wraps legacy providers and returns responses we write).
 	v2 := providers.AdaptV2(currentProvider)
@@ -336,7 +338,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 
 		// Global CSP (the /auth/forward response can set its own relaxed CSP for inline JS)
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data: https://plex.tv; style-src 'self' 'unsafe-inline'; script-src 'self'")
+			"default-src 'self'; img-src 'self' data: https://plex.tv https://api.qrserver.com; style-src 'self' 'unsafe-inline'; script-src 'self'")
 
 		// HSTS only if base URL is HTTPS or you know you're behind TLS
 		if strings.HasPrefix(strings.ToLower(appBaseURL), "https://") {

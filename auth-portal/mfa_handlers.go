@@ -376,3 +376,59 @@ func respondJSON(w http.ResponseWriter, status int, payload any) {
 		_ = enc.Encode(payload)
 	}
 }
+func mfaEnrollmentStatusHandler(w http.ResponseWriter, r *http.Request) {
+	uuid := uuidFrom(r.Context())
+	if uuid == "" {
+		respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "session required"})
+		return
+	}
+
+	user, err := getUserByUUIDPreferred(uuid)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusUnauthorized
+		}
+		log.Printf("mfa status: user lookup failed for %s: %v", uuid, err)
+		respondJSON(w, status, map[string]any{"ok": false, "error": "user lookup failed"})
+		return
+	}
+
+	var (
+		enabled       bool
+		pending       bool
+		issuedAt      string
+		verifiedAt    string
+		lastUsedAt    string
+		recoveryCount int
+	)
+
+	if rec, err := getMFARecord(user.ID); err == nil {
+		enabled = rec.IsVerified
+		pending = rec.SecretEnc.Valid && strings.TrimSpace(rec.SecretEnc.String) != "" && !rec.IsVerified
+		issuedAt = rec.IssuedAt.UTC().Format(time.RFC3339)
+		if rec.VerifiedAt.Valid {
+			verifiedAt = rec.VerifiedAt.Time.UTC().Format(time.RFC3339)
+		}
+		if rec.LastUsedAt.Valid {
+			lastUsedAt = rec.LastUsedAt.Time.UTC().Format(time.RFC3339)
+		}
+		if count, err := countUnusedMFARecoveryCodes(user.ID); err == nil {
+			recoveryCount = count
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("mfa status: load record failed for %s (%s): %v", user.Username, uuid, err)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"username":      user.Username,
+		"enforced":      mfaEnforceForAllUsers,
+		"enabled":       enabled,
+		"pending":       pending,
+		"issuedAt":      issuedAt,
+		"verifiedAt":    verifiedAt,
+		"lastUsedAt":    lastUsedAt,
+		"recoveryCount": recoveryCount,
+	})
+}
