@@ -62,6 +62,7 @@ var (
 	sessionSameSite              = parseSameSite(os.Getenv("SESSION_SAMESITE"), http.SameSiteLaxMode)
 	sessionTTL                   = parseDurationOr(os.Getenv("SESSION_TTL"), 24*time.Hour) // authorized sessions
 	forceSecureCookie            = os.Getenv("FORCE_SECURE_COOKIE") == "1"                 // force 'Secure' even if APP_BASE_URL is http
+	sessionCookieDomain          = strings.TrimSpace(os.Getenv("SESSION_COOKIE_DOMAIN"))
 	sessionSameSiteWarningLogged bool
 )
 
@@ -404,6 +405,7 @@ func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl t
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    signed,
+		Domain:   sessionCookieDomain,
 		Path:     "/",
 		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
@@ -429,6 +431,7 @@ func expireSessionCookieOnly(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    "",
+		Domain:   sessionCookieDomain,
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
@@ -461,6 +464,7 @@ func setPendingMFACookie(w http.ResponseWriter, uuid, username string) error {
 	http.SetCookie(w, &http.Cookie{
 		Name:     pendingMFACookie,
 		Value:    signed,
+		Domain:   sessionCookieDomain,
 		Path:     "/",
 		MaxAge:   int(pendingMFATTL.Seconds()),
 		HttpOnly: true,
@@ -476,6 +480,7 @@ func clearPendingMFACookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     pendingMFACookie,
 		Value:    "",
+		Domain:   sessionCookieDomain,
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
