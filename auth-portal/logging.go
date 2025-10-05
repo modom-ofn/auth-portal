@@ -96,13 +96,24 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 }
 
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		p := strings.Split(xff, ",")
-		return strings.TrimSpace(p[0])
+	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+		parts := strings.Split(xff, ",")
+		for _, part := range parts {
+			ip := strings.TrimSpace(part)
+			if ip != "" {
+				return ip
+			}
+		}
 	}
-	h, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		return h
+
+	if rip := strings.TrimSpace(r.Header.Get("X-Real-IP")); rip != "" {
+		return rip
 	}
-	return r.RemoteAddr
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+
+	return strings.TrimSpace(r.RemoteAddr)
 }

@@ -21,6 +21,7 @@ import (
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
 	"auth-portal/health"
 	"auth-portal/providers"
+	"golang.org/x/time/rate"
 )
 
 var (
@@ -207,6 +208,10 @@ func main() {
 	// ---- Router ----
 	r := mux.NewRouter()
 
+	// Rate limiters for auth-sensitive routes
+	loginLimiter := newIPRateLimiter(rate.Every(6*time.Second), 5, 15*time.Minute)
+	mfaLimiter := newIPRateLimiter(rate.Every(12*time.Second), 3, 15*time.Minute)
+
 	// Static assets
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
@@ -214,7 +219,7 @@ func main() {
 	r.HandleFunc("/", loginPageHandler).Methods("GET")
 	r.HandleFunc("/whoami", whoamiHandler).Methods("GET")
 	r.HandleFunc("/mfa/challenge", mfaChallengePage).Methods("GET")
-	r.Handle("/mfa/challenge/verify", requireSameOrigin(http.HandlerFunc(mfaChallengeVerifyHandler))).Methods("POST")
+	r.Handle("/mfa/challenge/verify", requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaChallengeVerifyHandler)))).Methods("POST")
 	r.Handle("/mfa/enroll", authMiddleware(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
 	r.Handle("/mfa/enroll/status", authMiddleware(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
 
@@ -225,14 +230,15 @@ func main() {
 		log.Printf("Provider health warning: %v", err)
 	}
 
-	startWebHandler := func(w http.ResponseWriter, r *http.Request) {
+	startWebHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		res, _ := v2.Start(r.Context(), r)
 		providers.WriteHTTPResult(w, res)
-	}
-	r.HandleFunc("/auth/start-web", startWebHandler).Methods("GET")
-	r.Handle("/auth/start-web", requireSameOrigin(http.HandlerFunc(startWebHandler))).Methods("POST")
+	})
+	startWebLimited := rateLimitMiddleware(loginLimiter, startWebHandler)
+	r.Handle("/auth/start-web", startWebLimited).Methods("GET")
+	r.Handle("/auth/start-web", requireSameOrigin(startWebLimited)).Methods("POST")
 
-	forwardHandler := func(w http.ResponseWriter, r *http.Request) {
+	forwardHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if op, ok := currentProvider.(providers.OutcomeProvider); ok {
 			out, resp, err := op.CompleteOutcome(r.Context(), r)
 			if resp != nil {
@@ -295,21 +301,22 @@ func main() {
 
 		res, _ := v2.Complete(r.Context(), r)
 		providers.WriteHTTPResult(w, res)
-	}
-	r.HandleFunc("/auth/forward", forwardHandler).Methods("GET")
-	r.Handle("/auth/forward", requireSameOrigin(http.HandlerFunc(forwardHandler))).Methods("POST")
+	})
+	forwardLimited := rateLimitMiddleware(loginLimiter, forwardHandler)
+	r.Handle("/auth/forward", forwardLimited).Methods("GET")
+	r.Handle("/auth/forward", requireSameOrigin(forwardLimited)).Methods("POST")
 
 	// Plex fallback: JSON poll to complete auth if forwardUrl navigation fails
-	r.HandleFunc("/auth/poll", providers.PlexPoll).Methods("GET")
+	r.Handle("/auth/poll", rateLimitMiddleware(loginLimiter, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
 
 	// Logout (protect with a simple same-origin check)
-	r.Handle("/logout", requireSameOrigin(http.HandlerFunc(logoutHandler))).Methods("POST")
+	r.Handle("/logout", requireSameOrigin(rateLimitMiddleware(loginLimiter, http.HandlerFunc(logoutHandler)))).Methods("POST")
 
 	// Protected
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
-	r.Handle("/mfa/enroll/start", authMiddleware(requireSameOrigin(http.HandlerFunc(mfaEnrollmentStartHandler)))).Methods("POST")
-	r.Handle("/mfa/enroll/verify", authMiddleware(requireSameOrigin(http.HandlerFunc(mfaEnrollmentVerifyHandler)))).Methods("POST")
+	r.Handle("/mfa/enroll/start", authMiddleware(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
+	r.Handle("/mfa/enroll/verify", authMiddleware(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
 
 	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
