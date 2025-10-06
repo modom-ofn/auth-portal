@@ -1,19 +1,16 @@
-# AuthPortal (v2.0.1)
+# AuthPortal (v2.0.2)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.23.12%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.25.1%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 
-**AuthPortal** is a lightweight, self-hosted authentication gateway for Plex, Jellyfin, or Emby.
-It reproduces Overseerr's clean popup login (no code entry), stores a sealed media-server token, and issues a secure session cookie for your intranet portal.
+**AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
 
-- Authorized Media Server users are directed to the authorized home page.
-- Unauthorized Media Server users are shown the restricted home page.
+AuthPortal authenticates users directly against their connected media server accounts, seals the server tokens for reuse, and manages session lifecycle via HTTP-only cookies.
+Authorized users are directed to their personalized home page, while unrecognized users are served a restricted or “guest” view.
 
-**Use at your own risk. This project uses Vibe Coding and AI-Assistance. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.**
-
-It can optionally be expanded to include LDAP integration for downstream app requirements.
+**Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
 
  Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
  GitHub Repo: https://github.com/modom-ofn/auth-portal
@@ -22,24 +19,36 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ## Features
 
-- **Popup login** (Plex PIN, Emby/Jellyfin username+password in a small popup form)
-- Overseerr-style dark UI with branded button (Plex/Emby/Jellyfin)
-- Signed, HTTP-only JWT session cookie
-- Single binary, fully containerized
-- Simple env-based config
-- Two distinct home pages: authorized vs. unauthorized
+**Unified login gateway**
+– Supports Plex authentication and Emby/Jellyfin username+password login
+– Responsive modal-style interface for seamless in-browser authentication
 
----
+**Secure session management**
+– Signed, HTTP-only JWT cookie for authorized sessions
+– Optional TOTP-based multi-factor authentication (with recovery codes)
+– Per-tenant MFA enforcement toggles
 
-<img width="1277" height="1177" alt="auth-portal-v2 0 0" src="https://github.com/user-attachments/assets/ace79e83-10f7-4ac5-86ca-52b58a2941eb" />
+**Enterprise-ready expansion**
+– Optional LDAP integration for downstream application SSO requirements
+– Extensible provider architecture
+
+**Lightweight deployment**
+– Single-binary, fully containerized service
+– Simple environment-variable configuration
+– Minimal external dependencies
+
+**Customizable experience**
+– Two distinct home pages: authorized vs. unauthorized
+– Dark, modern UI with branded login buttons
 
 ---
 
 ## Table of Contents
 
-- [What's New in v2.0.1](#whats-new-in-v201)
+- [What's New in v2.0.2](#whats-new-in-v202)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+  - [Multi-factor authentication (new in v2.0.2)](#multi-factor-authentication-new-in-v202)
   - [Plex](#plex)
   - [Jellyfin](#jellyfin)
   - [Emby](#emby)
@@ -59,15 +68,15 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ---
 
-## What's New in v2.0.1
+## What's New in v2.0.2
 
-- **Security:** upgraded Go to 1.23.12 (CE-2025-47906). Rebuild images to pick up the patched toolchain.
-- **New endpoint:** `GET /whoami` returns normalized identity plus session metadata (`issuedAt`, `expiry`).
-- **Multi-provider identities:** new `identities` table with automatic backfill; reads prefer identities and fall back to legacy `users` when needed.
-- **Provider layer refactor:** return-value API, structured outcomes (cookies set in app), minimal `Health()` checks, shared HTTP helpers with one-retry on transient errors.
-- **UI:** consistent sign-in button base across providers; Jellyfin icon sizing/text fixed.
+- **Multi-factor authentication:** Enrollment and challenge flows for TOTP with recovery codes. Toggle enforcement per tenant or per user with MFA_ENABLE/MFA_ENFORCE.
+- **Security hardening:** Same-origin CSRF checks on sensitive POST routes, pending-MFA cookie isolation, configurable SESSION_COOKIE_DOMAIN, and consistent JWT rotation after MFA.
+- **Rate limiting:** Shared per-IP throttles now wrap login, MFA enrollment, and verification endpoints to blunt brute-force attacks.
+- **Platform updates:** Upgraded container stack to Go 1.25.1 with patched OpenSSL/BusyBox layers and refreshed UI assets to surface the MFA experience.
 
 ---
+
 
 ## ldap-sync
 
@@ -84,7 +93,13 @@ It can optionally be expanded to include LDAP integration for downstream app req
 # ---------- Core ----------
 POSTGRES_PASSWORD=change-me-long-random
 SESSION_SECRET=change-me-32+chars-random
+SESSION_COOKIE_DOMAIN=yourdomain.com
 APP_BASE_URL=http://localhost:8089
+
+# Multi-factor authentication
+MFA_ENABLE=1
+MFA_ENFORCE=0
+MFA_ISSUER=AuthPortal
 
 # Authorized page extra link (optional)
 LOGIN_EXTRA_LINK_URL=/some-internal-app
@@ -94,13 +109,13 @@ LOGIN_EXTRA_LINK_TEXT=Open Internal App
 UNAUTH_REQUEST_EMAIL=support@example.com
 UNAUTH_REQUEST_SUBJECT=AuthPortal Access Request
 
-# Set 'MEDIA_SERVER=' options: Plex | Emby | Jellyfin
-MEDIA_SERVER=Plex
+# Set 'MEDIA_SERVER=' options: plex | emby | jellyfin
+MEDIA_SERVER=plex
 
 # Set 'FORCE_SECURE_COOKIE=1' in prod; if behind TLS/NGINX with X-Forwarded-Proto use 1
 FORCE_SECURE_COOKIE=0
 
-# 32-byte base64 key (e.g.,: openssl rand -base64 32) (Do Not Reuse Example Below)
+# 32-byte base64 key (e.g., openssl rand -base64 32) (Do Not Reuse Example Below)
 DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
 
 # Logging # DEBUG | INFO | WARN | ERROR
@@ -120,18 +135,18 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.1
+EMBY_APP_VERSION=2.0.2
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
 
-# -------- JELLYFIN ---------
+# -------- Jellyfin ---------
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
-# optional JellyFin changes
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.1
+JELLYFIN_APP_VERSION=2.0.2
 ```
+
 
 2) **docker-compose.yaml**
 
@@ -182,13 +197,14 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:latest
+    image: modomofn/auth-portal:v2.0.2
     ports:
       - "8089:8080"
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
+      SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
       LOGIN_EXTRA_LINK_URL: ${LOGIN_EXTRA_LINK_URL:-}
       LOGIN_EXTRA_LINK_TEXT: ${LOGIN_EXTRA_LINK_TEXT:-}
@@ -196,6 +212,9 @@ services:
       UNAUTH_REQUEST_SUBJECT: ${UNAUTH_REQUEST_SUBJECT:-}
       FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
       MEDIA_SERVER: ${MEDIA_SERVER:-plex}
+      MFA_ENABLE: ${MFA_ENABLE:-1}
+      MFA_ENFORCE: ${MFA_ENFORCE:-0}
+      MFA_ISSUER: ${MFA_ISSUER:-AuthPortal}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
       # DB
@@ -210,12 +229,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.1}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.2}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.1}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.2}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -297,6 +316,7 @@ networks:
   authnet:
 ```
 
+
 3) **Run**
 ```bash
 docker compose up -d --build
@@ -312,15 +332,24 @@ docker compose --profile ldap up -d --build
 ## Configuration
 
 - `APP_BASE_URL`  external URL users hit (drives redirects & cookie flags). Use HTTPS in production.
-- `MEDIA_SERVER`  `plex` or `jellyfin` or `emby`.
-- `SESSION_SECRET`  HMAC secret for JWT cookie (required).
-- `DATA_KEY`  base64 32-byte key for sealing tokens at rest (required).
-- `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
-- `FORCE_SECURE_COOKIE`  set to 1 to force Secure on cookies (behind TLS/ingress).
+- `SESSION_COOKIE_DOMAIN`  domain scope for session + pending-MFA cookies (e.g., `auth.example.com`).
+- `MEDIA_SERVER`  `plex`, `jellyfin`, or `emby`.
+- `SESSION_SECRET`  HMAC secret for the session JWT cookie (required).
+- `DATA_KEY`  base64 32-byte key for sealing provider tokens at rest (required).
+- `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
+- `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
 - `LOGIN_EXTRA_LINK_URL`  external URL on authorized page.
-- `LOGIN_EXTRA_LINK_TEXT`  text for external URL on authorized page.
-- `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page request access link
-- `UNAUTH_REQUEST_SUBJECT`  subject for unuathorized page request access email
+- `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
+- `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
+- `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
+- `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
+
+### Multi-factor authentication (new in v2.0.2)
+
+- `MFA_ENABLE` controls whether users can enroll; leave it `1` when enforcing.
+- `MFA_ENFORCE` forces every login to satisfy MFA once a user is enrolled (or immediately when set globally).
+- `MFA_ISSUER` customises the label your authenticator app displays and the recovery code download header.
+- Enrollment lives under `/mfa/enroll/*`; challenges use `/mfa/challenge` and `/mfa/challenge/verify`. Recovery codes rotate on each successful verify.
 
 ### Plex
 
@@ -367,7 +396,8 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 ## Security Notes
 
 - Token sealing: tokens are encrypted with `DATA_KEY` before DB insert/update. Unseal on read; failures clear the in-memory token.
-- Cookies: JWT in HTTP-only, SameSite=Lax cookie. `Secure` is enabled automatically when `APP_BASE_URL` is HTTPS, or force with `FORCE_SECURE_COOKIE=1`.
+- Cookies: Session and pending-MFA cookies honour `SESSION_COOKIE_DOMAIN`; they are HTTP-only, SameSite=Lax, and rotate after successful MFA. `Secure` is automatic when `APP_BASE_URL` is HTTPS, or force it with `FORCE_SECURE_COOKIE=1`.
+- Rate limits: login endpoints share a per-IP limiter (burst 5, ~10 req/min); MFA enrollment/challenge use a tighter burst 3, ~5 req/min (tune in `main.go`).
 - CSRF-lite: POST routes require same-origin via Origin/Referer.
 - Headers:
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
@@ -415,8 +445,8 @@ CREATE TABLE IF NOT EXISTS pins (
 
 ## Build & Images
 
-- Go: `1.23.12` on `alpine:3.21`.
-- Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.23`, builds with:
+- Go: `1.25.1` on `alpine:3.21`.
+- Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.25`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
 - Runtime: `alpine:3.21`, installs CA certs + tzdata, runs as non-root `uid 10001`.
 
@@ -441,23 +471,31 @@ DEBUG plex: resources match via machine id
 
 ## HTTP Routes
 
-- `GET /`  login page (auto-redirects to /home if session present)
-- `POST /auth/start-web`  JSON `{ authUrl }`
-	- Plex: returns Plex Auth URL (PIN flow)
-	- Jellyfin/Emby: returns `/auth/forward?jellyfin=1` or `/auth/forward?emby=1`
-- `GET|POST /auth/forward`  popup finisher
-	- Plex: completes PIN polling, closes popup
-	- Jellyfin: GET  form; POST  authenticate and close
-	- Emby: GET  form; POST  authenticate and close
-- `GET /me`  JSON: `{ username, uuid }` if logged in
-- `GET /home`  renders Authorized / Unauthorized based on `IsAuthorized`
-- `POST /logout`  clears cookie; same-origin required
-- `GET /healthz`  health check
-- `GET /readyz`  readiness (DB)
-- `GET /static/*`  static assets
-- `GET /whoami`  JSON: normalized identity and session metadata
+- `GET /`  login page (auto-redirects to `/home` if session present).
+- `POST /auth/start-web`  JSON `{ authUrl }` (per-IP rate limited).
+  - Plex: returns the Plex auth URL for the PIN flow.
+  - Jellyfin/Emby: returns `/auth/forward?jellyfin=1` or `/auth/forward?emby=1`.
+- `GET|POST /auth/forward`  popup finisher for all providers.
+  - Plex: completes PIN polling and closes the popup.
+  - Jellyfin/Emby: GET serves the form; POST authenticates and closes the popup.
+- `GET /auth/poll`  Plex PIN poller (rate limited, JSON `{ status }`).
+- `GET /mfa/challenge`  HTML challenge page shown when MFA is required.
+- `POST /mfa/challenge/verify`  JSON `{ ok, redirect, recoveryUsed, remainingRecoveryCodes }`; rotates the session cookie on success.
+- `GET /mfa/enroll`  HTML enrollment UI for authenticated users.
+- `GET /mfa/enroll/status`  JSON summary of enrollment state (enabled/pending timestamps, remaining recovery codes).
+- `POST /mfa/enroll/start`  JSON `{ ok, secret, otpauth, digits, period, drift, enforced, previouslyEnabled }` to seed authenticator apps.
+- `POST /mfa/enroll/verify`  JSON `{ ok, recoveryCodes }` confirming enrollment and returning fresh recovery codes.
+- `GET /me`  JSON `{ username, uuid }` when logged in.
+- `GET /home`  renders authorized or unauthorized view based on `IsAuthorized`.
+- `POST /logout`  clears cookies; same-origin required.
+- `GET /whoami`  JSON: normalized identity and session metadata.
+- `GET /healthz`  health check.
+- `GET /readyz`  readiness (DB).
+- `GET /static/*`  static assets.
 
 ---
+
+
 
 - **Styles**: `static/styles.css` (icons clamped to 22"22 inside the sign-in button)
 - **Login script**: `static/login.js`
@@ -471,17 +509,16 @@ DEBUG plex: resources match via machine id
 ## How it works
 *High-level*
 
-1. User clicks **Sign in with Plex/Emby/Jellyfin**  JS opens auth flow in a popup.
-    - If user is already logged on, redirect to home is automatic
-2. Server completes provider-specific auth, seals/stores token, and decides authorization.  
-4. Session cookie is set (24h default for authorized, 5m for unauthorized).  
-5. Stores only authorized user's profile in DB
-6. Issues signed cookies with variable TTL (5m for unauthorized, 24h for authorized)
-7. Popup posts a success message to the opener and closes; opener goes to:
-    - `/home`  Authorized
-    - `/home`  logged in, but NOT authorized
+1. User clicks **Sign in with Plex/Emby/Jellyfin**; frontend opens the provider popup.
+   - If the user is already authenticated with the provider, the popup returns immediately.
+2. Server completes provider-specific auth, seals/stores the media token, and decides authorization.
+3. If MFA is required (enforcement on or the user has enabled it), the app issues a pending-MFA cookie and redirects to `/mfa/challenge`; otherwise it sends the user directly to `/home`.
+4. The MFA challenge verifies a TOTP or recovery code, rotates the JWT, clears the pending cookie, and redirects back to the portal.
+5. Session cookie TTL defaults to 24h for authorized users and 5m for unauthorized; authorized user profiles are stored in Postgres.
+6. The opener page updates based on authorization, showing the authorized or restricted home experience and optional extra links.
 
 ---
+
 
 ## Customization
 
@@ -498,6 +535,9 @@ DEBUG plex: resources match via machine id
 - Set strong `SESSION_SECRET`, `DATA_KEY`, and DB credentials.
 - Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
+- Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).
+- If the portal is only used for same-origin apps, switch to SESSION_SAMESITE=strict; the fallback logic keeps you safe when Secure cookies aren’t yet possible (main.go:379-407).
+- Keep rate limits aligned with your threat model; newIPRateLimiter accepts tighter limits if you need to clamp brute force attempts (rate_limiter.go:10-74).
 
 ---
 
@@ -506,7 +546,7 @@ DEBUG plex: resources match via machine id
 ```
 .
 " ldap-seed/ # optional LDAP seed
-    01-ou-users.ldif
+   " 01-ou-users.ldif
 " auth-portal/
    " context_helpers.go
    " crypto.go
@@ -514,9 +554,13 @@ DEBUG plex: resources match via machine id
    " db.go
    " Dockerfile
    " go.mod
+   " go.sum
    " handlers.go
    " logging.go
    " main.go
+   " mfa_handlers.go
+   " mfa_helpers.go
+   " rate_limiter.go
    " store.go
    " LICENSE
    " README.md
@@ -524,24 +568,28 @@ DEBUG plex: resources match via machine id
    	" health.go
    " providers/
     " emby.go
-	" httpx.go
-	" httpx_test.go
-	" jellyfin.go
-	" plex.go
-	" provider.go
+    " httpx_test.go
+    " httpx.go
+    " jellyfin.go
+    " plex.go
+    " provider.go
    " templates/
    	" login.html
+    " mfa_challenge.html
+    " mfa_enroll.html
    	" portal_authorized.html
-	" portal_unauthorized.html
+	  " portal_unauthorized.html
    " static/
    	" styles.css
    	" login.js
+    " mfa_challenge.js
+    " mfa_enroll.js
    	" login.svg     # optional login button svg icon
    	" plex.svg      # optional plex button svg icon
    	" emby.svg      # optional emby button svg icon
    	" jellyfin.svg  # optional jellyfin button svg icon
-   	 bg.jpg         # optional hero image
-" auth-portal-full-stack-dev.env					# full stack docker-compose env template
+   	" bg.jpg        # optional hero image
+" auth-portal-full-stack-dev.env					          # full stack docker-compose env template
 " auth-portal-full-stack-dev_docker-compose.yml	    # full stack docker-compose template
 " CHANGELOG.md
 " LICENSE
@@ -567,12 +615,14 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ---
 
-## Upgrade Guide (v2.0.1)
+## Upgrade Guide (v2.0.2)
 
-1) Rebuild all images to pull `golang:1.23.12-alpine3.21`.
-2) No manual DB migration required: schema/backfill for `identities` runs at startup.
-3) Verify deployment:
-   - Sign in via your media provider.
-   - Call `GET /whoami` and confirm: `authenticated=true`, correct `provider`, and accurate `mediaAccess`.
-   - In DB, `SELECT * FROM identities LIMIT 5;` should show rows for recent sign-ins.
-4) LDAP: ldap-sync now prefers `identities`; LDAP `description` contains `provider=<name>` and `media_uuid=<uuid>`.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.2` so you pick up Go 1.25.1 plus the patched OpenSSL 3.3.5 / BusyBox layers.
+2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
+3) Decide on MFA posture:
+   - Leave `MFA_ENABLE=1` to let users enroll.
+   - Flip `MFA_ENFORCE=1` if everyone must pass MFA on login; keep `MFA_ENABLE=1` in that case.
+4) Verify end-to-end:
+   - Existing users can log in, enroll, and download recovery codes.
+   - Enforced logins reach `/mfa/challenge` and succeed with both TOTP codes and a recovery code.
+   - Repeated bad logins or code attempts return HTTP 429 from the per-IP rate limiters.
