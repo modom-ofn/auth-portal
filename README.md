@@ -21,26 +21,26 @@ AuthPortal authenticates users directly against their connected media server acc
 ## Features
 
 - **Unified login gateway**
-  – Supports Plex authentication and Emby/Jellyfin username+password login
-  – Responsive modal-style interface for seamless in-browser authentication
+  - Supports Plex authentication and Emby/Jellyfin username+password login
+  - Responsive modal-style interface for seamless in-browser authentication
 
 - **Secure session management**
-  – Signed, HTTP-only JWT cookie for authorized sessions
-  – Optional TOTP-based multi-factor authentication (with recovery codes)
-  – Per-tenant MFA enforcement toggles
+  - Signed, HTTP-only JWT cookie for authorized sessions
+  - Optional TOTP-based multi-factor authentication (with recovery codes)
+  - Per-tenant MFA enforcement toggles
 
 - **Enterprise-ready expansion**
-  – Optional LDAP integration for downstream application SSO requirements
-  – Extensible provider architecture
+  - Optional LDAP integration for downstream application SSO requirements
+  - Extensible provider architecture
 
 - **Lightweight deployment**
-  – Single-binary, fully containerized service
-  – Simple environment-variable configuration
-  – Minimal external dependencies
+  - Single-binary, fully containerized service
+  - Simple environment-variable configuration
+  - Minimal external dependencies
 
 - **Customizable experience**
-  – Two distinct home pages: authorized vs. unauthorized
-  – Dark, modern UI with branded login buttons
+  - Two distinct home pages: authorized vs. unauthorized
+  - Dark, modern UI with branded login buttons
 
 ---
 
@@ -613,7 +613,9 @@ https://github.com/modom-ofn/auth-portal/issues
 
 GPL-3.0  https://opensource.org/license/lgpl-3-0
 
-**"Use at your own risk. This project uses Vibe Coding and AI-Assitance. This project is unaffiliated with Plex, Inc. or Emby LLC. or Jellyfin."**
+
+> [!IMPORTANT]
+> **Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
 
 ---
 
