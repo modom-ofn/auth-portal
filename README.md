@@ -98,6 +98,9 @@ SESSION_SECRET=change-me-32+chars-random
 SESSION_COOKIE_DOMAIN=yourdomain.com
 APP_BASE_URL=http://localhost:8089
 
+# Trusted proxy CIDR ranges for forwarded headers (comma separated; leave blank to disable)
+TRUSTED_PROXY_CIDRS=
+
 # Multi-factor authentication
 MFA_ENABLE=1
 MFA_ENFORCE=0
@@ -340,6 +343,7 @@ docker compose --profile ldap up -d --build
 - `DATA_KEY`  base64 32-byte key for sealing provider tokens at rest (required).
 - `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
 - `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
+- `TRUSTED_PROXY_CIDRS`  comma-separated CIDR ranges of proxies allowed to supply `X-Forwarded-For`/`X-Real-IP`; leave empty to rely on `RemoteAddr`.
 - `LOGIN_EXTRA_LINK_URL`  external URL on authorized page.
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.

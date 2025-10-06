@@ -50,6 +50,7 @@ services:
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
