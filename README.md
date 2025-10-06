@@ -7,39 +7,40 @@
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
 
-AuthPortal authenticates users directly against their connected media server accounts, seals the server tokens for reuse, and manages session lifecycle via HTTP-only cookies.
-Authorized users are directed to their personalized home page, while unrecognized users are served a restricted or “guest” view.
+AuthPortal authenticates users directly against their connected media server accounts, seals the server tokens for reuse, and manages session lifecycle via HTTP-only cookies. Authorized users are directed to their personalized home page, while unrecognized users are served a restricted or “guest” view.
 
-**Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
+> [!IMPORTANT]
+> **Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
 
- Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
- GitHub Repo: https://github.com/modom-ofn/auth-portal
+> [!NOTE]
+> - Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
+> - GitHub Repo: https://github.com/modom-ofn/auth-portal
 
 ---
 
 ## Features
 
-**Unified login gateway**
-– Supports Plex authentication and Emby/Jellyfin username+password login
-– Responsive modal-style interface for seamless in-browser authentication
+- **Unified login gateway**
+  – Supports Plex authentication and Emby/Jellyfin username+password login
+  – Responsive modal-style interface for seamless in-browser authentication
 
-**Secure session management**
-– Signed, HTTP-only JWT cookie for authorized sessions
-– Optional TOTP-based multi-factor authentication (with recovery codes)
-– Per-tenant MFA enforcement toggles
+- **Secure session management**
+  – Signed, HTTP-only JWT cookie for authorized sessions
+  – Optional TOTP-based multi-factor authentication (with recovery codes)
+  – Per-tenant MFA enforcement toggles
 
-**Enterprise-ready expansion**
-– Optional LDAP integration for downstream application SSO requirements
-– Extensible provider architecture
+- **Enterprise-ready expansion**
+  – Optional LDAP integration for downstream application SSO requirements
+  – Extensible provider architecture
 
-**Lightweight deployment**
-– Single-binary, fully containerized service
-– Simple environment-variable configuration
-– Minimal external dependencies
+- **Lightweight deployment**
+  – Single-binary, fully containerized service
+  – Simple environment-variable configuration
+  – Minimal external dependencies
 
-**Customizable experience**
-– Two distinct home pages: authorized vs. unauthorized
-– Dark, modern UI with branded login buttons
+- **Customizable experience**
+  – Two distinct home pages: authorized vs. unauthorized
+  – Dark, modern UI with branded login buttons
 
 ---
 
@@ -80,8 +81,9 @@ Authorized users are directed to their personalized home page, while unrecognize
 
 ## ldap-sync
 
-- **Note:** ldap-sync has been moved to its own repository.  
-- You can now find it at: https://github.com/modom-ofn/ldap-sync
+> [!NOTE]
+> - ldap-sync has been moved to its own repository.  
+> - You can now find it at: https://github.com/modom-ofn/ldap-sync
 
 ---
 
