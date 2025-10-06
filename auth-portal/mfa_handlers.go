@@ -229,6 +229,19 @@ func mfaEnrollmentVerifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	username := strings.TrimSpace(usernameFrom(r.Context()))
+	if username == "" {
+		username = strings.TrimSpace(user.Username)
+	}
+	if username == "" {
+		username = uuid
+	}
+	if err := setSessionCookie(w, uuid, username); err != nil {
+		log.Printf("mfa verify: set session failed for %s (%s): %v", username, uuid, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "session setup failed"})
+		return
+	}
+
 	respondJSON(w, http.StatusOK, mfaVerifyResponse{OK: true, RecoveryCodes: recoveryCodes})
 }
 
