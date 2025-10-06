@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -341,7 +342,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		// Basic hardening
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Global CSP (the /auth/forward response can set its own relaxed CSP for inline JS)
 		w.Header().Set("Content-Security-Policy",
@@ -609,17 +610,75 @@ func requireSameOrigin(next http.Handler) http.Handler {
 			return
 		}
 
-		// Build allowed origins set.
-		allowed := make(map[string]struct{}, 2)
+		// Build allowed origin and host allowlists derived from config and proxy headers.
+		allowed := make(map[string]struct{}, 4)
+		allowedHosts := make(map[string]struct{}, 4)
+
+		firstHeaderValue := func(v string) string {
+			if v == "" {
+				return ""
+			}
+			parts := strings.Split(v, ",")
+			if len(parts) == 0 {
+				return ""
+			}
+			return strings.TrimSpace(parts[0])
+		}
+
+		addHost := func(h string) {
+			h = strings.TrimSpace(h)
+			if h == "" {
+				return
+			}
+			lower := strings.ToLower(h)
+			allowedHosts[lower] = struct{}{}
+			if hostOnly, _, err := net.SplitHostPort(lower); err == nil {
+				allowedHosts[hostOnly] = struct{}{}
+			} else {
+				if strings.HasSuffix(lower, ":80") {
+					allowedHosts[strings.TrimSuffix(lower, ":80")] = struct{}{}
+				}
+				if strings.HasSuffix(lower, ":443") {
+					allowedHosts[strings.TrimSuffix(lower, ":443")] = struct{}{}
+				}
+			}
+		}
+
+		addOrigin := func(scheme, host string) {
+			scheme = strings.TrimSpace(scheme)
+			host = strings.TrimSpace(host)
+			if scheme == "" || host == "" {
+				return
+			}
+			scheme = strings.ToLower(scheme)
+			lowerHost := strings.ToLower(host)
+			allowed[scheme+"://"+lowerHost] = struct{}{}
+			addHost(host)
+			if hostOnly, _, err := net.SplitHostPort(lowerHost); err == nil {
+				allowed[scheme+"://"+hostOnly] = struct{}{}
+				addHost(hostOnly)
+			} else {
+				if strings.HasSuffix(lowerHost, ":80") {
+					trimmed := strings.TrimSuffix(lowerHost, ":80")
+					allowed[scheme+"://"+trimmed] = struct{}{}
+					addHost(trimmed)
+				}
+				if strings.HasSuffix(lowerHost, ":443") {
+					trimmed := strings.TrimSuffix(lowerHost, ":443")
+					allowed[scheme+"://"+trimmed] = struct{}{}
+					addHost(trimmed)
+				}
+			}
+		}
 
 		// (1) APP_BASE_URL origin
 		if u, err := url.Parse(appBaseURL); err == nil && u.Scheme != "" && u.Host != "" {
-			allowed[strings.ToLower(u.Scheme+"://"+u.Host)] = struct{}{}
+			addOrigin(u.Scheme, u.Host)
 		}
 
 		// (2) origin derived from request / proxy headers
-		proto := r.Header.Get("X-Forwarded-Proto")
-		host := r.Header.Get("X-Forwarded-Host")
+		proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto"))
+		host := firstHeaderValue(r.Header.Get("X-Forwarded-Host"))
 		if host == "" {
 			host = r.Host
 		}
@@ -632,21 +691,51 @@ func requireSameOrigin(next http.Handler) http.Handler {
 			}
 		}
 
-		reqOrigin := strings.ToLower(proto + "://" + host)
-		allowed[reqOrigin] = struct{}{}
+		proto = strings.ToLower(strings.TrimSpace(proto))
+		host = strings.TrimSpace(host)
+		addOrigin(proto, host)
 
-		// Helper to compare only scheme://host[:port]
+		if rHost := strings.TrimSpace(r.Host); rHost != "" {
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+			addOrigin(scheme, rHost)
+		}
+
+		reqHostKey := strings.ToLower(host)
+		reqOrigin := proto + "://" + reqHostKey
+
+		// Helper to compare only scheme://host[:port] (ignores scheme mismatches for same host)
 		matchesAllowed := func(hdr string) bool {
 			if hdr == "" {
 				return false
 			}
 			u, err := url.Parse(hdr)
-			if err != nil || u.Scheme == "" || u.Host == "" {
+			if err != nil || u.Host == "" {
 				return false
 			}
-			got := strings.ToLower(u.Scheme + "://" + u.Host)
-			_, ok := allowed[got]
-			return ok
+			scheme := strings.ToLower(u.Scheme)
+			hostKey := strings.ToLower(u.Host)
+			if scheme != "" {
+				if _, ok := allowed[scheme+"://"+hostKey]; ok {
+					return true
+				}
+			}
+			if hostOnly, _, err := net.SplitHostPort(hostKey); err == nil {
+				if scheme != "" {
+					if _, ok := allowed[scheme+"://"+hostOnly]; ok {
+						return true
+					}
+				}
+				if _, ok := allowedHosts[hostOnly]; ok {
+					return true
+				}
+			}
+			if _, ok := allowedHosts[hostKey]; ok {
+				return true
+			}
+			return false
 		}
 
 		origin := r.Header.Get("Origin")
@@ -663,6 +752,22 @@ func requireSameOrigin(next http.Handler) http.Handler {
 			if _, ok := allowed[reqOrigin]; ok {
 				next.ServeHTTP(w, r)
 				return
+			}
+			if hostOnly, _, err := net.SplitHostPort(reqHostKey); err == nil {
+				if _, ok := allowed[proto+"://"+hostOnly]; ok {
+					next.ServeHTTP(w, r)
+					return
+				}
+				if _, ok := allowedHosts[hostOnly]; ok {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			if reqHostKey != "" {
+				if _, ok := allowedHosts[reqHostKey]; ok {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 		}
 		http.Error(w, "CSRF check failed", http.StatusForbidden)

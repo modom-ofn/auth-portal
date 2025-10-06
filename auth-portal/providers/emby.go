@@ -1,11 +1,11 @@
 package providers
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "html"
-    "io"
+	"context"
+	"encoding/json"
+	"fmt"
+	"html"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -78,9 +78,27 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
-	md, _ := mediaGetUserDetail("emby", EmbyServerURL, EmbyAPIKey, auth.User.ID)
+	var md mediaUserDetail
+	var detailErr error
+	if strings.TrimSpace(EmbyAPIKey) != "" {
+		md, detailErr = mediaGetUserDetail("emby", EmbyServerURL, EmbyAPIKey, auth.User.ID)
+	} else {
+		md, detailErr = mediaGetUserDetail("emby", EmbyServerURL, auth.AccessToken, auth.User.ID)
+	}
+	if detailErr != nil {
+		if Warnf != nil {
+			Warnf("emby detail fetch failed for %s: %v", auth.User.Name, detailErr)
+		}
+	}
+
 	authorized := false
-	if EmbyAPIKey != "" && md.ID != "" && !md.Policy.IsDisabled {
+	if owner := strings.TrimSpace(EmbyOwnerUsername); owner != "" && strings.EqualFold(auth.User.Name, owner) {
+		authorized = true
+	}
+	if ownerID := strings.TrimSpace(EmbyOwnerID); ownerID != "" && auth.User.ID == ownerID {
+		authorized = true
+	}
+	if md.ID != "" && !md.Policy.IsDisabled {
 		authorized = true
 	}
 
@@ -90,6 +108,20 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		sealedToken = ""
 	}
 	mediaUUID := "emby-" + auth.User.ID
+
+	if UpsertUser != nil {
+		err := UpsertUser(User{
+			Username:    auth.User.Name,
+			Email:       "",
+			MediaUUID:   mediaUUID,
+			MediaToken:  sealedToken,
+			MediaAccess: authorized,
+			Provider:    "emby",
+		})
+		if err != nil && Warnf != nil {
+			Warnf("emby upsert failed for %s: %v", auth.User.Name, err)
+		}
+	}
 
 	return AuthOutcome{
 		Provider:    "emby",
@@ -194,16 +226,16 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	}
 	mediaUUID := "emby-" + auth.User.ID
 
-    if UpsertUser != nil {
-        _ = UpsertUser(User{
-            Username:    auth.User.Name,
-            Email:       "",
-            MediaUUID:   mediaUUID,
-            MediaToken:  sealedToken,
-            MediaAccess: authorized,
-            Provider:    "emby",
-        })
-    }
+	if UpsertUser != nil {
+		_ = UpsertUser(User{
+			Username:    auth.User.Name,
+			Email:       "",
+			MediaUUID:   mediaUUID,
+			MediaToken:  sealedToken,
+			MediaAccess: authorized,
+			Provider:    "emby",
+		})
+	}
 
 	if authorized {
 		if SetSessionCookie != nil {
@@ -250,12 +282,15 @@ func (EmbyProvider) IsAuthorized(uuid, _username string) (bool, error) {
 }
 
 // embyTokenStillValid checks whether the user's token is currently accepted by the server.
-func embyTokenStillValid(serverURL, token string) (bool, error) { return mediaTokenStillValid("emby", serverURL, token) }
+func embyTokenStillValid(serverURL, token string) (bool, error) {
+	return mediaTokenStillValid("emby", serverURL, token)
+}
 
 // Legacy compatibility wrappers (used by legacy Forward/IsAuthorized paths)
 type embyUserDetail = mediaUserDetail
+
 func embyGetUserDetail(serverURL, token, userID string) (embyUserDetail, error) {
-    return mediaGetUserDetail("emby", serverURL, token, userID)
+	return mediaGetUserDetail("emby", serverURL, token, userID)
 }
 
 func embyAuthenticate(serverURL, clientID, username, password string) (mediaAuthResp, error) {

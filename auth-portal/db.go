@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 // ---------- Schema ----------
@@ -285,20 +287,37 @@ func upsertUser(u User) (int, error) {
 	if uuid != "" {
 		var id int
 		err := db.QueryRow(`
-INSERT INTO users (media_uuid, username, email, media_token, media_access)
-VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
-ON CONFLICT (media_uuid) DO UPDATE
-SET username     = COALESCE(NULLIF(EXCLUDED.username, ''), users.username),
-    email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
-    media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), users.media_token),
-    media_access = EXCLUDED.media_access,
-    updated_at   = now()
-RETURNING id
-`, uuid, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
-		if err != nil {
-			return 0, err
+	INSERT INTO users (media_uuid, username, email, media_token, media_access)
+	VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
+	ON CONFLICT (media_uuid) DO UPDATE
+	SET username     = COALESCE(NULLIF(EXCLUDED.username, ''), users.username),
+	    email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
+	    media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), users.media_token),
+	    media_access = EXCLUDED.media_access,
+	    updated_at   = now()
+	RETURNING id
+	`, uuid, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
+		if err == nil {
+			return id, nil
 		}
-		return id, nil
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "users_username_key" {
+			err = db.QueryRow(`
+	UPDATE users
+	   SET email        = COALESCE(NULLIF($2, ''), users.email),
+	       media_token  = COALESCE(NULLIF($3, ''), users.media_token),
+	       media_access = $4,
+	       media_uuid   = CASE WHEN users.media_uuid IS NULL OR users.media_uuid = '' THEN NULLIF($5, '') ELSE users.media_uuid END,
+	       updated_at   = now()
+	 WHERE username = $1
+	 RETURNING id
+	`, strings.TrimSpace(u.Username), nn(u.Email), token, access, uuid).Scan(&id)
+			if err != nil {
+				return 0, err
+			}
+			return id, nil
+		}
+		return 0, err
 	}
 
 	// Username path (no UUID yet)
