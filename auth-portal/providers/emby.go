@@ -20,6 +20,61 @@ type embyMe struct {
 
 type EmbyProvider struct{}
 
+func embyLoginPageHTML(prefill, errorMsg string) []byte {
+	escaped := html.EscapeString(strings.TrimSpace(prefill))
+
+	errSnippet := ""
+	if msg := strings.TrimSpace(errorMsg); msg != "" {
+		errSnippet = fmt.Sprintf(`
+      <div class="alert error">%s</div>`, html.EscapeString(msg))
+	}
+
+	return []byte(fmt.Sprintf(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuthPortal - Emby Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    html, body { height: 100%%; overflow: hidden; }
+    body::before, body::after { display: none; }
+    [data-scroll], [data-scroll]::before { display: none; }
+    .page { min-height: auto; padding: 0; }
+    main.center { width: 100vw; }
+    body { margin: 0; overflow: hidden; }
+    main.center { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 0; }
+    .auth-modal { max-width: 360px; padding: 2rem; display: flex; flex-direction: column; gap: 1rem; }
+    .auth-modal h1 { margin: 0; font-size: 1.5rem; }
+    .auth-modal form label { display: block; margin-bottom: 0.75rem; font-weight: 500; }
+    .auth-modal input { width: 100%%; margin-top: 0.35rem; padding: 0.6rem 0.75rem; border-radius: 0.5rem; border: 1px solid #d1d5db; background: #f9fafb; }
+    .auth-modal button { width: 100%%; margin-top: 0.5rem; }
+    .alert.error { background: #fee2e2; color: #991b1b; border-radius: 0.75rem; padding: 0.75rem 1rem; font-size: 0.9rem; }
+    .modal-header { display: flex; align-items: center; gap: 0.75rem; }
+    .modal-header img { display: block; }
+  </style>
+</head>
+<body class="bg">
+  <main class="center">
+    <section class="card auth-modal">
+      <div class="modal-header">
+        <img src="/static/emby.svg" alt="Emby" width="36" height="36" />
+        <div>
+          <h1>Sign in to Emby</h1>
+          <p class="muted" style="margin: 0;">Use your Emby credentials to continue.</p>
+        </div>
+      </div>%s
+      <form method="post" action="/auth/forward?emby=1" class="modal-form">
+        <label>Username<br><input name="username" value="%s" autocomplete="username" required></label>
+        <label>Password<br><input type="password" name="password" autocomplete="current-password" required></label>
+        <button type="submit" class="btn primary">Sign In</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>`, errSnippet, escaped))
+}
+
 func (EmbyProvider) Name() string { return "emby" }
 
 // Optional health check: ensure base URL configured
@@ -35,14 +90,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 	if r.Method == http.MethodGet {
 		hdr := http.Header{}
 		hdr.Set("Content-Type", "text/html; charset=utf-8")
-		body := []byte(`<html><head><title>Emby Login</title></head><body style="font-family:system-ui;padding:2rem">
-              <h1 style="margin-bottom:1rem"><img src="/static/emby.svg" alt="Emby" width="24" height="24" /> Sign in to Emby</h1>
-              <form method="post" action="/auth/forward?emby=1" class="card" style="padding:1rem">
-                <label>Username<br><input name="username" autocomplete="username" required></label><br><br>
-                <label>Password<br><input type="password" name="password" autocomplete="current-password" required></label><br><br>
-                <button type="submit">Sign In</button>
-                <p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(EmbyServerURL) + `</p>
-              </form></body></html>`)
+		body := embyLoginPageHTML("", "")
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusOK, Header: hdr, Body: body}, nil
 	}
 
@@ -65,16 +113,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		}
 		hdr := http.Header{}
 		hdr.Set("Content-Type", "text/html; charset=utf-8")
-		body := []byte(`<html><head><title>Emby Login Failed</title></head><body style="font-family:system-ui;padding:2rem">
-                      <h1 style="margin-bottom:1rem"><img src="/static/emby.svg" alt="Emby" width="24" height="24" /> Sign in to Emby</h1>
-                      <form method="post" action="/auth/forward?emby=1">
-                        <p style="color:red">Login failed; please try again.</p>
-                        <label>Username<br><input name="username" value="` + html.EscapeString(username) + `" autocomplete="username" required></label><br><br>
-                        <label>Password<br><input type="password" name="password" autocomplete="current-password" required></label><br><br>
-                        <button type="submit">Sign In</button>
-                        <a href="/auth/forward?emby=1" class="muted">Reset</a>
-                        <p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(EmbyServerURL) + `</p>
-                      </form></body></html>`)
+		body := embyLoginPageHTML(username, "Login failed; please try again.")
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
@@ -146,14 +185,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<html><head><title>Emby Login</title></head><body style="font-family:system-ui;padding:2rem">
-              <h1 style="margin-bottom:1rem"><img src="/static/emby.svg" alt="Emby" width="24" height="24" /> Sign in to Emby</h1>
-              <form method="post" action="/auth/forward?emby=1" class="card" style="padding:1rem">
-                <label>Username<br><input name="username" autocomplete="username" required></label><br><br>
-                <label>Password<br><input type="password" name="password" autocomplete="current-password" required></label><br><br>
-                <button type="submit">Sign In</button>
-                <p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(EmbyServerURL) + `</p>
-              </form></body></html>`))
+		_, _ = w.Write(embyLoginPageHTML("", ""))
 		return
 	}
 
@@ -176,16 +208,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`<html><head><title>Emby Login Failed</title></head><body style="font-family:system-ui;padding:2rem">
-                      <h1 style="margin-bottom:1rem"><img src="/static/emby.svg" alt="Emby" width="24" height="24" /> Sign in to Emby</h1>
-                      <form method="post" action="/auth/forward?emby=1">
-                        <p style="color:red">Login failed; please try again.</p>
-                        <label>Username<br><input name="username" value="` + html.EscapeString(username) + `" autocomplete="username" required></label><br><br>
-                        <label>Password<br><input type="password" name="password" autocomplete="current-password" required></label><br><br>
-                        <button type="submit">Sign In</button>
-                        <a href="/auth/forward?emby=1" class="muted">Reset</a>
-                        <p class="muted" style="margin-top:.75rem">Server: ` + htmlEscape(EmbyServerURL) + `</p>
-                      </form></body></html>`))
+		_, _ = w.Write(embyLoginPageHTML(username, "Login failed; please try again."))
 		return
 	}
 
