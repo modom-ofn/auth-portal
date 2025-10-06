@@ -287,6 +287,16 @@ func mfaChallengePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mfaEnforceForAllUsers {
+		enabled, checkErr := userHasMFAEnabled(claims.UUID, claims.Username)
+		if checkErr != nil {
+			log.Printf("mfa challenge: enforcement lookup failed for %s (%s): %v", strings.TrimSpace(claims.Username), strings.TrimSpace(claims.UUID), checkErr)
+		} else if !enabled {
+			http.Redirect(w, r, "/mfa/enroll?pending=1", http.StatusFound)
+			return
+		}
+	}
+
 	render(w, "mfa_challenge.html", map[string]any{
 		"Username": strings.TrimSpace(claims.Username),
 		"Issuer":   mfaIssuer,

@@ -221,8 +221,11 @@ func main() {
 	r.HandleFunc("/whoami", whoamiHandler).Methods("GET")
 	r.HandleFunc("/mfa/challenge", mfaChallengePage).Methods("GET")
 	r.Handle("/mfa/challenge/verify", requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaChallengeVerifyHandler)))).Methods("POST")
-	r.Handle("/mfa/enroll", authMiddleware(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
-	r.Handle("/mfa/enroll/status", authMiddleware(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
+	enrollmentPageGuard := requireSessionOrPending(true)
+	enrollmentAPIGuard := requireSessionOrPending(false)
+
+	r.Handle("/mfa/enroll", enrollmentPageGuard(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
+	r.Handle("/mfa/enroll/status", enrollmentAPIGuard(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
 
 	// Provider routes (v2 adapter wraps legacy providers and returns responses we write).
 	v2 := providers.AdaptV2(currentProvider)
@@ -316,8 +319,8 @@ func main() {
 	// Protected
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
-	r.Handle("/mfa/enroll/start", authMiddleware(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
-	r.Handle("/mfa/enroll/verify", authMiddleware(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
+	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
+	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
 
 	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
@@ -531,12 +534,20 @@ func hasPendingMFACookie(r *http.Request) bool {
 }
 
 func finalizeLoginSession(w http.ResponseWriter, uuid, username string) (bool, error) {
-	requires, err := userHasMFAEnabled(uuid, username)
+	enabled, err := userHasMFAEnabled(uuid, username)
 	if err != nil {
 		return false, err
 	}
 
-	if !requires {
+	if !enabled {
+		if mfaEnforceForAllUsers {
+			expireSessionCookieOnly(w)
+			if err := setPendingMFACookie(w, uuid, username); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+
 		clearPendingMFACookie(w)
 		if err := setSessionCookie(w, uuid, username); err != nil {
 			return false, err
@@ -555,6 +566,52 @@ func finalizeLoginSession(w http.ResponseWriter, uuid, username string) (bool, e
 func clearSessionCookie(w http.ResponseWriter) {
 	clearPendingMFACookie(w)
 	expireSessionCookieOnly(w)
+}
+
+func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var (
+				username string
+				uuid     string
+			)
+
+			if c, err := r.Cookie(sessionCookie); err == nil && strings.TrimSpace(c.Value) != "" {
+				tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
+					return sessionSecret, nil
+				})
+				if err == nil && tok != nil && tok.Valid {
+					if claims, ok := tok.Claims.(*sessionClaims); ok {
+						username = strings.TrimSpace(claims.Username)
+						uuid = strings.TrimSpace(claims.UUID)
+					}
+				}
+				if username == "" || uuid == "" {
+					expireSessionCookieOnly(w)
+				}
+			}
+
+			if username == "" || uuid == "" {
+				if claims, err := pendingClaimsFromRequest(r); err == nil {
+					username = strings.TrimSpace(claims.Username)
+					uuid = strings.TrimSpace(claims.UUID)
+				}
+			}
+
+			if username == "" || uuid == "" {
+				if redirectOnFail {
+					http.Redirect(w, r, "/", http.StatusFound)
+				} else {
+					respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "session required"})
+				}
+				return
+			}
+
+			ctx := withUsername(r.Context(), username)
+			ctx = withUUID(ctx, uuid)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
 func authMiddleware(next http.Handler) http.Handler {
