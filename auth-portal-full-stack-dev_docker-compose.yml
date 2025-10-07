@@ -44,13 +44,15 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:latest
+    image: modomofn/auth-portal:v2.0.2
     ports:
       - "8089:8080"
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
+      SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
       LOGIN_EXTRA_LINK_URL: ${LOGIN_EXTRA_LINK_URL:-}
       LOGIN_EXTRA_LINK_TEXT: ${LOGIN_EXTRA_LINK_TEXT:-}
@@ -58,6 +60,9 @@ services:
       UNAUTH_REQUEST_SUBJECT: ${UNAUTH_REQUEST_SUBJECT:-}
       FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
       MEDIA_SERVER: ${MEDIA_SERVER:-plex}
+      MFA_ENABLE: ${MFA_ENABLE:-1}
+      MFA_ENFORCE: ${MFA_ENFORCE:-0}
+      MFA_ISSUER: ${MFA_ISSUER:-AuthPortal}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
       # DB
@@ -72,12 +77,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.1}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.2}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.1}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.2}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}

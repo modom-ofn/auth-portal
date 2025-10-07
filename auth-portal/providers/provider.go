@@ -137,12 +137,12 @@ func htmlEscape(s string) string {
 
 // User represents minimal user fields needed by providers.
 type User struct {
-    Username    string
-    Email       string
-    MediaUUID   string
-    MediaToken  string
-    MediaAccess bool
-    Provider    string // plex|emby|jellyfin (for multi-provider identity linking)
+	Username    string
+	Email       string
+	MediaUUID   string
+	MediaToken  string
+	MediaAccess bool
+	Provider    string // plex|emby|jellyfin (for multi-provider identity linking)
 }
 
 // Functions and hooks provided by the main application.
@@ -150,12 +150,25 @@ var (
 	UpsertUser                   func(u User) error
 	GetUserByUUID                func(uuid string) (User, error)
 	SetUserMediaAccessByUsername func(username string, access bool) error
+	FinalizeLogin                func(http.ResponseWriter, string, string) (bool, error)
 	SetSessionCookie             func(http.ResponseWriter, string, string) error
 	SetTempSessionCookie         func(http.ResponseWriter, string, string) error
 	SealToken                    func(string) (string, error)
 	Debugf                       func(format string, v ...any)
 	Warnf                        func(format string, v ...any)
 )
+
+func finalizeAuthorizedLogin(w http.ResponseWriter, mediaUUID, username string) (bool, error) {
+	if FinalizeLogin != nil {
+		return FinalizeLogin(w, mediaUUID, username)
+	}
+	if SetSessionCookie != nil {
+		if err := SetSessionCookie(w, mediaUUID, username); err != nil {
+			return false, err
+		}
+	}
+	return false, nil
+}
 
 // Configuration values for the providers; populated by main.
 var (
@@ -199,6 +212,7 @@ type ProviderDeps struct {
 	UpsertUser                   func(u User) error
 	GetUserByUUID                func(uuid string) (User, error)
 	SetUserMediaAccessByUsername func(username string, access bool) error
+	FinalizeLogin                func(http.ResponseWriter, string, string) (bool, error)
 	SetSessionCookie             func(http.ResponseWriter, string, string) error
 	SetTempSessionCookie         func(http.ResponseWriter, string, string) error
 	SealToken                    func(string) (string, error)
@@ -228,6 +242,7 @@ func Init(d ProviderDeps) {
 	UpsertUser = d.UpsertUser
 	GetUserByUUID = d.GetUserByUUID
 	SetUserMediaAccessByUsername = d.SetUserMediaAccessByUsername
+	FinalizeLogin = d.FinalizeLogin
 	SetSessionCookie = d.SetSessionCookie
 	SetTempSessionCookie = d.SetTempSessionCookie
 	SealToken = d.SealToken

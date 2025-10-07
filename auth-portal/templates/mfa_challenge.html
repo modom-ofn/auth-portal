@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuthPortal - MFA Challenge</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    .page-frame { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 3rem 1rem 6rem; }
+    .page-content { flex: 1; width: 100%; display: flex; justify-content: center; align-items: center; }
+    .mfa-card { max-width: 520px; width: 100%; background: linear-gradient(180deg, rgba(17,24,39,.92), rgba(17,24,39,.94)); border: 1px solid var(--border); border-radius: 16px; padding: 2rem; box-shadow: 0 12px 40px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 1.25rem; }
+    .mfa-message { color: var(--muted); text-align: center; }
+    .mfa-field { display: flex; flex-direction: column; gap: 0.75rem; }
+    .mfa-field input { padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: #0f172a; color: var(--text); }
+    .mfa-error { display: none; margin-top: 8px; text-align: center; color: #f97316; }
+    .btn-row { display: flex; justify-content: center; margin-top: 0.5rem; }
+  </style>
+</head>
+<body class="bg">
+  <div class="page-frame">
+    <main class="page-content">
+      <section class="mfa-card">
+        <div class="brand" style="margin-bottom:0">
+          <h1>Verify your sign-in</h1>
+          <p class="mfa-message">Hi {{ if .Username }}{{ .Username }}{{ else }}there{{ end }}, finish signing in with a code from {{ .Issuer }}.</p>
+        </div>
+        <form id="mfa-challenge-form" autocomplete="one-time-code" novalidate class="mfa-field">
+          <label for="mfa-code" style="font-weight:600">Authenticator or recovery code</label>
+          <input id="mfa-code" name="code" type="text" inputmode="numeric" autocapitalize="characters" autocomplete="one-time-code" spellcheck="false" placeholder="123456 or ABCDE-12345" required>
+          <button type="submit" id="mfa-submit" class="auth-btn" style="font-size:16px;padding:10px 18px">Verify and continue</button>
+          <div id="mfa-error" class="mfa-error"></div>
+        </form>
+        <p class="muted" style="text-align:center">If you lost access to your authenticator, use a recovery code or contact an administrator for help.</p>
+        <div class="btn-row">
+          <form method="post" action="/logout" style="margin:0">
+            <button type="submit" class="btn ghost">Start over</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        <a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a>
+        created by Modom. "Use at your own risk."
+      </p>
+    </footer>
+  </div>
+
+  <script src="/static/mfa_challenge.js" defer></script>
+</body>
+</html>

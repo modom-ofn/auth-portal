@@ -1,5 +1,7 @@
 // /static/login.js
 (() => {
+  let lastAuthRedirect = "/home";
+
   function openPopup(url) {
     const w = 600, h = 700;
     const y = (window.top?.outerHeight || 800) / 2 + (window.top?.screenY || 0) - h / 2;
@@ -11,12 +13,18 @@
     );
   }
 
+  function finalizeNavigation(redirect, needsMFA) {
+    const target = redirect || (needsMFA ? "/mfa/challenge" : "/home");
+    lastAuthRedirect = target;
+    window.location.assign(target);
+  }
+
   // Only accept messages from our own origin
   window.addEventListener("message", (ev) => {
     if (ev.origin !== window.location.origin) return;
     const d = ev.data || {};
     if (d && d.ok && (d.type === "plex-auth" || d.type === "emby-auth" || d.type === "jellyfin-auth" || d.type === "auth-portal")) {
-      window.location.assign(d.redirect || "/home");
+      finalizeNavigation(d.redirect, !!d.mfa);
     }
   });
 
@@ -105,7 +113,7 @@
             if (j && j.ok) {
               clearInterval(pollTimer);
               try { if (popup && !popup.closed) popup.close(); } catch {}
-              window.location.assign(j.redirect || "/home");
+              finalizeNavigation(j.redirect, !!j.mfa);
             }
           } catch {}
         }, 1200);
@@ -116,7 +124,7 @@
         if (!popup || popup.closed) {
           clearInterval(iv);
           if (pollTimer) clearInterval(pollTimer);
-          window.location.assign("/home");
+          window.location.assign(lastAuthRedirect);
         }
       }, 1200);
 

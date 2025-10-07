@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 // ---------- Schema ----------
@@ -61,6 +63,53 @@ ALTER TABLE users
 	if _, err := db.Exec(`
 CREATE INDEX IF NOT EXISTS idx_users_username    ON users (username);
 CREATE INDEX IF NOT EXISTS idx_users_media_uuid  ON users (media_uuid);
+`); err != nil {
+		return err
+	}
+
+	// MFA columns on users for quick checks
+	if _, err := db.Exec(`
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS mfa_enrolled_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS mfa_recovery_last_rotated TIMESTAMPTZ
+`); err != nil {
+		return err
+	}
+
+	// Per-user MFA secret metadata
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS user_mfa (
+  user_id        BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  secret_enc     TEXT,
+  secret_algo    TEXT NOT NULL DEFAULT 'totp-sha1',
+  digits         SMALLINT NOT NULL DEFAULT 6,
+  period_seconds SMALLINT NOT NULL DEFAULT 30,
+  drift_steps    SMALLINT NOT NULL DEFAULT 1,
+  is_verified    BOOLEAN NOT NULL DEFAULT FALSE,
+  issued_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  verified_at    TIMESTAMPTZ,
+  last_used_at   TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_user_mfa_verified ON user_mfa (is_verified);
+`); err != nil {
+		return err
+	}
+
+	// Recovery codes (hashed) per user
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS user_mfa_recovery_codes (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash  TEXT   NOT NULL,
+  used_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, code_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_mfa_recovery_user ON user_mfa_recovery_codes (user_id);
+CREATE INDEX IF NOT EXISTS idx_mfa_recovery_used ON user_mfa_recovery_codes (user_id, used_at);
 `); err != nil {
 		return err
 	}
@@ -238,20 +287,37 @@ func upsertUser(u User) (int, error) {
 	if uuid != "" {
 		var id int
 		err := db.QueryRow(`
-INSERT INTO users (media_uuid, username, email, media_token, media_access)
-VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
-ON CONFLICT (media_uuid) DO UPDATE
-SET username     = COALESCE(NULLIF(EXCLUDED.username, ''), users.username),
-    email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
-    media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), users.media_token),
-    media_access = EXCLUDED.media_access,
-    updated_at   = now()
-RETURNING id
-`, uuid, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
-		if err != nil {
-			return 0, err
+	INSERT INTO users (media_uuid, username, email, media_token, media_access)
+	VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
+	ON CONFLICT (media_uuid) DO UPDATE
+	SET username     = COALESCE(NULLIF(EXCLUDED.username, ''), users.username),
+	    email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
+	    media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), users.media_token),
+	    media_access = EXCLUDED.media_access,
+	    updated_at   = now()
+	RETURNING id
+	`, uuid, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
+		if err == nil {
+			return id, nil
 		}
-		return id, nil
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "users_username_key" {
+			err = db.QueryRow(`
+	UPDATE users
+	   SET email        = COALESCE(NULLIF($2, ''), users.email),
+	       media_token  = COALESCE(NULLIF($3, ''), users.media_token),
+	       media_access = $4,
+	       media_uuid   = CASE WHEN users.media_uuid IS NULL OR users.media_uuid = '' THEN NULLIF($5, '') ELSE users.media_uuid END,
+	       updated_at   = now()
+	 WHERE username = $1
+	 RETURNING id
+	`, strings.TrimSpace(u.Username), nn(u.Email), token, access, uuid).Scan(&id)
+			if err != nil {
+				return 0, err
+			}
+			return id, nil
+		}
+		return 0, err
 	}
 
 	// Username path (no UUID yet)
@@ -302,5 +368,7 @@ UPDATE users
 }
 
 // Legacy shims (keep old callers working)
-func setUserPlexAccessByUUID(uuid string, access bool) error { return setUserMediaAccessByUUID(uuid, access) }
-func setUserPlexAccess(uuid string, access bool) error       { return setUserMediaAccessByUUID(uuid, access) }
+func setUserPlexAccessByUUID(uuid string, access bool) error {
+	return setUserMediaAccessByUUID(uuid, access)
+}
+func setUserPlexAccess(uuid string, access bool) error { return setUserMediaAccessByUUID(uuid, access) }

@@ -15,8 +15,8 @@ import (
 const tokenSealVersion = "v1"
 
 var (
-	tokenAEAD   cipher.AEAD // stdlib AES-GCM
-	dataKey32   []byte
+	tokenAEAD cipher.AEAD // stdlib AES-GCM
+	dataKey32 []byte
 )
 
 func init() {
