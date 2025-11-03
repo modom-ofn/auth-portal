@@ -2,7 +2,7 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.25.1%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.25.3%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
@@ -74,7 +74,7 @@ AuthPortal authenticates users directly against their connected media server acc
 - **Multi-factor authentication:** Enrollment and challenge flows for TOTP with recovery codes. Toggle enforcement per tenant or per user with MFA_ENABLE/MFA_ENFORCE.
 - **Security hardening:** Same-origin CSRF checks on sensitive POST routes, pending-MFA cookie isolation, configurable SESSION_COOKIE_DOMAIN, and consistent JWT rotation after MFA.
 - **Rate limiting:** Shared per-IP throttles now wrap login, MFA enrollment, and verification endpoints to blunt brute-force attacks.
-- **Platform updates:** Upgraded container stack to Go 1.25.1 with patched OpenSSL/BusyBox layers and refreshed UI assets to surface the MFA experience.
+- **Platform updates:** Upgraded container stack to Go 1.25.3 with patched OpenSSL/BusyBox layers and refreshed UI assets to surface the MFA experience.
 
 ---
 
@@ -451,7 +451,7 @@ CREATE TABLE IF NOT EXISTS pins (
 
 ## Build & Images
 
-- Go: `1.25.1` on `alpine:3.21`.
+- Go: `1.25.3` on `alpine:3.21`.
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.25`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
 - Runtime: `alpine:3.21`, installs CA certs + tzdata, runs as non-root `uid 10001`.
@@ -625,7 +625,7 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ## Upgrade Guide (v2.0.2)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.2` so you pick up Go 1.25.1 plus the patched OpenSSL 3.3.5 / BusyBox layers.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.2` so you pick up Go 1.25.3 plus the patched OpenSSL 3.3.5 / BusyBox layers.
 2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
 3) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.

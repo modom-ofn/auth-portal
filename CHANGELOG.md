@@ -8,10 +8,10 @@
 - Added same-origin CSRF checks to sensitive POST routes and unified client IP detection for logging and security features.
 - Implemented shared per-IP rate limiting middleware covering login, MFA, and logout endpoints.
 - Updated UI assets and templates to expose MFA enrollment/challenge experiences in the portal.
-- Upgraded build stack: Go 1.25.1 base image with patched OpenSSL 3.3.5 and BusyBox fixes.
+- Upgraded build stack: Go 1.25.3 base image with patched OpenSSL 3.3.5 and BusyBox fixes.
 
 ### Upgrade Notes
-- Rebuild images to pull `modomofn/auth-portal:v2.0.2` (Go 1.25.1 base with patched OpenSSL 3.3.5 and BusyBox).
+- Rebuild images to pull `modomofn/auth-portal:v2.0.2` (Go 1.25.3 base with patched OpenSSL 3.3.5 and BusyBox).
 - Database migrations run automatically at startup to create `user_mfa` and `user_mfa_recovery_codes` tables and related columns.
 - Set `SESSION_COOKIE_DOMAIN` to the host scope you serve AuthPortal from so cookies survive redirects behind proxies.
 - New environment toggles control MFA behaviour: `MFA_ENABLE`, `MFA_ENFORCE`, and `MFA_ISSUER` (defaults provided).
