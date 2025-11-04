@@ -49,6 +49,7 @@ func oidcDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
 			"openid",
 			"profile",
 			"email",
+			"offline_access",
 		},
 		ResponseTypesSupported: []string{"code"},
 		GrantTypesSupported:    []string{"authorization_code", "refresh_token"},
@@ -152,6 +153,10 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user not found")
 		return
+	}
+
+	if err := oauthService.RecordConsent(r.Context(), int64(user.ID), client.ClientID, scopes); err != nil {
+		log.Printf("oidc authorize: record consent failed for %s/%s: %v", user.Username, client.ClientID, err)
 	}
 
 	authCode, err := oauthService.CreateAuthCode(r.Context(), clientID, int64(user.ID), redirectURI, scopes, codeChallenge, codeMethod)
@@ -304,6 +309,69 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 		"id_token":           idToken,
 		"scope":              strings.Join(authCode.Scopes, " "),
 		"refresh_expires_in": int(refreshExpiry.Sub(now).Seconds()),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	_ = json.NewEncoder(w).Encode(response)
+}
+func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oauth.Client) {
+	refreshToken := strings.TrimSpace(r.PostFormValue("refresh_token"))
+	if refreshToken == "" {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "refresh_token required")
+		return
+	}
+
+	access, newRefresh, refreshExpiry, err := oauthService.UseRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		if errors.Is(err, oauth.ErrTokenNotFound) || errors.Is(err, oauth.ErrTokenExpired) || errors.Is(err, oauth.ErrTokenRevoked) {
+			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "refresh token invalid or expired")
+			return
+		}
+		log.Printf("oidc token: refresh flow failed: %v", err)
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		return
+	}
+
+	if access.ClientID != client.ClientID {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "client mismatch")
+		return
+	}
+
+	user, err := getUserByID(int(access.UserID))
+	if err != nil {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "user not found")
+		return
+	}
+
+	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt)
+	if err != nil {
+		log.Printf("oidc token: id token mint failed: %v", err)
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		return
+	}
+
+	now := time.Now()
+	expiresIn := int(access.ExpiresAt.Sub(now).Seconds())
+	if expiresIn < 0 {
+		expiresIn = 0
+	}
+
+	response := map[string]any{
+		"access_token": access.TokenID,
+		"token_type":   "Bearer",
+		"expires_in":   expiresIn,
+		"id_token":     idToken,
+		"scope":        strings.Join(access.Scopes, " "),
+	}
+	if newRefresh != "" {
+		refreshIn := int(refreshExpiry.Sub(now).Seconds())
+		if refreshIn < 0 {
+			refreshIn = 0
+		}
+		response["refresh_token"] = newRefresh
+		response["refresh_expires_in"] = refreshIn
 	}
 
 	w.Header().Set("Content-Type", "application/json")

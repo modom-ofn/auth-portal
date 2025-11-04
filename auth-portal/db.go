@@ -285,6 +285,20 @@ CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_user ON oauth_refresh_tokens
 		return err
 	}
 
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_consents (
+  user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id  TEXT   NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+  scopes     TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, client_id)
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_consents_client ON oauth_consents (client_id);
+`); err != nil {
+		return err
+	}
+
 	return nil
 }
 

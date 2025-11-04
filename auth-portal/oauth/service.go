@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,10 +19,17 @@ var (
 	ErrTokenNotFound   = errors.New("oauth: token not found")
 	ErrTokenExpired    = errors.New("oauth: token expired")
 	ErrTokenRevoked    = errors.New("oauth: token revoked")
+)
+
+const (
 	defaultAuthCodeTTL = 5 * time.Minute
 	defaultAccessTTL   = 1 * time.Hour
 	defaultRefreshTTL  = 24 * time.Hour
 )
+
+type sqlExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
 
 type Service struct {
 	DB              *sql.DB
@@ -105,15 +113,12 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 }
 
 func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int64, redirectURI string, scopes []string, codeChallenge, codeMethod string) (AuthCode, error) {
-	if s.AuthCodeTTL <= 0 {
-		s.AuthCodeTTL = defaultAuthCodeTTL
-	}
 	code, err := generateOpaqueToken(32)
 	if err != nil {
 		return AuthCode{}, err
 	}
 	now := time.Now().UTC()
-	expires := now.Add(s.AuthCodeTTL)
+	expires := now.Add(s.authCodeTTL())
 	normalizedScopes := normalizeScopes(scopes)
 	_, err = s.DB.ExecContext(ctx, `
 INSERT INTO oauth_auth_codes (code, client_id, user_id, scopes, redirect_uri, expires_at, code_challenge, code_method, created_at)
@@ -177,51 +182,86 @@ RETURNING code, client_id, user_id, scopes, redirect_uri, expires_at, code_chall
 }
 
 func (s Service) CreateAccessToken(ctx context.Context, clientID string, userID int64, scopes []string) (AccessToken, error) {
-	if s.AccessTokenTTL <= 0 {
-		s.AccessTokenTTL = defaultAccessTTL
-	}
-	tokenID, err := generateOpaqueToken(32)
-	if err != nil {
-		return AccessToken{}, err
-	}
-	now := time.Now().UTC()
-	expires := now.Add(s.AccessTokenTTL)
-	normalizedScopes := normalizeScopes(scopes)
-	_, err = s.DB.ExecContext(ctx, `
-INSERT INTO oauth_access_tokens (token_id, client_id, user_id, scopes, expires_at, created_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-`, tokenID, clientID, userID, pq.StringArray(normalizedScopes), expires, now)
-	if err != nil {
-		return AccessToken{}, err
-	}
-	return AccessToken{
-		TokenID:   tokenID,
-		ClientID:  clientID,
-		UserID:    userID,
-		Scopes:    normalizedScopes,
-		ExpiresAt: expires,
-		CreatedAt: now,
-	}, nil
+	return s.insertAccessToken(ctx, s.DB, clientID, userID, scopes)
 }
 
 func (s Service) CreateRefreshToken(ctx context.Context, accessTokenID string, clientID string, userID int64, scopes []string) (string, time.Time, error) {
-	if s.RefreshTokenTTL <= 0 {
-		s.RefreshTokenTTL = defaultRefreshTTL
+	return s.insertRefreshToken(ctx, s.DB, accessTokenID, clientID, userID, scopes)
+}
+
+func (s Service) UseRefreshToken(ctx context.Context, tokenID string) (AccessToken, string, time.Time, error) {
+	tokenID = strings.TrimSpace(tokenID)
+	if tokenID == "" {
+		return AccessToken{}, "", time.Time{}, ErrTokenNotFound
 	}
-	tokenID, err := generateOpaqueToken(48)
+
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return "", time.Time{}, err
+		return AccessToken{}, "", time.Time{}, err
 	}
+	defer tx.Rollback()
+
+	var (
+		refreshTokenID string
+		accessTokenID  string
+		clientID       string
+		userID         int64
+		scopes         pq.StringArray
+		expiresAt      time.Time
+		revokedAt      sql.NullTime
+	)
+	err = tx.QueryRowContext(ctx, `
+SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoked_at
+  FROM oauth_refresh_tokens
+ WHERE token_id = $1
+ FOR UPDATE
+`, tokenID).Scan(
+		&refreshTokenID,
+		&accessTokenID,
+		&clientID,
+		&userID,
+		&scopes,
+		&expiresAt,
+		&revokedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AccessToken{}, "", time.Time{}, ErrTokenNotFound
+		}
+		return AccessToken{}, "", time.Time{}, err
+	}
+
 	now := time.Now().UTC()
-	expires := now.Add(s.RefreshTokenTTL)
-	_, err = s.DB.ExecContext(ctx, `
-INSERT INTO oauth_refresh_tokens (token_id, access_token_id, client_id, user_id, scopes, expires_at, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-`, tokenID, accessTokenID, clientID, userID, pq.StringArray(normalizeScopes(scopes)), expires, now)
-	if err != nil {
-		return "", time.Time{}, err
+	if revokedAt.Valid {
+		return AccessToken{}, "", time.Time{}, ErrTokenRevoked
 	}
-	return tokenID, expires, nil
+	if now.After(expiresAt) {
+		_, _ = tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, tokenID)
+		return AccessToken{}, "", time.Time{}, ErrTokenExpired
+	}
+
+	// Revoke previous tokens
+	if _, err := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, tokenID); err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE oauth_access_tokens SET revoked_at = now() WHERE token_id = $1`, accessTokenID); err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+
+	newAccess, err := s.insertAccessToken(ctx, tx, clientID, userID, scopes)
+	if err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+	newRefresh, refreshExpires, err := s.insertRefreshToken(ctx, tx, newAccess.TokenID, clientID, userID, scopes)
+	if err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+
+	return newAccess, newRefresh, refreshExpires, nil
 }
 
 func (s Service) GetAccessToken(ctx context.Context, tokenID string) (AccessToken, error) {
@@ -257,11 +297,130 @@ SELECT token_id, client_id, user_id, scopes, expires_at, revoked_at, created_at
 	if revoked.Valid {
 		return AccessToken{}, ErrTokenRevoked
 	}
-	if time.Now().After(token.ExpiresAt) {
+	if time.Now().UTC().After(token.ExpiresAt) {
 		return AccessToken{}, ErrTokenExpired
 	}
 	token.Scopes = scopes
 	return token, nil
+}
+
+func (s Service) RecordConsent(ctx context.Context, userID int64, clientID string, scopes []string) error {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return errors.New("oauth: client id required")
+	}
+	normalized := normalizeScopes(scopes)
+	_, err := s.DB.ExecContext(ctx, `
+INSERT INTO oauth_consents (user_id, client_id, scopes, created_at, updated_at)
+VALUES ($1, $2, $3, now(), now())
+ON CONFLICT (user_id, client_id) DO UPDATE
+   SET scopes = EXCLUDED.scopes,
+       updated_at = now()
+`, userID, clientID, pq.StringArray(normalized))
+	return err
+}
+
+func (s Service) HasConsent(ctx context.Context, userID int64, clientID string, scopes []string) (bool, error) {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return false, errors.New("oauth: client id required")
+	}
+	var existing pq.StringArray
+	err := s.DB.QueryRowContext(ctx, `
+SELECT scopes
+  FROM oauth_consents
+ WHERE user_id = $1
+   AND client_id = $2
+ LIMIT 1
+`, userID, clientID).Scan(&existing)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if len(scopes) == 0 {
+		return true, nil
+	}
+	set := make(map[string]struct{}, len(existing))
+	for _, scope := range existing {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		set[scope] = struct{}{}
+	}
+	for _, scope := range scopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if _, ok := set[scope]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (s Service) authCodeTTL() time.Duration {
+	if s.AuthCodeTTL <= 0 {
+		return defaultAuthCodeTTL
+	}
+	return s.AuthCodeTTL
+}
+
+func (s Service) accessTokenTTL() time.Duration {
+	if s.AccessTokenTTL <= 0 {
+		return defaultAccessTTL
+	}
+	return s.AccessTokenTTL
+}
+
+func (s Service) refreshTokenTTL() time.Duration {
+	if s.RefreshTokenTTL <= 0 {
+		return defaultRefreshTTL
+	}
+	return s.RefreshTokenTTL
+}
+
+func (s Service) insertAccessToken(ctx context.Context, exec sqlExecutor, clientID string, userID int64, scopes []string) (AccessToken, error) {
+	tokenID, err := generateOpaqueToken(32)
+	if err != nil {
+		return AccessToken{}, err
+	}
+	now := time.Now().UTC()
+	expires := now.Add(s.accessTokenTTL())
+	normalized := normalizeScopes(scopes)
+	if _, err := exec.ExecContext(ctx, `
+INSERT INTO oauth_access_tokens (token_id, client_id, user_id, scopes, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`, tokenID, clientID, userID, pq.StringArray(normalized), expires, now); err != nil {
+		return AccessToken{}, err
+	}
+	return AccessToken{
+		TokenID:   tokenID,
+		ClientID:  clientID,
+		UserID:    userID,
+		Scopes:    normalized,
+		ExpiresAt: expires,
+		CreatedAt: now,
+	}, nil
+}
+
+func (s Service) insertRefreshToken(ctx context.Context, exec sqlExecutor, accessTokenID string, clientID string, userID int64, scopes []string) (string, time.Time, error) {
+	tokenID, err := generateOpaqueToken(48)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	now := time.Now().UTC()
+	expires := now.Add(s.refreshTokenTTL())
+	if _, err := exec.ExecContext(ctx, `
+INSERT INTO oauth_refresh_tokens (token_id, access_token_id, client_id, user_id, scopes, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`, tokenID, accessTokenID, clientID, userID, pq.StringArray(normalizeScopes(scopes)), expires, now); err != nil {
+		return "", time.Time{}, err
+	}
+	return tokenID, expires, nil
 }
 
 func normalizeScopes(scopes []string) []string {
@@ -280,6 +439,7 @@ func normalizeScopes(scopes []string) []string {
 	for scope := range set {
 		out = append(out, scope)
 	}
+	sort.Strings(out)
 	return out
 }
 
