@@ -1,37 +1,57 @@
-{{define "content"}}{{end}}<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>AuthPortal Admin</title>
+    <title>AuthPortal Admin Console</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="admin-page">
     <header class="admin-header">
-        <h1>AuthPortal Admin Console</h1>
-        <p class="muted">Provider: {{.ProviderDisplay}} &bull; Config refreshed {{.ConfigLoadedAt}}</p>
+        <div>
+            <h1>AuthPortal Admin Console</h1>
+            <p class="muted">Active Provider: <span class="highlight">{{.ProviderDisplay}}</span> &bull; Last refreshed <span id="loaded-at">{{.ConfigLoadedAt}}</span></p>
+        </div>
+        <a class="admin-home-link" href="/home">Back to Portal</a>
     </header>
+
+    <div id="status-banner" class="status-banner"></div>
+
     <main class="admin-main">
         <aside class="admin-nav">
             <button type="button" class="admin-tab active" data-section="providers">Providers</button>
             <button type="button" class="admin-tab" data-section="security">Security</button>
             <button type="button" class="admin-tab" data-section="mfa">MFA</button>
         </aside>
+
         <section class="admin-content">
             <div class="admin-panels">
-                <div class="panel">
-                    <h2 id="panel-title">Providers</h2>
-                    <pre id="config-view" class="config-view">Loading…</pre>
-                </div>
+                <form id="config-form" class="panel" autocomplete="off">
+                    <div class="panel-header">
+                        <h2 id="panel-title">Providers</h2>
+                        <span id="version-badge" class="version-badge">v—</span>
+                    </div>
+                    <p class="panel-helper">Edit the configuration JSON for this section. Provide a short reason before saving.</p>
+                    <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON"></textarea>
+                    <div class="admin-actions">
+                        <input id="reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                        <button id="save-btn" type="submit">Save Changes</button>
+                    </div>
+                </form>
+
                 <div class="panel history-panel">
                     <h3>Recent Changes</h3>
-                    <pre id="history-view" class="history-view">Loading…</pre>
+                    <ul id="history-list" class="history-list">
+                        <li>Loading…</li>
+                    </ul>
                 </div>
             </div>
         </section>
     </main>
+
     <footer class="admin-footer">
-        <p>Use the JSON output above to plan updates. Editing UI coming soon.</p>
+        <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>
     </footer>
+
     <script src="/static/admin.js" defer></script>
 </body>
 </html>
