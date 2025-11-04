@@ -12,6 +12,7 @@ import (
 // Per-request context keys
 type userKey struct{}
 type uuidKey struct{}
+type adminKey struct{}
 
 // Stash values in context
 func withUsername(ctx context.Context, u string) context.Context {
@@ -19,6 +20,9 @@ func withUsername(ctx context.Context, u string) context.Context {
 }
 func withUUID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, uuidKey{}, id)
+}
+func withAdmin(ctx context.Context, isAdmin bool) context.Context {
+	return context.WithValue(ctx, adminKey{}, isAdmin)
 }
 
 // Retrieve values from context
@@ -37,6 +41,14 @@ func uuidFrom(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+func adminFrom(ctx context.Context) bool {
+	if v := ctx.Value(adminKey{}); v != nil {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+	return false
 }
 
 // render loads a template from ./templates and executes it with data.

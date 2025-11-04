@@ -59,6 +59,21 @@ ALTER TABLE users
 		return err
 	}
 
+	// Admin flags
+	if _, err := db.Exec(`
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS is_admin         BOOLEAN     NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS admin_granted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS admin_granted_by TEXT
+`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users (is_admin);
+`); err != nil {
+		return err
+	}
+
 	// Helpful indexes
 	if _, err := db.Exec(`
 CREATE INDEX IF NOT EXISTS idx_users_username    ON users (username);
@@ -167,6 +182,38 @@ CREATE TABLE IF NOT EXISTS pins (
 		return err
 	}
 
+	// Runtime configuration store
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS app_config (
+  namespace   TEXT   NOT NULL,
+  key         TEXT   NOT NULL,
+  value       JSONB  NOT NULL,
+  version     BIGINT NOT NULL DEFAULT 1,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by  TEXT,
+  PRIMARY KEY (namespace, key)
+);
+CREATE INDEX IF NOT EXISTS idx_app_config_namespace ON app_config (namespace);
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS app_config_history (
+  id            BIGSERIAL PRIMARY KEY,
+  namespace     TEXT   NOT NULL,
+  key           TEXT   NOT NULL,
+  value         JSONB  NOT NULL,
+  version       BIGINT NOT NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by    TEXT,
+  change_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_app_config_history_lookup ON app_config_history (namespace, key, version);
+`); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -205,6 +252,11 @@ type User struct {
 	MediaUUID   sql.NullString
 	MediaToken  sql.NullString
 	MediaAccess bool
+
+	// Administrative control
+	IsAdmin        bool
+	AdminGrantedAt sql.NullTime
+	AdminGrantedBy sql.NullString
 
 	// Legacy (will be ignored if Media* are set)
 	PlexUUID   sql.NullString

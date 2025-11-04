@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 )
@@ -22,6 +23,9 @@ func scanUser(rs rowScanner) (User, error) {
 		&u.MediaUUID,
 		&u.MediaToken,
 		&u.MediaAccess,
+		&u.IsAdmin,
+		&u.AdminGrantedAt,
+		&u.AdminGrantedBy,
 	)
 	return u, err
 }
@@ -32,7 +36,7 @@ func getUserByID(id int) (User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 	return scanUser(db.QueryRowContext(ctx, `
-SELECT id, username, email, media_uuid, media_token, media_access
+SELECT id, username, email, media_uuid, media_token, media_access, is_admin, admin_granted_at, admin_granted_by
 FROM users
 WHERE id = $1`, id))
 }
@@ -43,7 +47,8 @@ func getUserByUUID(uuid string) (User, error) {
 
 	var row User
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, email, media_uuid, media_token, media_access
+		SELECT id, username, email, media_uuid, media_token, media_access,
+		       is_admin, admin_granted_at, admin_granted_by
 		FROM users
 		WHERE media_uuid = $1
 	`, uuid).Scan(
@@ -53,6 +58,9 @@ func getUserByUUID(uuid string) (User, error) {
 		&row.MediaUUID,
 		&row.MediaToken,
 		&row.MediaAccess,
+		&row.IsAdmin,
+		&row.AdminGrantedAt,
+		&row.AdminGrantedBy,
 	)
 	if err != nil {
 		return User{}, err
@@ -76,7 +84,8 @@ func getUserByUsername(username string) (User, error) {
 
 	var row User
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, email, media_uuid, media_token, media_access
+		SELECT id, username, email, media_uuid, media_token, media_access,
+		       is_admin, admin_granted_at, admin_granted_by
 		FROM users
 		WHERE username = $1
 	`, username).Scan(
@@ -86,6 +95,9 @@ func getUserByUsername(username string) (User, error) {
 		&row.MediaUUID,
 		&row.MediaToken,
 		&row.MediaAccess,
+		&row.IsAdmin,
+		&row.AdminGrantedAt,
+		&row.AdminGrantedBy,
 	)
 	if err != nil {
 		return User{}, err
@@ -119,6 +131,59 @@ func setUserPlexAccessByUsername(username string, access bool) error {
 	return setUserMediaAccessByUsername(username, access)
 }
 
+// setUserAdminByUsername toggles administrative privileges for a user, recording audit metadata.
+func setUserAdminByUsername(username string, admin bool, grantedBy string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return errors.New("username required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	if admin {
+		res, err := db.ExecContext(ctx, `
+UPDATE users
+   SET is_admin = TRUE,
+       admin_granted_at = COALESCE(admin_granted_at, now()),
+       admin_granted_by = NULLIF($2, ''),
+       updated_at = now()
+ WHERE username = $1
+`, username, strings.TrimSpace(grantedBy))
+		if err != nil {
+			return err
+		}
+		rows, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	}
+
+	res, err := db.ExecContext(ctx, `
+UPDATE users
+   SET is_admin = FALSE,
+       admin_granted_at = NULL,
+       admin_granted_by = NULL,
+       updated_at = now()
+ WHERE username = $1
+`, username)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // getUserByUUIDPreferred first tries the identities table, then falls back to
 // the legacy users.media_uuid if no identity exists yet. It also unseals the
 // token when present.
@@ -128,7 +193,8 @@ func getUserByUUIDPreferred(uuid string) (User, error) {
 
 	var row User
 	err := db.QueryRowContext(ctx, `
-        SELECT u.id, u.username, u.email, i.media_uuid, i.media_token, i.media_access
+        SELECT u.id, u.username, u.email, i.media_uuid, i.media_token, i.media_access,
+               u.is_admin, u.admin_granted_at, u.admin_granted_by
           FROM identities i
           JOIN users u ON u.id = i.user_id
          WHERE i.media_uuid = $1
@@ -140,6 +206,9 @@ func getUserByUUIDPreferred(uuid string) (User, error) {
 		&row.MediaUUID,
 		&row.MediaToken,
 		&row.MediaAccess,
+		&row.IsAdmin,
+		&row.AdminGrantedAt,
+		&row.AdminGrantedBy,
 	)
 	if err == nil {
 		if row.MediaToken.Valid && row.MediaToken.String != "" {
@@ -506,4 +575,25 @@ UPDATE user_mfa
  WHERE user_id = $1
 `, userID)
 	return err
+}
+
+// userIsAdmin returns true if the user is marked as an administrator, preferring UUID lookup.
+func userIsAdmin(uuid, username string) (bool, error) {
+	if strings.TrimSpace(uuid) != "" {
+		if u, err := getUserByUUIDPreferred(uuid); err == nil {
+			return u.IsAdmin, nil
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+	}
+
+	if strings.TrimSpace(username) != "" {
+		if u, err := getUserByUsername(username); err == nil {
+			return u.IsAdmin, nil
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+	}
+
+	return false, nil
 }

@@ -20,29 +20,33 @@ import (
 
 	// Adjust this import path to match your module name from go.mod
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
+	"auth-portal/configstore"
 	"auth-portal/health"
 	"auth-portal/providers"
 	"golang.org/x/time/rate"
 )
 
 var (
-	db                  *sql.DB
-	tmpl                *template.Template
-	sessionSecret       = []byte(envOr("SESSION_SECRET", "dev-insecure-change-me"))
-	appBaseURL          = envOr("APP_BASE_URL", "http://localhost:8089")
-	plexOwnerToken      = envOr("PLEX_OWNER_TOKEN", "")
-	plexServerMachineID = envOr("PLEX_SERVER_MACHINE_ID", "")
-	plexServerName      = envOr("PLEX_SERVER_NAME", "")
-	embyServerURL       = envOr("EMBY_SERVER_URL", "http://localhost:8096")
-	embyAppName         = envOr("EMBY_APP_NAME", "AuthPortal")
-	embyAppVersion      = envOr("EMBY_APP_VERSION", "2.0.0")
-	embyAPIKey          = envOr("EMBY_API_KEY", "")
-	embyOwnerUsername   = envOr("EMBY_OWNER_USERNAME", "")
-	embyOwnerID         = envOr("EMBY_OWNER_ID", "")
-	jellyfinServerURL   = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
-	jellyfinAppName     = envOr("JELLYFIN_APP_NAME", "AuthPortal")
-	jellyfinAppVersion  = envOr("JELLYFIN_APP_VERSION", "2.0.0")
-	jellyfinAPIKey      = envOr("JELLYFIN_API_KEY", "")
+	db                                     *sql.DB
+	configStore                            *configstore.Store
+	tmpl                                   *template.Template
+	sessionSecret                          = []byte(envOr("SESSION_SECRET", "dev-insecure-change-me"))
+	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
+	plexOwnerToken                         = envOr("PLEX_OWNER_TOKEN", "")
+	plexServerMachineID                    = envOr("PLEX_SERVER_MACHINE_ID", "")
+	plexServerName                         = envOr("PLEX_SERVER_NAME", "")
+	embyServerURL                          = envOr("EMBY_SERVER_URL", "http://localhost:8096")
+	embyAppName                            = envOr("EMBY_APP_NAME", "AuthPortal")
+	embyAppVersion                         = envOr("EMBY_APP_VERSION", "2.0.0")
+	embyAPIKey                             = envOr("EMBY_API_KEY", "")
+	embyOwnerUsername                      = envOr("EMBY_OWNER_USERNAME", "")
+	embyOwnerID                            = envOr("EMBY_OWNER_ID", "")
+	jellyfinServerURL                      = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
+	jellyfinAppName                        = envOr("JELLYFIN_APP_NAME", "AuthPortal")
+	jellyfinAppVersion                     = envOr("JELLYFIN_APP_VERSION", "2.0.0")
+	jellyfinAPIKey                         = envOr("JELLYFIN_API_KEY", "")
+	mediaServerSelection                   = strings.TrimSpace(os.Getenv("MEDIA_SERVER"))
+	mediaProviderKey, mediaProviderDisplay = resolveProviderSelection(mediaServerSelection)
 
 	// MFA configuration
 	mfaIssuer             = envOr("MFA_ISSUER", "AuthPortal")
@@ -91,27 +95,23 @@ func envBool(key string, def bool) bool {
 }
 
 func init() {
-	if mfaEnforceForAllUsers && !mfaEnrollmentEnabled {
-		log.Println("MFA_ENFORCE=1 but MFA_ENABLE=0; enabling enrollment so enforcement can proceed")
-		mfaEnrollmentEnabled = true
-	}
+	ensureMFAConsistency()
 }
 
-// Pick the auth provider (plex default). MEDIA_SERVER: plex | emby | jellyfin
-func pickProvider() providers.MediaProvider {
-	raw := os.Getenv("MEDIA_SERVER")
-	switch l := strings.ToLower(raw); l {
+// pickProvider selects the active media provider using the canonical key.
+func pickProvider(selection string) providers.MediaProvider {
+	switch key := strings.ToLower(strings.TrimSpace(selection)); key {
 	case "jellyfin":
 		return providers.JellyfinProvider{}
-	case "emby", "emby-connect", "embyconnect", "emby_connect":
-		if l != "emby" {
-			log.Printf("MEDIA_SERVER value %q no longer selects Emby Connect; using standard Emby provider", raw)
-		}
+	case "emby":
+		return providers.EmbyProvider{}
+	case "emby-connect", "embyconnect", "emby_connect":
+		log.Printf("Provider key %q no longer selects Emby Connect; using standard Emby provider", selection)
 		return providers.EmbyProvider{}
 	case "plex", "":
 		return providers.PlexProvider{}
 	default:
-		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", raw)
+		log.Printf("Unknown provider %q; defaulting to plex", selection)
 		return providers.PlexProvider{}
 	}
 }
@@ -150,6 +150,31 @@ func main() {
 	if err = createSchema(); err != nil {
 		log.Fatalf("Schema error: %v", err)
 	}
+
+	defaultSections, err := runtimeConfigDefaults()
+	if err != nil {
+		log.Fatalf("Config defaults error: %v", err)
+	}
+
+	configStore, err = configstore.New(db, configstore.Options{
+		Defaults: defaultSections,
+	})
+	if err != nil {
+		log.Fatalf("Config store init error: %v", err)
+	}
+
+	runtimeCfg, err := loadRuntimeConfig(configStore)
+	if err != nil {
+		log.Fatalf("Config load error: %v", err)
+	}
+	applyRuntimeConfig(runtimeCfg)
+
+	if err := bootstrapAdminUsers(); err != nil {
+		log.Printf("Admin bootstrap encountered issues: %v", err)
+	}
+
+	snap := configStore.Snapshot()
+	log.Printf("Config store loaded with %d items", snap.TotalItems())
 
 	// ---- Templates ----
 	tmpl = template.Must(template.ParseGlob("templates/*.html"))
@@ -203,7 +228,7 @@ func main() {
 	})
 
 	// ---- Provider ----
-	currentProvider = pickProvider()
+	currentProvider = pickProvider(mediaProviderKey)
 	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
 
 	// ---- Router ----
@@ -370,6 +395,7 @@ var pendingMFATTL = 10 * time.Minute
 type sessionClaims struct {
 	UUID     string `json:"uuid"`
 	Username string `json:"username"`
+	Admin    bool   `json:"admin,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -395,9 +421,15 @@ func cookieSettings() (http.SameSite, bool) {
 func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl time.Duration) error {
 	now := time.Now()
 
+	isAdmin, err := userIsAdmin(uuid, username)
+	if err != nil {
+		return err
+	}
+
 	claims := sessionClaims{
 		UUID:     uuid,
 		Username: username,
+		Admin:    isAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-portal-go",
 			Subject:   uuid,
@@ -571,6 +603,7 @@ func clearSessionCookie(w http.ResponseWriter) {
 func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			isAdmin := adminFrom(r.Context())
 			var (
 				username string
 				uuid     string
@@ -584,6 +617,7 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 					if claims, ok := tok.Claims.(*sessionClaims); ok {
 						username = strings.TrimSpace(claims.Username)
 						uuid = strings.TrimSpace(claims.UUID)
+						isAdmin = claims.Admin
 					}
 				}
 				if username == "" || uuid == "" {
@@ -609,6 +643,7 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 
 			ctx := withUsername(r.Context(), username)
 			ctx = withUUID(ctx, uuid)
+			ctx = withAdmin(ctx, isAdmin)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -634,8 +669,10 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(*sessionClaims); ok {
-			r = r.WithContext(withUsername(r.Context(), claims.Username))
-			r = r.WithContext(withUUID(r.Context(), claims.UUID))
+			ctx := withUsername(r.Context(), claims.Username)
+			ctx = withUUID(ctx, claims.UUID)
+			ctx = withAdmin(ctx, claims.Admin)
+			r = r.WithContext(ctx)
 		}
 		next.ServeHTTP(w, r)
 	})
