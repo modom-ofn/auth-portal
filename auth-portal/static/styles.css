@@ -309,13 +309,14 @@ a:hover{opacity:.9}
 .danger-btn{background:rgba(248,113,113,.16);border:1px solid rgba(248,113,113,.45);color:#fecdd3;padding:.5rem .9rem;border-radius:10px;cursor:pointer;transition:background .2s ease,opacity .2s ease;}
 .danger-btn:hover:not(:disabled){background:rgba(248,113,113,.28);}
 .danger-btn:disabled{opacity:.55;cursor:not-allowed;}
-.oauth-table{width:100%;border-collapse:collapse;margin-bottom:1.5rem;}
-.oauth-table th,.oauth-table td{padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;}
+.oauth-table-wrapper{width:100%;overflow-x:auto;margin-bottom:1.5rem;}
+.oauth-table{width:100%;border-collapse:collapse;min-width:620px;table-layout:fixed;}
+.oauth-table th,.oauth-table td{padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;word-break:break-word;white-space:normal;}
 .oauth-table th{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
 .oauth-table th.actions-col,.oauth-table td.actions-cell{text-align:right;}
 .oauth-table tbody tr:hover{background:rgba(148,163,184,.08);}
 .actions-cell{display:flex;justify-content:flex-end;gap:.5rem;flex-wrap:wrap;}
-.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;}
+.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;word-break:break-all;}
 .oauth-form{display:flex;flex-direction:column;gap:1rem;margin-top:1.5rem;}
 .oauth-form .form-row{display:flex;flex-direction:column;gap:.4rem;}
 .oauth-form label{font-weight:600;font-size:.95rem;}

@@ -54,19 +54,21 @@
                     <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
                     <div id="oauth-secret-banner" class="secret-banner" hidden></div>
                     <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
-                    <table id="oauth-client-table" class="oauth-table" hidden>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Client ID</th>
-                                <th>Redirect URIs</th>
-                                <th>Scopes</th>
-                                <th>Updated</th>
-                                <th class="actions-col"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="oauth-client-rows"></tbody>
-                    </table>
+                    <div id="oauth-client-table-wrapper" class="oauth-table-wrapper" hidden>
+                        <table id="oauth-client-table" class="oauth-table" hidden>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Client ID</th>
+                                    <th>Redirect URIs</th>
+                                    <th>Scopes</th>
+                                    <th>Updated</th>
+                                    <th class="actions-col"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="oauth-client-rows"></tbody>
+                        </table>
+                    </div>
                     <form id="oauth-client-form" class="oauth-form" autocomplete="off">
                         <input type="hidden" id="oauth-client-id">
                         <div class="form-row">

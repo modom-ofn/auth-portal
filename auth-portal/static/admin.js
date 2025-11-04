@@ -14,6 +14,7 @@
   const oauthPanel = document.getElementById('oauth-panel');
   const oauthReloadBtn = document.getElementById('oauth-clients-reload');
   const oauthEmptyState = document.getElementById('oauth-clients-empty');
+  const oauthTableWrapper = document.getElementById('oauth-client-table-wrapper');
   const oauthTable = document.getElementById('oauth-client-table');
   const oauthRows = document.getElementById('oauth-client-rows');
   const oauthForm = document.getElementById('oauth-client-form');
@@ -257,6 +258,9 @@
       if (oauthTable) {
         oauthTable.hidden = true;
       }
+      if (oauthTableWrapper) {
+        oauthTableWrapper.hidden = true;
+      }
     } else {
       oauthEmptyState.textContent = 'No OAuth clients registered yet.';
     }
@@ -274,16 +278,18 @@
   };
 
   const renderOAuthClients = () => {
-    if (!oauthRows || !oauthEmptyState || !oauthTable) {
+    if (!oauthRows || !oauthEmptyState || !oauthTable || !oauthTableWrapper) {
       return;
     }
     oauthRows.innerHTML = '';
     if (!oauthState.clients.length) {
       oauthEmptyState.hidden = false;
       oauthTable.hidden = true;
+      oauthTableWrapper.hidden = true;
       return;
     }
     oauthEmptyState.hidden = true;
+    oauthTableWrapper.hidden = false;
     oauthTable.hidden = false;
     oauthState.clients.forEach((client) => {
       const tr = document.createElement('tr');
