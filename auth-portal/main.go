@@ -353,6 +353,8 @@ func main() {
 	adminAPI := r.PathPrefix("/api/admin").Subrouter()
 	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
 	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
+	adminAPI.Handle("/config/history/{section}", adminProtected(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
+	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
 
 	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")

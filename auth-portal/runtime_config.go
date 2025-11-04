@@ -179,7 +179,13 @@ func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 	rc.SecurityVersion = sVersion
 	rc.MFA = mfa
 	rc.MFAVersion = mVersion
-	rc.LoadedAt = time.Now().UTC()
+
+	snap := store.Snapshot()
+	if !snap.LoadedAt.IsZero() {
+		rc.LoadedAt = snap.LoadedAt
+	} else {
+		rc.LoadedAt = time.Now().UTC()
+	}
 
 	return rc, nil
 }

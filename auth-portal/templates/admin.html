@@ -1,0 +1,37 @@
+{{define "content"}}{{end}}<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>AuthPortal Admin</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="admin-page">
+    <header class="admin-header">
+        <h1>AuthPortal Admin Console</h1>
+        <p class="muted">Provider: {{.ProviderDisplay}} &bull; Config refreshed {{.ConfigLoadedAt}}</p>
+    </header>
+    <main class="admin-main">
+        <aside class="admin-nav">
+            <button type="button" class="admin-tab active" data-section="providers">Providers</button>
+            <button type="button" class="admin-tab" data-section="security">Security</button>
+            <button type="button" class="admin-tab" data-section="mfa">MFA</button>
+        </aside>
+        <section class="admin-content">
+            <div class="admin-panels">
+                <div class="panel">
+                    <h2 id="panel-title">Providers</h2>
+                    <pre id="config-view" class="config-view">Loading…</pre>
+                </div>
+                <div class="panel history-panel">
+                    <h3>Recent Changes</h3>
+                    <pre id="history-view" class="history-view">Loading…</pre>
+                </div>
+            </div>
+        </section>
+    </main>
+    <footer class="admin-footer">
+        <p>Use the JSON output above to plan updates. Editing UI coming soon.</p>
+    </footer>
+    <script src="/static/admin.js" defer></script>
+</body>
+</html>

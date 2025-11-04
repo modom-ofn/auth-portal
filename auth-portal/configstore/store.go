@@ -77,6 +77,17 @@ type Item struct {
 	UpdatedBy string
 }
 
+// HistoryEntry represents a single historical revision of a config section.
+type HistoryEntry struct {
+	Namespace Section
+	Key       string
+	Value     json.RawMessage
+	Version   int64
+	UpdatedAt time.Time
+	UpdatedBy string
+	Reason    string
+}
+
 // New initialises a Store and loads the current configuration snapshot.
 func New(db *sql.DB, opts Options) (*Store, error) {
 	if db == nil {
@@ -354,4 +365,68 @@ func cloneRaw(raw json.RawMessage) json.RawMessage {
 	buf := make([]byte, len(raw))
 	copy(buf, raw)
 	return json.RawMessage(buf)
+}
+
+// History returns the most recent change entries for the given section/document key.
+func (s *Store) History(ctx context.Context, section Section, key string, limit int) ([]HistoryEntry, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = SectionDocumentKey
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT namespace, key, value, version, updated_at, updated_by, change_reason
+  FROM app_config_history
+ WHERE namespace = $1
+   AND key = $2
+ ORDER BY id DESC
+ LIMIT $3
+`, string(section), key, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []HistoryEntry
+	for rows.Next() {
+		var (
+			ns        string
+			k         string
+			value     []byte
+			version   int64
+			updatedAt time.Time
+			updatedBy sql.NullString
+			reason    sql.NullString
+		)
+		if err := rows.Scan(&ns, &k, &value, &version, &updatedAt, &updatedBy, &reason); err != nil {
+			return nil, err
+		}
+		entry := HistoryEntry{
+			Namespace: Section(strings.TrimSpace(ns)),
+			Key:       strings.TrimSpace(k),
+			Value:     cloneRaw(json.RawMessage(value)),
+			Version:   version,
+			UpdatedAt: updatedAt.UTC(),
+		}
+		if updatedBy.Valid {
+			entry.UpdatedBy = strings.TrimSpace(updatedBy.String)
+		}
+		if reason.Valid {
+			entry.Reason = strings.TrimSpace(reason.String)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
