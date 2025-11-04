@@ -1,5 +1,18 @@
 # AuthPortal Changelog
 
+## v2.0.3
+
+### Highlights
+- Introduced the admin console with JSON-backed Providers/Security/MFA configuration, optimistic locking, change history, and inline editing at `/admin`.
+- Added OAuth client management UI plus `/api/admin/oauth/*` endpoints (list/create/update/delete/rotate) to control authorization-server registrations.
+- Shipped a first-party OAuth 2.1 / OpenID Connect authorization server featuring discovery, PKCE, consent tracking, RS256-signed ID tokens (with nonce), and refresh-token rotation gated on `offline_access`.
+
+### Upgrade Notes
+- Define at least one bootstrap administrator with `ADMIN_BOOTSTRAP_USERS` (`username:email` pairs). Additional admins can be granted through the console later.
+- Provide signing material via `OIDC_SIGNING_KEY_PATH` (preferred) or `OIDC_SIGNING_KEY`; set `OIDC_ISSUER` when the public issuer differs from `APP_BASE_URL`.
+- Database migrations automatically add `config_store` entries and extend `oauth_auth_codes` with a `nonce` column—no manual steps required.
+- The OAuth token endpoint now issues refresh tokens only when `offline_access` is requested; update downstream clients if they previously assumed implicit refresh support.
+
 ## v2.0.2
 
 ### Highlights

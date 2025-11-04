@@ -1,4 +1,4 @@
-# AuthPortal (v2.0.2)
+# AuthPortal (v2.0.3)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
@@ -42,13 +42,24 @@ AuthPortal authenticates users directly against their connected media server acc
   - Two distinct home pages: authorized vs. unauthorized
   - Dark, modern UI with branded login buttons
 
+- **Runtime configuration & admin console**
+  - Web-based editing of Providers, Security, and MFA JSON with versioning and history
+  - OAuth client management (list/create/update/delete + secret rotation) without leaving the browser
+
+- **First-party OAuth 2.1 / OIDC**
+  - Authorization-code + PKCE, optional `offline_access` refresh rotation, RS256-signed ID tokens
+  - Discovery, JWKS, token, and userinfo endpoints ready for downstream apps and identity brokers
+
 ---
 
 ## Table of Contents
 
+- [What's New in v2.0.3](#whats-new-in-v203)
 - [What's New in v2.0.2](#whats-new-in-v202)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+  - [Admin Console & Config Store (new in v2.0.3)](#admin-console--config-store-new-in-v203)
+  - [OAuth 2.1 / OIDC Authorization Server](#oauth-21--oidc-authorization-server)
   - [Multi-factor authentication (new in v2.0.2)](#multi-factor-authentication-new-in-v202)
   - [Plex](#plex)
   - [Jellyfin](#jellyfin)
@@ -69,15 +80,13 @@ AuthPortal authenticates users directly against their connected media server acc
 
 ---
 
-## What's New in v2.0.2
+## What's New in v2.0.3
 
-- **Multi-factor authentication:** Enrollment and challenge flows for TOTP with recovery codes. Toggle enforcement per tenant or per user with MFA_ENABLE/MFA_ENFORCE.
-- **Security hardening:** Same-origin CSRF checks on sensitive POST routes, pending-MFA cookie isolation, configurable SESSION_COOKIE_DOMAIN, and consistent JWT rotation after MFA.
-- **Rate limiting:** Shared per-IP throttles now wrap login, MFA enrollment, and verification endpoints to blunt brute-force attacks.
-- **Platform updates:** Upgraded container stack to Go 1.25.3 with patched OpenSSL/BusyBox layers and refreshed UI assets to surface the MFA experience.
+- **Runtime config store + admin console:** JSON-backed providers/security/MFA configuration with optimistic concurrency, history audit, and inline editing from `/admin`. Bootstrap admin accounts via `ADMIN_BOOTSTRAP_USERS`.
+- **OAuth 2.1 / OIDC authorization server:** Authorization-code + refresh grants with PKCE, signed ID tokens, consent tracking, and optional `offline_access` refresh rotation. Includes discovery, JWKS, token, and userinfo endpoints.
+- **Admin OAuth client management:** List/create/update/delete clients, rotate secrets, and expose new secrets in the UI. All backed by new `/api/admin/oauth/*` routes.
 
 ---
-
 
 ## ldap-sync
 
@@ -123,6 +132,14 @@ FORCE_SECURE_COOKIE=0
 # 32-byte base64 key (e.g., openssl rand -base64 32) (Do Not Reuse Example Below)
 DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
 
+# Admin bootstrap (comma-separated username:email pairs)
+ADMIN_BOOTSTRAP_USERS=admin:admin@example.com
+
+# OAuth2/OIDC signing & issuer (provide one of *_KEY or *_KEY_PATH)
+OIDC_SIGNING_KEY_PATH=/run/secrets/oidc_signing_key.pem
+OIDC_SIGNING_KEY=
+OIDC_ISSUER=https://auth.example.com
+
 # Logging # DEBUG | INFO | WARN | ERROR
 LOG_LEVEL=INFO
 
@@ -140,7 +157,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.2
+EMBY_APP_VERSION=2.0.3
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -149,7 +166,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.2
+JELLYFIN_APP_VERSION=2.0.3
 ```
 
 
@@ -202,7 +219,7 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.2
+    image: modomofn/auth-portal:v2.0.3
     ports:
       - "8089:8080"
     environment:
@@ -222,6 +239,9 @@ services:
       MFA_ISSUER: ${MFA_ISSUER:-AuthPortal}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+      # Admin Config
+      ADMIN_BOOTSTRAP_USERS: ${ADMIN_BOOTSTRAP_USERS:?set-in-.env}
+
       # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
 
@@ -234,12 +254,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.2}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.3}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.2}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.3}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -350,7 +370,23 @@ docker compose --profile ldap up -d --build
 - `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 
-### Multi-factor authentication (new in v2.0.2)
+### Admin Console & Config Store (new in v2.0.3)
+
+- Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
+- Providers, Security, and MFA settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
+- Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
+- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation) backed by the `/api/admin/oauth/*` endpoints.
+
+### OAuth 2.1 / OIDC Authorization Server (nre in v2.0.3)
+
+- Discovery endpoint `/.well-known/openid-configuration` advertises JWKS (`/oidc/jwks.json`), authorize (`/oidc/authorize`), token (`/oidc/token`), and userinfo (`/oidc/userinfo`) URLs.
+- `/oidc/authorize` implements the authorization-code grant with PKCE. User consent is recorded per client/scope, supports `prompt=consent`, and returns `consent_required` when `prompt=none` is requested without prior approval.
+- `/oidc/token` handles `authorization_code` and `refresh_token` grants. Refresh tokens rotate on every use and are only issued when the `offline_access` scope is granted.
+- `/oidc/userinfo` returns `sub`, `preferred_username`, and optional email claims based on granted scopes. ID tokens are RS256-signed and echo the incoming `nonce`.
+- Provide signing material with `OIDC_SIGNING_KEY_PATH` (PEM on disk) or inline `OIDC_SIGNING_KEY`; override the advertised issuer with `OIDC_ISSUER` when running behind a reverse proxy.
+- Register clients through the admin console (OAuth tab) or the REST API: `GET/POST /api/admin/oauth/clients`, `PUT/DELETE /api/admin/oauth/clients/{id}`, and `POST /api/admin/oauth/clients/{id}/rotate-secret`.
+
+### Multi-factor authentication
 
 - `MFA_ENABLE` controls whether users can enroll; leave it `1` when enforcing.
 - `MFA_ENFORCE` forces every login to satisfy MFA once a user is enrolled (or immediately when set globally).
@@ -547,65 +583,6 @@ DEBUG plex: resources match via machine id
 
 ---
 
-## Project structure
-
-```
-.
-" ldap-seed/ # optional LDAP seed
-   " 01-ou-users.ldif
-" auth-portal/
-   " context_helpers.go
-   " crypto.go
-   " crypto_tokens.go
-   " db.go
-   " Dockerfile
-   " go.mod
-   " go.sum
-   " handlers.go
-   " logging.go
-   " main.go
-   " mfa_handlers.go
-   " mfa_helpers.go
-   " rate_limiter.go
-   " store.go
-   " LICENSE
-   " README.md
-   " health/ # health check function
-   	" health.go
-   " providers/
-    " emby.go
-    " httpx_test.go
-    " httpx.go
-    " jellyfin.go
-    " plex.go
-    " provider.go
-   " templates/
-   	" login.html
-    " mfa_challenge.html
-    " mfa_enroll.html
-   	" portal_authorized.html
-	  " portal_unauthorized.html
-   " static/
-   	" styles.css
-   	" login.js
-    " mfa_challenge.js
-    " mfa_enroll.js
-   	" login.svg     # optional login button svg icon
-   	" plex.svg      # optional plex button svg icon
-   	" emby.svg      # optional emby button svg icon
-   	" jellyfin.svg  # optional jellyfin button svg icon
-   	" bg.jpg        # optional hero image
-" auth-portal-full-stack-dev.env					          # full stack docker-compose env template
-" auth-portal-full-stack-dev_docker-compose.yml	    # full stack docker-compose template
-" CHANGELOG.md
-" LICENSE
-" MAKEFILE
-" README.md
-" VERSION
-```
-
----
-
 ##  Contributing
 
 Issues and PRs welcome:  
@@ -623,9 +600,9 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ---
 
-## Upgrade Guide (v2.0.2)
+## Upgrade Guide (from < v2.0.2)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.2` so you pick up Go 1.25.3 plus the patched OpenSSL 3.3.5 / BusyBox layers.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.3` so you pick up Go 1.25.3 plus the patched OpenSSL 3.3.5 / BusyBox layers.
 2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
 3) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.

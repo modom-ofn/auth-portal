@@ -44,7 +44,7 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.2
+    image: modomofn/auth-portal:v2.0.3
     ports:
       - "8089:8080"
     environment:
@@ -65,6 +65,9 @@ services:
       MFA_ISSUER: ${MFA_ISSUER:-AuthPortal}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+      # Admin Config
+      ADMIN_BOOTSTRAP_USERS: ${ADMIN_BOOTSTRAP_USERS:?set-in-.env}
+
       # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
 
@@ -77,12 +80,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.2}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.3}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.2}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.3}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
