@@ -65,6 +65,8 @@ type RuntimeConfig struct {
 
 	MFA        MFAConfig
 	MFAVersion int64
+
+	LoadedAt time.Time
 }
 
 var runtimeConfigValue atomic.Value
@@ -177,6 +179,7 @@ func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 	rc.SecurityVersion = sVersion
 	rc.MFA = mfa
 	rc.MFAVersion = mVersion
+	rc.LoadedAt = time.Now().UTC()
 
 	return rc, nil
 }
@@ -247,6 +250,9 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	mfaEnforceForAllUsers = cfg.MFA.EnforceForAllUsers
 	ensureMFAConsistency()
 
+	if cfg.LoadedAt.IsZero() {
+		cfg.LoadedAt = time.Now().UTC()
+	}
 	runtimeConfigValue.Store(cfg)
 }
 
@@ -260,7 +266,15 @@ func currentRuntimeConfig() RuntimeConfig {
 		Providers: defaultProvidersConfig(),
 		Security:  defaultSecurityConfig(),
 		MFA:       defaultMFAConfig(),
+		LoadedAt:  time.Now().UTC(),
 	}
+}
+
+func (rc RuntimeConfig) loadedAt() time.Time {
+	if rc.LoadedAt.IsZero() {
+		return time.Now().UTC()
+	}
+	return rc.LoadedAt
 }
 
 func resolveProviderSelection(raw string) (key, display string) {

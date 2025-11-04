@@ -347,6 +347,13 @@ func main() {
 	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
 	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
 
+	adminProtected := func(h http.Handler) http.Handler {
+		return authMiddleware(requireAdmin(h))
+	}
+	adminAPI := r.PathPrefix("/api/admin").Subrouter()
+	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
+	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
+
 	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
 
