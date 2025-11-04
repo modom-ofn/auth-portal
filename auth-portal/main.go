@@ -47,6 +47,9 @@ var (
 	jellyfinAPIKey                         = envOr("JELLYFIN_API_KEY", "")
 	mediaServerSelection                   = strings.TrimSpace(os.Getenv("MEDIA_SERVER"))
 	mediaProviderKey, mediaProviderDisplay = resolveProviderSelection(mediaServerSelection)
+	oidcSigningKeyPath                     = strings.TrimSpace(os.Getenv("OIDC_SIGNING_KEY_PATH"))
+	oidcSigningKeyPEM                      = strings.TrimSpace(os.Getenv("OIDC_SIGNING_KEY"))
+	oidcIssuerOverride                     = strings.TrimSpace(os.Getenv("OIDC_ISSUER"))
 
 	// MFA configuration
 	mfaIssuer             = envOr("MFA_ISSUER", "AuthPortal")
@@ -171,6 +174,10 @@ func main() {
 
 	if err := bootstrapAdminUsers(); err != nil {
 		log.Printf("Admin bootstrap encountered issues: %v", err)
+	}
+
+	if err := initOIDCSigningKey(); err != nil {
+		log.Fatalf("OIDC init error: %v", err)
 	}
 
 	snap := configStore.Snapshot()
@@ -346,6 +353,10 @@ func main() {
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
 	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
 	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
+
+	// OIDC discovery endpoints
+	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
+	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
 
 	adminProtected := func(h http.Handler) http.Handler {
 		return authMiddleware(requireAdmin(h))

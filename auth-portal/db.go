@@ -214,6 +214,77 @@ CREATE INDEX IF NOT EXISTS idx_app_config_history_lookup ON app_config_history (
 		return err
 	}
 
+	// OAuth/OIDC clients and tokens
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id      TEXT PRIMARY KEY,
+  client_secret  TEXT,
+  name           TEXT NOT NULL,
+  redirect_uris  TEXT[] NOT NULL DEFAULT '{}',
+  scopes         TEXT[] NOT NULL DEFAULT '{}',
+  grant_types    TEXT[] NOT NULL DEFAULT '{}',
+  response_types TEXT[] NOT NULL DEFAULT '{}',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_clients_name ON oauth_clients (name);
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_auth_codes (
+  code            TEXT PRIMARY KEY,
+  client_id       TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+  user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scopes          TEXT[] NOT NULL DEFAULT '{}',
+  redirect_uri    TEXT NOT NULL,
+  expires_at      TIMESTAMPTZ NOT NULL,
+  consumed_at     TIMESTAMPTZ,
+  code_challenge  TEXT,
+  code_method     TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_client ON oauth_auth_codes (client_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_user ON oauth_auth_codes (user_id);
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+  token_id        TEXT PRIMARY KEY,
+  client_id       TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+  user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scopes          TEXT[] NOT NULL DEFAULT '{}',
+  expires_at      TIMESTAMPTZ NOT NULL,
+  revoked_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_client ON oauth_access_tokens (client_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_user ON oauth_access_tokens (user_id);
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+  token_id        TEXT PRIMARY KEY,
+  access_token_id TEXT NOT NULL REFERENCES oauth_access_tokens(token_id) ON DELETE CASCADE,
+  client_id       TEXT NOT NULL,
+  user_id         BIGINT NOT NULL,
+  scopes          TEXT[] NOT NULL DEFAULT '{}',
+  expires_at      TIMESTAMPTZ NOT NULL,
+  revoked_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (access_token_id)
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_client ON oauth_refresh_tokens (client_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_user ON oauth_refresh_tokens (user_id);
+`); err != nil {
+		return err
+	}
+
 	return nil
 }
 
