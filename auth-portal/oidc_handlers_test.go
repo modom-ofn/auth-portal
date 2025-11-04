@@ -34,13 +34,13 @@ func TestFinishAuthorizeFlowSuccess(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	mock.ExpectExec("INSERT INTO oauth_auth_codes").
-		WithArgs(sqlmock.AnyArg(), client.ClientID, int64(user.ID), sqlmock.AnyArg(), redirectURI, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WithArgs(sqlmock.AnyArg(), client.ClientID, int64(user.ID), sqlmock.AnyArg(), redirectURI, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	req := httptest.NewRequest("GET", "/oidc/authorize", nil)
 	rr := httptest.NewRecorder()
 
-	finishAuthorizeFlow(rr, req, user, client, redirectURI, "xyz", scopes, "", "")
+	finishAuthorizeFlow(rr, req, user, client, redirectURI, "xyz", scopes, "", "", "nonce-123")
 
 	resp := rr.Result()
 	if resp.StatusCode != 302 {

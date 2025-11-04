@@ -243,10 +243,17 @@ CREATE TABLE IF NOT EXISTS oauth_auth_codes (
   consumed_at     TIMESTAMPTZ,
   code_challenge  TEXT,
   code_method     TEXT,
+  nonce           TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_client ON oauth_auth_codes (client_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_user ON oauth_auth_codes (user_id);
+`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+ALTER TABLE oauth_auth_codes
+  ADD COLUMN IF NOT EXISTS nonce TEXT;
 `); err != nil {
 		return err
 	}

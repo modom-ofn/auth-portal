@@ -109,6 +109,7 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := query.Get("state")
+	nonce := strings.TrimSpace(query.Get("nonce"))
 	promptRaw := strings.TrimSpace(query.Get("prompt"))
 	promptValues := strings.Fields(promptRaw)
 	promptNone := false
@@ -195,11 +196,12 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 			CodeChallenge:       codeChallenge,
 			CodeChallengeMethod: codeMethod,
 			Prompt:              promptRaw,
+			Nonce:               nonce,
 		})
 		return
 	}
 
-	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod)
+	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod, nonce)
 }
 
 func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +228,7 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	codeChallenge := strings.TrimSpace(r.PostFormValue("code_challenge"))
 	codeMethod := strings.TrimSpace(r.PostFormValue("code_challenge_method"))
+	nonce := strings.TrimSpace(r.PostFormValue("nonce"))
 	if codeChallenge != "" {
 		if codeMethod == "" {
 			codeMethod = "plain"
@@ -274,7 +277,7 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod)
+	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod, nonce)
 }
 
 func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
@@ -378,14 +381,21 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 		return
 	}
 
-	refresh, refreshExpiry, err := oauthService.CreateRefreshToken(r.Context(), access.TokenID, client.ClientID, authCode.UserID, authCode.Scopes)
-	if err != nil {
-		log.Printf("oidc token: refresh token create failed: %v", err)
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
-		return
+	var (
+		refresh       string
+		refreshExpiry time.Time
+	)
+	if containsScope(authCode.Scopes, "offline_access") {
+		var err error
+		refresh, refreshExpiry, err = oauthService.CreateRefreshToken(r.Context(), access.TokenID, client.ClientID, authCode.UserID, authCode.Scopes)
+		if err != nil {
+			log.Printf("oidc token: refresh token create failed: %v", err)
+			writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+			return
+		}
 	}
 
-	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt)
+	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt, authCode.Nonce.String)
 	if err != nil {
 		log.Printf("oidc token: id token mint failed: %v", err)
 		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
@@ -399,13 +409,19 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 	}
 
 	response := map[string]any{
-		"access_token":       access.TokenID,
-		"token_type":         "Bearer",
-		"expires_in":         expiresIn,
-		"refresh_token":      refresh,
-		"id_token":           idToken,
-		"scope":              strings.Join(authCode.Scopes, " "),
-		"refresh_expires_in": int(refreshExpiry.Sub(now).Seconds()),
+		"access_token": access.TokenID,
+		"token_type":   "Bearer",
+		"expires_in":   expiresIn,
+		"id_token":     idToken,
+		"scope":        strings.Join(authCode.Scopes, " "),
+	}
+	if refresh != "" {
+		refreshIn := int(refreshExpiry.Sub(now).Seconds())
+		if refreshIn < 0 {
+			refreshIn = 0
+		}
+		response["refresh_token"] = refresh
+		response["refresh_expires_in"] = refreshIn
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -442,7 +458,7 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oaut
 		return
 	}
 
-	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt)
+	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt, "")
 	if err != nil {
 		log.Printf("oidc token: id token mint failed: %v", err)
 		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
@@ -565,6 +581,7 @@ type consentTemplateData struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	Prompt              string
+	Nonce               string
 }
 
 type consentScopeDisplay struct {
@@ -618,12 +635,12 @@ func scopeDescription(scope string) string {
 	}
 }
 
-func finishAuthorizeFlow(w http.ResponseWriter, r *http.Request, user User, client oauth.Client, redirectURI, state string, scopes []string, codeChallenge, codeMethod string) {
+func finishAuthorizeFlow(w http.ResponseWriter, r *http.Request, user User, client oauth.Client, redirectURI, state string, scopes []string, codeChallenge, codeMethod, nonce string) {
 	if err := oauthService.RecordConsent(r.Context(), int64(user.ID), client.ClientID, scopes); err != nil {
 		log.Printf("oidc authorize: record consent failed for %s/%s: %v", user.Username, client.ClientID, err)
 	}
 
-	authCode, err := oauthService.CreateAuthCode(r.Context(), client.ClientID, int64(user.ID), redirectURI, scopes, codeChallenge, codeMethod)
+	authCode, err := oauthService.CreateAuthCode(r.Context(), client.ClientID, int64(user.ID), redirectURI, scopes, codeChallenge, codeMethod, nonce)
 	if err != nil {
 		log.Printf("oidc authorize: create code failed: %v", err)
 		writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
@@ -685,7 +702,7 @@ func extractBearerToken(header string) string {
 	return strings.TrimSpace(header[7:])
 }
 
-func mintIDToken(audience string, user User, expires time.Time) (string, error) {
+func mintIDToken(audience string, user User, expires time.Time, nonce string) (string, error) {
 	if oidcSigningKey == nil {
 		return "", errors.New("signing key unavailable")
 	}
@@ -704,6 +721,10 @@ func mintIDToken(audience string, user User, expires time.Time) (string, error) 
 		email := strings.TrimSpace(user.Email.String)
 		claims["email"] = email
 		claims["email_verified"] = true
+	}
+
+	if n := strings.TrimSpace(nonce); n != "" {
+		claims["nonce"] = n
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

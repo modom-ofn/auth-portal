@@ -62,6 +62,7 @@ type AuthCode struct {
 	ExpiresAt     time.Time
 	CodeChallenge sql.NullString
 	CodeMethod    sql.NullString
+	Nonce         sql.NullString
 	CreatedAt     time.Time
 }
 
@@ -180,11 +181,11 @@ func (s Service) CreateClient(ctx context.Context, name string, redirectURIs, sc
 	now := time.Now().UTC()
 
 	var (
-		client        Client
-		redirectArr   pq.StringArray
-		scopesArr     pq.StringArray
-		grantArr      pq.StringArray
-		responseArr   pq.StringArray
+		client      Client
+		redirectArr pq.StringArray
+		scopesArr   pq.StringArray
+		grantArr    pq.StringArray
+		responseArr pq.StringArray
 	)
 	if err := s.DB.QueryRowContext(ctx, `
 INSERT INTO oauth_clients (client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at)
@@ -228,11 +229,11 @@ func (s Service) UpdateClient(ctx context.Context, clientID string, name string,
 	now := time.Now().UTC()
 
 	var (
-		client        Client
-		redirectArr   pq.StringArray
-		scopesArr     pq.StringArray
-		grantArr      pq.StringArray
-		responseArr   pq.StringArray
+		client      Client
+		redirectArr pq.StringArray
+		scopesArr   pq.StringArray
+		grantArr    pq.StringArray
+		responseArr pq.StringArray
 	)
 	err = s.DB.QueryRowContext(ctx, `
 UPDATE oauth_clients
@@ -318,7 +319,7 @@ func sanitizeClient(c Client) Client {
 	return c
 }
 
-func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int64, redirectURI string, scopes []string, codeChallenge, codeMethod string) (AuthCode, error) {
+func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int64, redirectURI string, scopes []string, codeChallenge, codeMethod, nonce string) (AuthCode, error) {
 	code, err := generateOpaqueToken(32)
 	if err != nil {
 		return AuthCode{}, err
@@ -327,9 +328,9 @@ func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int
 	expires := now.Add(s.authCodeTTL())
 	normalizedScopes := normalizeScopes(scopes)
 	_, err = s.DB.ExecContext(ctx, `
-INSERT INTO oauth_auth_codes (code, client_id, user_id, scopes, redirect_uri, expires_at, code_challenge, code_method, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9)
-`, code, clientID, userID, pq.StringArray(normalizedScopes), redirectURI, expires, strings.TrimSpace(codeChallenge), strings.TrimSpace(codeMethod), now)
+INSERT INTO oauth_auth_codes (code, client_id, user_id, scopes, redirect_uri, expires_at, code_challenge, code_method, nonce, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10)
+`, code, clientID, userID, pq.StringArray(normalizedScopes), redirectURI, expires, strings.TrimSpace(codeChallenge), strings.TrimSpace(codeMethod), strings.TrimSpace(nonce), now)
 	if err != nil {
 		return AuthCode{}, err
 	}
@@ -342,6 +343,7 @@ VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9)
 		ExpiresAt:     expires,
 		CodeChallenge: sql.NullString{String: strings.TrimSpace(codeChallenge), Valid: strings.TrimSpace(codeChallenge) != ""},
 		CodeMethod:    sql.NullString{String: strings.TrimSpace(codeMethod), Valid: strings.TrimSpace(codeMethod) != ""},
+		Nonce:         sql.NullString{String: strings.TrimSpace(nonce), Valid: strings.TrimSpace(nonce) != ""},
 		CreatedAt:     now,
 	}, nil
 }
@@ -363,7 +365,7 @@ UPDATE oauth_auth_codes
  WHERE code = $1
    AND consumed_at IS NULL
    AND expires_at > now()
-RETURNING code, client_id, user_id, scopes, redirect_uri, expires_at, code_challenge, code_method, created_at
+RETURNING code, client_id, user_id, scopes, redirect_uri, expires_at, code_challenge, code_method, nonce, created_at
 `, code).Scan(
 		&authCode.Code,
 		&authCode.ClientID,
@@ -373,6 +375,7 @@ RETURNING code, client_id, user_id, scopes, redirect_uri, expires_at, code_chall
 		&authCode.ExpiresAt,
 		&codeChallenge,
 		&codeMethod,
+		&authCode.Nonce,
 		&authCode.CreatedAt,
 	)
 	if err != nil {
@@ -681,4 +684,3 @@ func generateOpaqueToken(size int) (string, error) {
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
-
