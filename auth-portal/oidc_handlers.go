@@ -1,9 +1,21 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+
+	"auth-portal/oauth"
 )
 
 func oidcDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
@@ -68,4 +80,393 @@ func oidcJWKSHandler(w http.ResponseWriter, r *http.Request) {
 	data := oidcJWKS()
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(data)
+}
+
+func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query()
+	responseType := strings.TrimSpace(query.Get("response_type"))
+	if responseType != "code" {
+		writeOIDCError(w, http.StatusBadRequest, "unsupported_response_type", "only response_type=code is supported")
+		return
+	}
+
+	clientID := strings.TrimSpace(query.Get("client_id"))
+	if clientID == "" {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "client_id required")
+		return
+	}
+
+	redirectURI := strings.TrimSpace(query.Get("redirect_uri"))
+	if redirectURI == "" {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "redirect_uri required")
+		return
+	}
+
+	state := query.Get("state")
+	scopeRaw := strings.TrimSpace(query.Get("scope"))
+	if scopeRaw == "" {
+		scopeRaw = "openid"
+	}
+	scopes := strings.Fields(scopeRaw)
+	if !containsScope(scopes, "openid") {
+		scopes = append(scopes, "openid")
+	}
+
+	client, err := oauthService.GetClient(r.Context(), clientID)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "unauthorized_client", "client not registered")
+		return
+	}
+	if !clientAllowsRedirect(client, redirectURI) {
+		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "redirect_uri is not registered")
+		return
+	}
+
+	codeChallenge := strings.TrimSpace(query.Get("code_challenge"))
+	codeMethod := strings.TrimSpace(query.Get("code_challenge_method"))
+	if codeChallenge != "" {
+		if codeMethod == "" {
+			codeMethod = "plain"
+		}
+		switch strings.ToUpper(codeMethod) {
+		case "PLAIN", "S256":
+			// ok
+		default:
+			writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "unsupported code_challenge_method")
+			return
+		}
+	}
+
+	uuid := uuidFrom(r.Context())
+	if uuid == "" {
+		http.Error(w, "session required", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := getUserByUUIDPreferred(uuid)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user not found")
+		return
+	}
+
+	authCode, err := oauthService.CreateAuthCode(r.Context(), clientID, int64(user.ID), redirectURI, scopes, codeChallenge, codeMethod)
+	if err != nil {
+		log.Printf("oidc authorize: create code failed: %v", err)
+		writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
+		return
+	}
+
+	redirect, err := url.Parse(redirectURI)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "invalid redirect_uri")
+		return
+	}
+	params := redirect.Query()
+	params.Set("code", authCode.Code)
+	if state != "" {
+		params.Set("state", state)
+	}
+	redirect.RawQuery = params.Encode()
+	http.Redirect(w, r, redirect.String(), http.StatusFound)
+}
+
+func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeOIDCError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "invalid form")
+		return
+	}
+
+	clientID, clientSecret, err := extractClientCredentials(r)
+	if err != nil {
+		writeOIDCError(w, http.StatusUnauthorized, "invalid_client", err.Error())
+		return
+	}
+
+	client, err := oauthService.GetClient(r.Context(), clientID)
+	if err != nil {
+		writeOIDCError(w, http.StatusUnauthorized, "invalid_client", "client not found")
+		return
+	}
+	if client.ClientSecret.Valid {
+		if clientSecret == "" || client.ClientSecret.String != clientSecret {
+			writeOIDCError(w, http.StatusUnauthorized, "invalid_client", "client secret mismatch")
+			return
+		}
+	}
+
+	grantType := strings.TrimSpace(r.PostFormValue("grant_type"))
+	switch grantType {
+	case "authorization_code":
+		handleAuthorizationCodeGrant(w, r, client)
+	default:
+		writeOIDCError(w, http.StatusBadRequest, "unsupported_grant_type", "grant type not supported")
+	}
+}
+
+func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client oauth.Client) {
+	code := strings.TrimSpace(r.PostFormValue("code"))
+	redirectURI := strings.TrimSpace(r.PostFormValue("redirect_uri"))
+	codeVerifier := strings.TrimSpace(r.PostFormValue("code_verifier"))
+
+	if code == "" || redirectURI == "" {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "code and redirect_uri required")
+		return
+	}
+	if !clientAllowsRedirect(client, redirectURI) {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri mismatch")
+		return
+	}
+
+	authCode, err := oauthService.ConsumeAuthCode(r.Context(), code)
+	if err != nil {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "authorization code invalid or expired")
+		return
+	}
+	if authCode.ClientID != client.ClientID {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "client mismatch")
+		return
+	}
+	if authCode.RedirectURI != redirectURI {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri mismatch")
+		return
+	}
+	if authCode.CodeChallenge.Valid {
+		if codeVerifier == "" {
+			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier required")
+			return
+		}
+		switch strings.ToUpper(authCode.CodeMethod.String) {
+		case "S256":
+			hash := sha256.Sum256([]byte(codeVerifier))
+			expected := base64.RawURLEncoding.EncodeToString(hash[:])
+			if subtleConstantTimeCompare(expected, authCode.CodeChallenge.String) != 1 {
+				writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier mismatch")
+				return
+			}
+		case "PLAIN", "":
+			if subtleConstantTimeCompare(codeVerifier, authCode.CodeChallenge.String) != 1 {
+				writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier mismatch")
+				return
+			}
+		default:
+			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier mismatch")
+			return
+		}
+	}
+
+	user, err := getUserByID(int(authCode.UserID))
+	if err != nil {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "user not found")
+		return
+	}
+
+	access, err := oauthService.CreateAccessToken(r.Context(), client.ClientID, authCode.UserID, authCode.Scopes)
+	if err != nil {
+		log.Printf("oidc token: access token create failed: %v", err)
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		return
+	}
+
+	refresh, refreshExpiry, err := oauthService.CreateRefreshToken(r.Context(), access.TokenID, client.ClientID, authCode.UserID, authCode.Scopes)
+	if err != nil {
+		log.Printf("oidc token: refresh token create failed: %v", err)
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		return
+	}
+
+	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt)
+	if err != nil {
+		log.Printf("oidc token: id token mint failed: %v", err)
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		return
+	}
+
+	now := time.Now()
+	expiresIn := int(access.ExpiresAt.Sub(now).Seconds())
+	if expiresIn < 0 {
+		expiresIn = 0
+	}
+
+	response := map[string]any{
+		"access_token":       access.TokenID,
+		"token_type":         "Bearer",
+		"expires_in":         expiresIn,
+		"refresh_token":      refresh,
+		"id_token":           idToken,
+		"scope":              strings.Join(authCode.Scopes, " "),
+		"refresh_expires_in": int(refreshExpiry.Sub(now).Seconds()),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func oidcUserinfoHandler(w http.ResponseWriter, r *http.Request) {
+	token := extractBearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="bearer token required"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	access, err := oauthService.GetAccessToken(r.Context(), token)
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="token invalid or expired"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := getUserByID(int(access.UserID))
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="user not found"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	payload := map[string]any{
+		"sub":                subjectForUser(user),
+		"preferred_username": strings.TrimSpace(user.Username),
+		"name":               strings.TrimSpace(user.Username),
+		"email_verified":     user.Email.Valid && strings.TrimSpace(user.Email.String) != "",
+	}
+	if user.Email.Valid && strings.TrimSpace(user.Email.String) != "" {
+		payload["email"] = strings.TrimSpace(user.Email.String)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeOIDCError(w http.ResponseWriter, status int, code, description string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":             code,
+		"error_description": description,
+	})
+}
+
+func writeOIDCRedirectError(w http.ResponseWriter, r *http.Request, redirectURI, state, code, description string) {
+	u, err := url.Parse(redirectURI)
+	if err != nil {
+		writeOIDCError(w, http.StatusBadRequest, code, description)
+		return
+	}
+	q := u.Query()
+	q.Set("error", code)
+	if description != "" {
+		q.Set("error_description", description)
+	}
+	if state != "" {
+		q.Set("state", state)
+	}
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusFound)
+}
+
+func clientAllowsRedirect(client oauth.Client, redirect string) bool {
+	if len(client.RedirectURIs) == 0 {
+		return false
+	}
+	for _, reg := range client.RedirectURIs {
+		if strings.TrimSpace(reg) == redirect {
+			return true
+		}
+	}
+	return false
+}
+
+func containsScope(scopes []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, scope := range scopes {
+		if scope == target {
+			return true
+		}
+	}
+	return false
+}
+
+func extractClientCredentials(r *http.Request) (string, string, error) {
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(strings.ToLower(auth), "basic ") {
+		decoded, err := base64.StdEncoding.DecodeString(auth[len("Basic "):])
+		if err != nil {
+			return "", "", fmt.Errorf("invalid basic auth")
+		}
+		parts := strings.SplitN(string(decoded), ":", 2)
+		if len(parts) != 2 {
+			return "", "", fmt.Errorf("invalid basic auth")
+		}
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), nil
+	}
+	clientID := strings.TrimSpace(r.PostFormValue("client_id"))
+	clientSecret := strings.TrimSpace(r.PostFormValue("client_secret"))
+	if clientID == "" {
+		return "", "", fmt.Errorf("client credentials required")
+	}
+	return clientID, clientSecret, nil
+}
+
+func extractBearerToken(header string) string {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return ""
+	}
+	if len(header) < 7 || !strings.HasPrefix(strings.ToLower(header), "bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(header[7:])
+}
+
+func mintIDToken(audience string, user User, expires time.Time) (string, error) {
+	if oidcSigningKey == nil {
+		return "", errors.New("signing key unavailable")
+	}
+	now := time.Now()
+	subject := subjectForUser(user)
+	claims := jwt.MapClaims{
+		"iss":                oidcIssuer(),
+		"sub":                subject,
+		"aud":                audience,
+		"exp":                expires.Unix(),
+		"iat":                now.Unix(),
+		"auth_time":          now.Unix(),
+		"preferred_username": strings.TrimSpace(user.Username),
+	}
+	if user.Email.Valid && strings.TrimSpace(user.Email.String) != "" {
+		email := strings.TrimSpace(user.Email.String)
+		claims["email"] = email
+		claims["email_verified"] = true
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = oidcSigningKeyID
+	signed, err := token.SignedString(oidcSigningKey)
+	if err != nil {
+		return "", err
+	}
+	return signed, nil
+}
+
+func subjectForUser(user User) string {
+	if user.MediaUUID.Valid && strings.TrimSpace(user.MediaUUID.String) != "" {
+		return strings.TrimSpace(user.MediaUUID.String)
+	}
+	return fmt.Sprintf("user-%d", user.ID)
+}
+
+func subtleConstantTimeCompare(a, b string) int {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b))
 }

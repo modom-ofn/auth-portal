@@ -22,6 +22,7 @@ import (
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
 	"auth-portal/configstore"
 	"auth-portal/health"
+	"auth-portal/oauth"
 	"auth-portal/providers"
 	"golang.org/x/time/rate"
 )
@@ -50,6 +51,7 @@ var (
 	oidcSigningKeyPath                     = strings.TrimSpace(os.Getenv("OIDC_SIGNING_KEY_PATH"))
 	oidcSigningKeyPEM                      = strings.TrimSpace(os.Getenv("OIDC_SIGNING_KEY"))
 	oidcIssuerOverride                     = strings.TrimSpace(os.Getenv("OIDC_ISSUER"))
+	oauthService                           oauth.Service
 
 	// MFA configuration
 	mfaIssuer             = envOr("MFA_ISSUER", "AuthPortal")
@@ -172,6 +174,13 @@ func main() {
 	}
 	applyRuntimeConfig(runtimeCfg)
 
+	oauthService = oauth.Service{
+		DB:              db,
+		AuthCodeTTL:     5 * time.Minute,
+		AccessTokenTTL:  sessionTTL,
+		RefreshTokenTTL: 30 * 24 * time.Hour,
+	}
+
 	if err := bootstrapAdminUsers(); err != nil {
 		log.Printf("Admin bootstrap encountered issues: %v", err)
 	}
@@ -258,6 +267,13 @@ func main() {
 
 	r.Handle("/mfa/enroll", enrollmentPageGuard(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
 	r.Handle("/mfa/enroll/status", enrollmentAPIGuard(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
+
+	// OIDC discovery & flow endpoints
+	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
+	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
+	r.Handle("/oidc/authorize", authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
+	r.HandleFunc("/oidc/token", oidcTokenHandler).Methods("POST")
+	r.HandleFunc("/oidc/userinfo", oidcUserinfoHandler).Methods("GET")
 
 	// Provider routes (v2 adapter wraps legacy providers and returns responses we write).
 	v2 := providers.AdaptV2(currentProvider)
