@@ -381,6 +381,11 @@ func main() {
 	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
 	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
 	adminAPI.Handle("/config/history/{section}", adminProtected(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
+	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
+	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
+	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientDelete))).Methods("DELETE")
+	adminAPI.Handle("/oauth/clients/{id}/rotate-secret", adminProtected(http.HandlerFunc(adminOAuthClientRotateSecret))).Methods("POST")
 	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
 
 	// --- Health endpoints ---

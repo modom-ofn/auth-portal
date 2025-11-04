@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"auth-portal/configstore"
+	"auth-portal/oauth"
 )
 
 type adminConfigSectionProviders struct {
@@ -57,6 +59,34 @@ type adminConfigHistoryResponse struct {
 	OK      bool                      `json:"ok"`
 	Section string                    `json:"section"`
 	Entries []adminConfigHistoryEntry `json:"entries"`
+}
+
+type adminOAuthClient struct {
+	ClientID      string    `json:"clientId"`
+	Name          string    `json:"name"`
+	RedirectURIs  []string  `json:"redirectUris"`
+	Scopes        []string  `json:"scopes"`
+	GrantTypes    []string  `json:"grantTypes"`
+	ResponseTypes []string  `json:"responseTypes"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+type adminOAuthClientsResponse struct {
+	OK      bool               `json:"ok"`
+	Clients []adminOAuthClient `json:"clients"`
+}
+
+type adminOAuthClientResponse struct {
+	OK           bool             `json:"ok"`
+	Client       adminOAuthClient `json:"client"`
+	ClientSecret string           `json:"clientSecret,omitempty"`
+}
+
+type adminOAuthClientRequest struct {
+	Name         string   `json:"name"`
+	RedirectURIs []string `json:"redirectUris"`
+	Scopes       []string `json:"scopes"`
 }
 
 func adminConfigGetHandler(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +259,135 @@ func adminConfigHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
+func adminOAuthClientsList(w http.ResponseWriter, r *http.Request) {
+	clients, err := oauthService.ListClients(r.Context())
+	if err != nil {
+		log.Printf("admin oauth list: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client list failed"})
+		return
+	}
+	out := make([]adminOAuthClient, 0, len(clients))
+	for _, c := range clients {
+		out = append(out, mapOAuthClient(c))
+	}
+	respondJSON(w, http.StatusOK, adminOAuthClientsResponse{
+		OK:      true,
+		Clients: out,
+	})
+}
+
+func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		return
+	}
+	var req adminOAuthClientRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		return
+	}
+	payload, err := sanitizeOAuthClientRequest(req)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	client, secret, err := oauthService.CreateClient(r.Context(), payload.Name, payload.RedirectURIs, payload.Scopes)
+	if err != nil {
+		log.Printf("admin oauth create: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client create failed"})
+		return
+	}
+	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
+		OK:           true,
+		Client:       mapOAuthClient(client),
+		ClientSecret: secret,
+	})
+}
+
+func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		return
+	}
+	clientID := strings.TrimSpace(mux.Vars(r)["id"])
+	if clientID == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "client id required"})
+		return
+	}
+	var req adminOAuthClientRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		return
+	}
+	payload, err := sanitizeOAuthClientRequest(req)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	client, err := oauthService.UpdateClient(r.Context(), clientID, payload.Name, payload.RedirectURIs, payload.Scopes)
+	if err != nil {
+		if errors.Is(err, oauth.ErrClientNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "client not found"})
+			return
+		}
+		log.Printf("admin oauth update: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client update failed"})
+		return
+	}
+	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
+		OK:     true,
+		Client: mapOAuthClient(client),
+	})
+}
+
+func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		return
+	}
+	clientID := strings.TrimSpace(mux.Vars(r)["id"])
+	if clientID == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "client id required"})
+		return
+	}
+	secret, err := oauthService.RotateClientSecret(r.Context(), clientID)
+	if err != nil {
+		if errors.Is(err, oauth.ErrClientNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "client not found"})
+			return
+		}
+		log.Printf("admin oauth rotate: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "secret rotation failed"})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"clientSecret": secret,
+	})
+}
+
+func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		return
+	}
+	clientID := strings.TrimSpace(mux.Vars(r)["id"])
+	if clientID == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "client id required"})
+		return
+	}
+	if err := oauthService.DeleteClient(r.Context(), clientID); err != nil {
+		if errors.Is(err, oauth.ErrClientNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "client not found"})
+			return
+		}
+		log.Printf("admin oauth delete: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client delete failed"})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func adminPageHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := currentRuntimeConfig()
 	render(w, "admin.html", map[string]any{
@@ -267,6 +426,65 @@ func sectionFromKey(key string) (configstore.Section, error) {
 	default:
 		return "", errors.New("unknown section")
 	}
+}
+
+func mapOAuthClient(c oauth.Client) adminOAuthClient {
+	return adminOAuthClient{
+		ClientID:      c.ClientID,
+		Name:          strings.TrimSpace(c.Name),
+		RedirectURIs:  append([]string(nil), c.RedirectURIs...),
+		Scopes:        append([]string(nil), c.Scopes...),
+		GrantTypes:    append([]string(nil), c.GrantTypes...),
+		ResponseTypes: append([]string(nil), c.ResponseTypes...),
+		CreatedAt:     c.CreatedAt.UTC(),
+		UpdatedAt:     c.UpdatedAt.UTC(),
+	}
+}
+
+func sanitizeOAuthClientRequest(req adminOAuthClientRequest) (adminOAuthClientRequest, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return adminOAuthClientRequest{}, errors.New("name is required")
+	}
+	redirects := normalizeAdminStringList(req.RedirectURIs)
+	if len(redirects) == 0 {
+		return adminOAuthClientRequest{}, errors.New("at least one redirect URI is required")
+	}
+	for _, uri := range redirects {
+		parsed, err := url.Parse(uri)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return adminOAuthClientRequest{}, fmt.Errorf("invalid redirect URI: %s", uri)
+		}
+	}
+	scopes := normalizeAdminStringList(req.Scopes)
+	if len(scopes) == 0 {
+		scopes = []string{"openid", "profile", "email"}
+	}
+	return adminOAuthClientRequest{
+		Name:         name,
+		RedirectURIs: redirects,
+		Scopes:       scopes,
+	}, nil
+}
+
+func normalizeAdminStringList(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+ 	}
+	set := make(map[string]struct{}, len(values))
+	for _, val := range values {
+		val = strings.TrimSpace(val)
+		if val == "" {
+			continue
+		}
+		set[val] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for val := range set {
+		out = append(out, val)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func normalizeProvidersConfig(cfg *ProvidersConfig) {
@@ -345,3 +563,4 @@ func validateMFAConfig(cfg MFAConfig) error {
 	}
 	return nil
 }
+

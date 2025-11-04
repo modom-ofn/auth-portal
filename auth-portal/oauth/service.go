@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ var (
 	ErrTokenNotFound   = errors.New("oauth: token not found")
 	ErrTokenExpired    = errors.New("oauth: token expired")
 	ErrTokenRevoked    = errors.New("oauth: token revoked")
+	ErrConsentRequired = errors.New("oauth: consent required")
 )
 
 const (
@@ -109,7 +112,210 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	client.Scopes = scopes
 	client.GrantTypes = grantTypes
 	client.ResponseTypes = responseTypes
-	return client, nil
+	return sanitizeClient(client), nil
+}
+
+func (s Service) ListClients(ctx context.Context) ([]Client, error) {
+	rows, err := s.DB.QueryContext(ctx, `
+SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+  FROM oauth_clients
+ ORDER BY created_at ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var clients []Client
+	for rows.Next() {
+		var (
+			client        Client
+			redirectURIs  pq.StringArray
+			scopes        pq.StringArray
+			grantTypes    pq.StringArray
+			responseTypes pq.StringArray
+		)
+		if err := rows.Scan(
+			&client.ClientID,
+			&client.ClientSecret,
+			&client.Name,
+			&redirectURIs,
+			&scopes,
+			&grantTypes,
+			&responseTypes,
+			&client.CreatedAt,
+			&client.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		client.RedirectURIs = redirectURIs
+		client.Scopes = scopes
+		client.GrantTypes = grantTypes
+		client.ResponseTypes = responseTypes
+		clients = append(clients, sanitizeClient(client))
+	}
+	return clients, rows.Err()
+}
+
+func (s Service) CreateClient(ctx context.Context, name string, redirectURIs, scopes []string) (Client, string, error) {
+	redirects, err := normalizeRedirectURIs(redirectURIs)
+	if err != nil {
+		return Client{}, "", err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Client{}, "", errors.New("oauth: name is required")
+	}
+	normScopes := normalizeScopes(scopes)
+	clientID, err := generateOpaqueToken(24)
+	if err != nil {
+		return Client{}, "", err
+	}
+	secret, err := generateOpaqueToken(48)
+	if err != nil {
+		return Client{}, "", err
+	}
+	grantTypes := []string{"authorization_code", "refresh_token"}
+	responseTypes := []string{"code"}
+	now := time.Now().UTC()
+
+	var (
+		client        Client
+		redirectArr   pq.StringArray
+		scopesArr     pq.StringArray
+		grantArr      pq.StringArray
+		responseArr   pq.StringArray
+	)
+	if err := s.DB.QueryRowContext(ctx, `
+INSERT INTO oauth_clients (client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+RETURNING client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+`, clientID, secret, name, pq.StringArray(redirects), pq.StringArray(normScopes), pq.StringArray(grantTypes), pq.StringArray(responseTypes), now).Scan(
+		&client.ClientID,
+		&client.ClientSecret,
+		&client.Name,
+		&redirectArr,
+		&scopesArr,
+		&grantArr,
+		&responseArr,
+		&client.CreatedAt,
+		&client.UpdatedAt,
+	); err != nil {
+		return Client{}, "", err
+	}
+	client.RedirectURIs = redirectArr
+	client.Scopes = scopesArr
+	client.GrantTypes = grantArr
+	client.ResponseTypes = responseArr
+
+	return sanitizeClient(client), secret, nil
+}
+
+func (s Service) UpdateClient(ctx context.Context, clientID string, name string, redirectURIs, scopes []string) (Client, error) {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return Client{}, ErrClientNotFound
+	}
+	redirects, err := normalizeRedirectURIs(redirectURIs)
+	if err != nil {
+		return Client{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Client{}, errors.New("oauth: name is required")
+	}
+	normScopes := normalizeScopes(scopes)
+	now := time.Now().UTC()
+
+	var (
+		client        Client
+		redirectArr   pq.StringArray
+		scopesArr     pq.StringArray
+		grantArr      pq.StringArray
+		responseArr   pq.StringArray
+	)
+	err = s.DB.QueryRowContext(ctx, `
+UPDATE oauth_clients
+   SET name = $2,
+       redirect_uris = $3,
+       scopes = $4,
+       updated_at = $5
+ WHERE client_id = $1
+RETURNING client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+`, clientID, name, pq.StringArray(redirects), pq.StringArray(normScopes), now).Scan(
+		&client.ClientID,
+		&client.ClientSecret,
+		&client.Name,
+		&redirectArr,
+		&scopesArr,
+		&grantArr,
+		&responseArr,
+		&client.CreatedAt,
+		&client.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Client{}, ErrClientNotFound
+		}
+		return Client{}, err
+	}
+	client.RedirectURIs = redirectArr
+	client.Scopes = scopesArr
+	client.GrantTypes = grantArr
+	client.ResponseTypes = responseArr
+	return sanitizeClient(client), nil
+}
+
+func (s Service) RotateClientSecret(ctx context.Context, clientID string) (string, error) {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return "", ErrClientNotFound
+	}
+	secret, err := generateOpaqueToken(48)
+	if err != nil {
+		return "", err
+	}
+	res, err := s.DB.ExecContext(ctx, `
+UPDATE oauth_clients
+   SET client_secret = $2,
+       updated_at = now()
+ WHERE client_id = $1
+`, clientID, secret)
+	if err != nil {
+		return "", err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if rows == 0 {
+		return "", ErrClientNotFound
+	}
+	return secret, nil
+}
+
+func (s Service) DeleteClient(ctx context.Context, clientID string) error {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return ErrClientNotFound
+	}
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM oauth_clients WHERE client_id = $1`, clientID)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrClientNotFound
+	}
+	return nil
+}
+
+func sanitizeClient(c Client) Client {
+	c.ClientSecret = sql.NullString{}
+	return c
 }
 
 func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int64, redirectURI string, scopes []string, codeChallenge, codeMethod string) (AuthCode, error) {
@@ -423,11 +629,32 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 	return tokenID, expires, nil
 }
 
-func normalizeScopes(scopes []string) []string {
-	if len(scopes) == 0 {
-		return []string{}
+func normalizeRedirectURIs(uris []string) ([]string, error) {
+	set := make(map[string]struct{}, len(uris))
+	for _, raw := range uris {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return nil, fmt.Errorf("oauth: invalid redirect URI %s", raw)
+		}
+		set[raw] = struct{}{}
 	}
-	set := make(map[string]struct{}, len(scopes))
+	if len(set) == 0 {
+		return nil, errors.New("oauth: at least one redirect URI is required")
+	}
+	out := make([]string, 0, len(set))
+	for uri := range set {
+		out = append(out, uri)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func normalizeScopes(scopes []string) []string {
+	set := make(map[string]struct{}, len(scopes)+1)
 	for _, scope := range scopes {
 		scope = strings.TrimSpace(scope)
 		if scope == "" {
@@ -435,6 +662,7 @@ func normalizeScopes(scopes []string) []string {
 		}
 		set[scope] = struct{}{}
 	}
+	set["openid"] = struct{}{}
 	out := make([]string, 0, len(set))
 	for scope := range set {
 		out = append(out, scope)
@@ -453,3 +681,4 @@ func generateOpaqueToken(size int) (string, error) {
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
+

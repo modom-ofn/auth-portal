@@ -21,6 +21,7 @@
             <button type="button" class="admin-tab active" data-section="providers">Providers</button>
             <button type="button" class="admin-tab" data-section="security">Security</button>
             <button type="button" class="admin-tab" data-section="mfa">MFA</button>
+            <button type="button" class="admin-tab" data-section="oauth">OAuth Clients</button>
         </aside>
 
         <section class="admin-content">
@@ -38,11 +39,55 @@
                     </div>
                 </form>
 
-                <div class="panel history-panel">
+                <div id="history-panel" class="panel history-panel">
                     <h3>Recent Changes</h3>
                     <ul id="history-list" class="history-list">
                         <li>Loading…</li>
                     </ul>
+                </div>
+
+                <div id="oauth-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <h2>OAuth Clients</h2>
+                        <button type="button" id="oauth-clients-reload" class="ghost-btn">Refresh</button>
+                    </div>
+                    <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
+                    <div id="oauth-secret-banner" class="secret-banner" hidden></div>
+                    <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
+                    <table id="oauth-client-table" class="oauth-table" hidden>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Client ID</th>
+                                <th>Redirect URIs</th>
+                                <th>Scopes</th>
+                                <th>Updated</th>
+                                <th class="actions-col"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="oauth-client-rows"></tbody>
+                    </table>
+                    <form id="oauth-client-form" class="oauth-form" autocomplete="off">
+                        <input type="hidden" id="oauth-client-id">
+                        <div class="form-row">
+                            <label for="oauth-client-name">Display Name</label>
+                            <input id="oauth-client-name" type="text" required placeholder="Example Application">
+                        </div>
+                        <div class="form-row">
+                            <label for="oauth-client-redirects">Redirect URIs</label>
+                            <textarea id="oauth-client-redirects" rows="3" placeholder="https://example.com/callback" required></textarea>
+                            <span class="field-hint">Enter one URI per line.</span>
+                        </div>
+                        <div class="form-row">
+                            <label for="oauth-client-scopes">Scopes</label>
+                            <textarea id="oauth-client-scopes" rows="2" placeholder="openid profile email offline_access"></textarea>
+                            <span class="field-hint">Whitespace or newline separated. Defaults to <code>openid profile email</code>.</span>
+                        </div>
+                        <div class="oauth-form-actions">
+                            <button id="oauth-client-save" type="submit">Save Client</button>
+                            <button id="oauth-client-cancel" type="button" class="ghost-btn" hidden>Cancel Edit</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </section>
