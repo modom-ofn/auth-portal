@@ -1,0 +1,80 @@
+package main
+
+import (
+	"net/http/httptest"
+	"testing"
+
+	"auth-portal/oauth"
+	"github.com/DATA-DOG/go-sqlmock"
+)
+
+func TestFinishAuthorizeFlowSuccess(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	originalService := oauthService
+	defer func() { oauthService = originalService }()
+
+	oauthService = oauth.Service{DB: db}
+
+	user := User{ID: 7, Username: "tester"}
+	client := oauth.Client{
+		ClientID:     "client-123",
+		Name:         "Test App",
+		RedirectURIs: []string{"https://example.com/callback"},
+	}
+	redirectURI := "https://example.com/callback"
+	scopes := []string{"openid", "profile"}
+
+	mock.ExpectExec("INSERT INTO oauth_consents").
+		WithArgs(int64(user.ID), client.ClientID, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	mock.ExpectExec("INSERT INTO oauth_auth_codes").
+		WithArgs(sqlmock.AnyArg(), client.ClientID, int64(user.ID), sqlmock.AnyArg(), redirectURI, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req := httptest.NewRequest("GET", "/oidc/authorize", nil)
+	rr := httptest.NewRecorder()
+
+	finishAuthorizeFlow(rr, req, user, client, redirectURI, "xyz", scopes, "", "")
+
+	resp := rr.Result()
+	if resp.StatusCode != 302 {
+		t.Fatalf("expected redirect, got status %d", resp.StatusCode)
+	}
+	location := resp.Header.Get("Location")
+	if location == "" {
+		t.Fatalf("expected Location header")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestScopeDisplayList(t *testing.T) {
+	scopes := []string{"openid", "profile", "profile", "email"}
+	display := scopeDisplayList(scopes)
+	if len(display) != 3 {
+		t.Fatalf("expected 3 unique scopes, got %d", len(display))
+	}
+	expected := map[string]string{
+		"openid":  "Sign in with AuthPortal and share your unique identifier.",
+		"profile": "Allow access to your basic profile (username and display information).",
+		"email":   "Allow access to your email address.",
+	}
+	for _, scope := range display {
+		if want, ok := expected[scope.Name]; !ok {
+			t.Fatalf("unexpected scope %s", scope.Name)
+		} else if scope.Description != want {
+			t.Fatalf("scope %s description mismatch, got %q want %q", scope.Name, scope.Description, want)
+		}
+		delete(expected, scope.Name)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing scopes in display: %+v", expected)
+	}
+}

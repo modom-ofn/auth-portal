@@ -109,6 +109,19 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := query.Get("state")
+	promptRaw := strings.TrimSpace(query.Get("prompt"))
+	promptValues := strings.Fields(promptRaw)
+	promptNone := false
+	promptConsent := false
+	for _, value := range promptValues {
+		switch strings.ToLower(value) {
+		case "none":
+			promptNone = true
+		case "consent":
+			promptConsent = true
+		}
+	}
+
 	scopeRaw := strings.TrimSpace(query.Get("scope"))
 	if scopeRaw == "" {
 		scopeRaw = "openid"
@@ -155,29 +168,113 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := oauthService.RecordConsent(r.Context(), int64(user.ID), client.ClientID, scopes); err != nil {
-		log.Printf("oidc authorize: record consent failed for %s/%s: %v", user.Username, client.ClientID, err)
+	requireConsent := promptConsent
+	if !requireConsent {
+		hasConsent, err := oauthService.HasConsent(r.Context(), int64(user.ID), client.ClientID, scopes)
+		if err != nil {
+			log.Printf("oidc authorize: consent check failed for %s/%s: %v", user.Username, client.ClientID, err)
+			writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
+			return
+		}
+		requireConsent = !hasConsent
 	}
 
-	authCode, err := oauthService.CreateAuthCode(r.Context(), clientID, int64(user.ID), redirectURI, scopes, codeChallenge, codeMethod)
-	if err != nil {
-		log.Printf("oidc authorize: create code failed: %v", err)
-		writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
+	if requireConsent {
+		if promptNone {
+			writeOIDCRedirectError(w, r, redirectURI, state, "consent_required", "user interaction required")
+			return
+		}
+		renderConsentPage(w, consentTemplateData{
+			ClientDisplay:       clientDisplayName(client),
+			ClientID:            client.ClientID,
+			RedirectURI:         redirectURI,
+			State:               state,
+			Scope:               strings.Join(scopes, " "),
+			Scopes:              scopeDisplayList(scopes),
+			IncludeOffline:      containsScope(scopes, "offline_access"),
+			CodeChallenge:       codeChallenge,
+			CodeChallengeMethod: codeMethod,
+			Prompt:              promptRaw,
+		})
 		return
 	}
 
-	redirect, err := url.Parse(redirectURI)
-	if err != nil {
-		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "invalid redirect_uri")
+	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod)
+}
+
+func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	params := redirect.Query()
-	params.Set("code", authCode.Code)
-	if state != "" {
-		params.Set("state", state)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
 	}
-	redirect.RawQuery = params.Encode()
-	http.Redirect(w, r, redirect.String(), http.StatusFound)
+
+	decision := strings.ToLower(strings.TrimSpace(r.PostFormValue("decision")))
+	clientID := strings.TrimSpace(r.PostFormValue("client_id"))
+	redirectURI := strings.TrimSpace(r.PostFormValue("redirect_uri"))
+	state := r.PostFormValue("state")
+	scopeRaw := strings.TrimSpace(r.PostFormValue("scope"))
+	if scopeRaw == "" {
+		scopeRaw = "openid"
+	}
+	scopes := strings.Fields(scopeRaw)
+	if !containsScope(scopes, "openid") {
+		scopes = append(scopes, "openid")
+	}
+	codeChallenge := strings.TrimSpace(r.PostFormValue("code_challenge"))
+	codeMethod := strings.TrimSpace(r.PostFormValue("code_challenge_method"))
+	if codeChallenge != "" {
+		if codeMethod == "" {
+			codeMethod = "plain"
+		}
+		switch strings.ToUpper(codeMethod) {
+		case "PLAIN", "S256":
+		default:
+			http.Error(w, "unsupported code method", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if decision != "allow" && decision != "deny" {
+		http.Error(w, "invalid decision", http.StatusBadRequest)
+		return
+	}
+	if clientID == "" || redirectURI == "" {
+		http.Error(w, "client and redirect required", http.StatusBadRequest)
+		return
+	}
+
+	uuid := uuidFrom(r.Context())
+	if uuid == "" {
+		http.Error(w, "session required", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := getUserByUUIDPreferred(uuid)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user not found")
+		return
+	}
+
+	client, err := oauthService.GetClient(r.Context(), clientID)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "unauthorized_client", "client not registered")
+		return
+	}
+	if !clientAllowsRedirect(client, redirectURI) {
+		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "redirect_uri is not registered")
+		return
+	}
+
+	if decision == "deny" {
+		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user denied the request")
+		return
+	}
+
+	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod)
 }
 
 func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
@@ -455,6 +552,96 @@ func clientAllowsRedirect(client oauth.Client, redirect string) bool {
 		}
 	}
 	return false
+}
+
+type consentTemplateData struct {
+	ClientDisplay       string
+	ClientID            string
+	RedirectURI         string
+	State               string
+	Scope               string
+	Scopes              []consentScopeDisplay
+	IncludeOffline      bool
+	CodeChallenge       string
+	CodeChallengeMethod string
+	Prompt              string
+}
+
+type consentScopeDisplay struct {
+	Name        string
+	Description string
+}
+
+func renderConsentPage(w http.ResponseWriter, data consentTemplateData) {
+	render(w, "oidc_consent.html", data)
+}
+
+func clientDisplayName(client oauth.Client) string {
+	if name := strings.TrimSpace(client.Name); name != "" {
+		return name
+	}
+	return client.ClientID
+}
+
+func scopeDisplayList(scopes []string) []consentScopeDisplay {
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]consentScopeDisplay, 0, len(scopes))
+	for _, scope := range scopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if _, ok := seen[scope]; ok {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, consentScopeDisplay{
+			Name:        scope,
+			Description: scopeDescription(scope),
+		})
+	}
+	return out
+}
+
+func scopeDescription(scope string) string {
+	switch scope {
+	case "openid":
+		return "Sign in with AuthPortal and share your unique identifier."
+	case "profile":
+		return "Allow access to your basic profile (username and display information)."
+	case "email":
+		return "Allow access to your email address."
+	case "offline_access":
+		return "Allow the app to refresh tokens without you signing in again."
+	default:
+		return "Requested scope: " + scope
+	}
+}
+
+func finishAuthorizeFlow(w http.ResponseWriter, r *http.Request, user User, client oauth.Client, redirectURI, state string, scopes []string, codeChallenge, codeMethod string) {
+	if err := oauthService.RecordConsent(r.Context(), int64(user.ID), client.ClientID, scopes); err != nil {
+		log.Printf("oidc authorize: record consent failed for %s/%s: %v", user.Username, client.ClientID, err)
+	}
+
+	authCode, err := oauthService.CreateAuthCode(r.Context(), client.ClientID, int64(user.ID), redirectURI, scopes, codeChallenge, codeMethod)
+	if err != nil {
+		log.Printf("oidc authorize: create code failed: %v", err)
+		writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
+		return
+	}
+
+	redirect, err := url.Parse(redirectURI)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "invalid redirect_uri")
+		return
+	}
+	params := redirect.Query()
+	params.Set("code", authCode.Code)
+	if state != "" {
+		params.Set("state", state)
+	}
+	redirect.RawQuery = params.Encode()
+	http.Redirect(w, r, redirect.String(), http.StatusFound)
 }
 
 func containsScope(scopes []string, target string) bool {

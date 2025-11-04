@@ -272,6 +272,7 @@ func main() {
 	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
 	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
 	r.Handle("/oidc/authorize", authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
+	r.Handle("/oidc/authorize/decision", authMiddleware(requireSameOrigin(http.HandlerFunc(oidcAuthorizeDecisionHandler)))).Methods("POST")
 	r.HandleFunc("/oidc/token", oidcTokenHandler).Methods("POST")
 	r.HandleFunc("/oidc/userinfo", oidcUserinfoHandler).Methods("GET")
 
