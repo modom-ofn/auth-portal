@@ -4,8 +4,22 @@ on:
   push:
     branches: [ "main", "dev" ]
     tags: [ "v*" ]
+    paths:
+      - "auth-portal/**"
+      - ".github/workflows/build-and-publish-auth-portal.yml"
+      - "VERSION"
+      - "MAKEFILE"
+      - "auth-portal-full-stack-dev_docker-compose.yml"
+      - "auth-portal-full-stack-dev.env"
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "auth-portal/**"
+      - ".github/workflows/build-and-publish-auth-portal.yml"
+      - "VERSION"
+      - "MAKEFILE"
+      - "auth-portal-full-stack-dev_docker-compose.yml"
+      - "auth-portal-full-stack-dev.env"
 
 jobs:
   docker:
