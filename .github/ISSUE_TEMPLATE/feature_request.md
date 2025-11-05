@@ -1,20 +1,36 @@
 ---
 name: Feature request
-about: Suggest an idea or new feature for this project
-title: ''
+about: Share an idea or enhancement that would improve AuthPortal
+title: '[Feature]: '
 labels: enhancement
 assignees: modom-ofn
 
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+**Checklist**
+- [ ] I searched existing issues and roadmap discussions for this request
+- [ ] I described the problem, not just the proposed change
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+**Problem Statement**
+What pain point or workflow are you trying to solve? Be as specific as possible.
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+**Desired Outcome**
+Describe the successful result or user experience you need.
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+**Proposed Solution (optional)**
+Outline any implementation concepts you have in mind (UI, API, config, etc.).
+
+**Success Criteria / Acceptance Tests**
+List measurable checks (user story scenarios, API responses, etc.) that signal this is done.
+
+**Impact / Priority**
+How urgent or valuable is this? Who benefits? Mention customer commitments or deadlines if applicable.
+
+**Dependencies / Blockers**
+Other features, services, or approvals required before this can ship.
+
+**Alternatives Considered**
+Other approaches you evaluated and why they are less suitable.
+
+**Additional Context**
+Mockups, logs, references, or related tickets that provide more detail.

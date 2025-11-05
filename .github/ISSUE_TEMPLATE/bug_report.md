@@ -1,38 +1,40 @@
 ---
 name: Bug report
-about: Create a bug report to help us improve
-title: ''
+about: Tell us about something that is broken so we can fix it
+title: '[Bug]: '
 labels: bug
 assignees: modom-ofn
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**Checklist**
+- [ ] I searched existing issues and discussions for this problem
+- [ ] I am running the latest AuthPortal release (or I noted the specific version below)
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Summary**
+Clear, one-sentence description of the bug.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+**Steps to Reproduce**
+Numbered steps that reliably trigger the issue. Include sample requests, payloads, or UI actions.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Expected Result**
+What you thought would happen.
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+**Actual Result**
+What actually happened, including any on-screen errors.
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+**Environment**
+- AuthPortal version/commit: [e.g. v2.0.3 or 3533cef]
+- Install method: [Docker Compose | binary | Kubernetes | other]
+- Database backend: [Postgres 15 | other]
+- External providers configured: [Plex | Jellyfin | Emby | none]
+- Browser (if UI): [e.g. Chrome 122 on macOS 14]
 
-**Additional context**
-Add any other context about the problem here.
+**Recent Changes**
+Notable configuration edits, dependency upgrades, or infrastructure changes made shortly before the bug started.
+
+**Logs / Diagnostics**
+Relevant server logs, stack traces, HTTP responses, or trace IDs. Redact secrets before posting.
+
+**Additional Context**
+Anything else that might help us debug (screenshots, config snippets, related issues, etc.).
