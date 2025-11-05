@@ -54,7 +54,9 @@ AuthPortal authenticates users directly against their connected media server acc
 
 ## Table of Contents
 
+- [Features](#features)
 - [What's New in v2.0.3](#whats-new-in-v203)
+- [ldap-sync](#ldap-sync)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Admin Console & Config Store (new in v2.0.3)](#admin-console--config-store-new-in-v203)
@@ -73,9 +75,9 @@ AuthPortal authenticates users directly against their connected media server acc
 - [How it works](#how-it-works)
 - [Customization](#customization)
 - [Security best practices](#security-best-practices)
-- [Project structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
+- [Upgrade Guide (from < v2.0.2)](#upgrade-guide-from--v202)
 
 ---
 
@@ -441,7 +443,8 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 - Rate limits: login endpoints share a per-IP limiter (burst 5, ~10 req/min); MFA enrollment/challenge use a tighter burst 3, ~5 req/min (tune in `main.go`).
 - CSRF-lite: POST routes require same-origin via Origin/Referer.
 - Headers:
-  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.
+  Adds `Strict-Transport-Security: max-age=86400; includeSubDomains; preload` when `APP_BASE_URL` is HTTPS.
   Popup pages set a narrowed CSP that allows the tiny inline closing script.
 
 ---
@@ -512,31 +515,59 @@ DEBUG plex: resources match via machine id
 
 ## HTTP Routes
 
-- `GET /`  login page (auto-redirects to `/home` if session present).
-- `POST /auth/start-web`  JSON `{ authUrl }` (per-IP rate limited).
-  - Plex: returns the Plex auth URL for the PIN flow.
-  - Jellyfin/Emby: returns `/auth/forward?jellyfin=1` or `/auth/forward?emby=1`.
-- `GET|POST /auth/forward`  popup finisher for all providers.
-  - Plex: completes PIN polling and closes the popup.
-  - Jellyfin/Emby: GET serves the form; POST authenticates and closes the popup.
-- `GET /auth/poll`  Plex PIN poller (rate limited, JSON `{ status }`).
-- `GET /mfa/challenge`  HTML challenge page shown when MFA is required.
-- `POST /mfa/challenge/verify`  JSON `{ ok, redirect, recoveryUsed, remainingRecoveryCodes }`; rotates the session cookie on success.
-- `GET /mfa/enroll`  HTML enrollment UI for authenticated users.
-- `GET /mfa/enroll/status`  JSON summary of enrollment state (enabled/pending timestamps, remaining recovery codes).
-- `POST /mfa/enroll/start`  JSON `{ ok, secret, otpauth, digits, period, drift, enforced, previouslyEnabled }` to seed authenticator apps.
-- `POST /mfa/enroll/verify`  JSON `{ ok, recoveryCodes }` confirming enrollment and returning fresh recovery codes.
-- `GET /me`  JSON `{ username, uuid }` when logged in.
-- `GET /home`  renders authorized or unauthorized view based on `IsAuthorized`.
-- `POST /logout`  clears cookies; same-origin required.
-- `GET /whoami`  JSON: normalized identity and session metadata.
-- `GET /healthz`  health check.
-- `GET /readyz`  readiness (DB).
-- `GET /static/*`  static assets.
+- **Core portal**
+  - `GET /`  login page (auto-redirects to `/home` if session present).
+  - `GET /home`  renders authorized or unauthorized view based on `IsAuthorized`.
+  - `GET /whoami`  JSON: normalized identity and session metadata.
+  - `GET /me`  JSON `{ username, uuid }` when logged in.
+  - `POST /logout`  clears cookies; same-origin required.
+  - `GET /static/*`  static assets.
+
+- **Authentication**
+  - `POST /auth/start-web`  JSON `{ authUrl }` (per-IP rate limited).
+    - Plex: returns the Plex auth URL for the PIN flow.
+    - Jellyfin/Emby: returns `/auth/forward?jellyfin=1` or `/auth/forward?emby=1`.
+  - `GET|POST /auth/forward`  popup finisher for all providers.
+    - Plex: completes PIN polling and closes the popup.
+    - Jellyfin/Emby: GET serves the form; POST authenticates and closes the popup.
+  - `GET /auth/poll`  Plex PIN poller (rate limited, JSON `{ status }`).
+
+- **Multi-factor authentication**
+  - `GET /mfa/challenge`  HTML challenge page shown when MFA is required.
+  - `POST /mfa/challenge/verify`  JSON `{ ok, redirect, recoveryUsed, remainingRecoveryCodes }`; rotates the session cookie on success.
+  - `GET /mfa/enroll`  HTML enrollment UI for authenticated users.
+  - `GET /mfa/enroll/status`  JSON summary of enrollment state (enabled/pending timestamps, remaining recovery codes).
+  - `POST /mfa/enroll/start`  JSON `{ ok, secret, otpauth, digits, period, drift, enforced, previouslyEnabled }` to seed authenticator apps.
+  - `POST /mfa/enroll/verify`  JSON `{ ok, recoveryCodes }` confirming enrollment and returning fresh recovery codes.
+
+- **OAuth 2.1 / OIDC**
+  - `GET /.well-known/openid-configuration`  discovery document.
+  - `GET /oidc/jwks.json`  JWKS for RS256 validation.
+  - `GET /oidc/authorize`  authorization-code endpoint (requires authenticated portal session).
+  - `POST /oidc/authorize/decision`  consent form postback (`allow`/`deny`).
+  - `POST /oidc/token`  token exchange for authorization code + refresh grants.
+  - `GET /oidc/userinfo`  userinfo endpoint (bearer token required).
+
+- **Admin console & APIs**
+  - `GET /admin`  admin SPA for bootstrap/admin users.
+  - `GET /api/admin/config`  returns Providers/Security/MFA JSON bundle.
+  - `PUT /api/admin/config/{section}`  update a configuration section with optimistic concurrency.
+  - `GET /api/admin/config/history/{section}`  fetch prior revisions.
+  - `GET /api/admin/oauth/clients`  list registered OAuth clients.
+  - `POST /api/admin/oauth/clients`  create a new client.
+  - `PUT /api/admin/oauth/clients/{id}`  update client metadata.
+  - `DELETE /api/admin/oauth/clients/{id}`  delete a client.
+  - `POST /api/admin/oauth/clients/{id}/rotate-secret`  rotate client secret and return the new value.
+
+- **Health & readiness**
+  - `GET /healthz`  liveness check.
+  - `GET /readyz`  readiness (DB connectivity).
+  - `GET /startupz`  startup probe sharing the same checks as readiness.
 
 ---
 
 
+## Frontend Bits
 
 - **Styles**: `static/styles.css` (icons clamped to 22"22 inside the sign-in button)
 - **Login script**: `static/login.js`
@@ -582,14 +613,14 @@ DEBUG plex: resources match via machine id
 
 ---
 
-##  Contributing
+## Contributing
 
 Issues and PRs welcome:  
 https://github.com/modom-ofn/auth-portal/issues
 
 ---
 
-##  License
+## License
 
 GPL-3.0  https://opensource.org/license/lgpl-3-0
 
