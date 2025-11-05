@@ -4,13 +4,14 @@
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Go Version](https://img.shields.io/badge/Go-1.25.3%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
+[![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
 
 AuthPortal authenticates users directly against their connected media server accounts, seals the server tokens for reuse, and manages session lifecycle via HTTP-only cookies. Authorized users are directed to their personalized home page, while unrecognized users are served a restricted or “guest” view.
 
 > [!IMPORTANT]
-> **Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
+> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from plex, Emby, or Jellyfin.
 
 > [!NOTE]
 > - Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
@@ -643,7 +644,7 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 
 > [!IMPORTANT]
-> **Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
+> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from plex, Emby, or Jellyfin.
 
 ---
 
