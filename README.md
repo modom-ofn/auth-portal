@@ -2,7 +2,7 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.23.12%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.25.3%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway for Plex, Jellyfin, or Emby.
@@ -61,7 +61,7 @@ It can optionally be expanded to include LDAP integration for downstream app req
 
 ## What's New in v2.0.1
 
-- **Security:** upgraded Go to 1.23.12 (CE-2025-47906). Rebuild images to pick up the patched toolchain.
+- **Security:** upgraded Go to 1.25.3 to pick up the latest stdlib security fixes. Rebuild images to pick up the patched toolchain.
 - **New endpoint:** `GET /whoami` returns normalized identity plus session metadata (`issuedAt`, `expiry`).
 - **Multi-provider identities:** new `identities` table with automatic backfill; reads prefer identities and fall back to legacy `users` when needed.
 - **Provider layer refactor:** return-value API, structured outcomes (cookies set in app), minimal `Health()` checks, shared HTTP helpers with one-retry on transient errors.
@@ -415,8 +415,8 @@ CREATE TABLE IF NOT EXISTS pins (
 
 ## Build & Images
 
-- Go: `1.23.12` on `alpine:3.21`.
-- Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.23`, builds with:
+- Go: `1.25.3` on `alpine:3.21`.
+- Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.25`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
 - Runtime: `alpine:3.21`, installs CA certs + tzdata, runs as non-root `uid 10001`.
 
@@ -569,7 +569,7 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ## Upgrade Guide (v2.0.1)
 
-1) Rebuild all images to pull `golang:1.23.12-alpine3.21`.
+1) Rebuild all images to pull `golang:1.25.3-alpine3.21`.
 2) No manual DB migration required: schema/backfill for `identities` runs at startup.
 3) Verify deployment:
    - Sign in via your media provider.
