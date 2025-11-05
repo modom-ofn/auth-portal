@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"sort"
 	"strconv"
@@ -33,12 +34,18 @@ type adminConfigSectionMFA struct {
 	Config  MFAConfig `json:"config"`
 }
 
+type adminConfigSectionAppSettings struct {
+	Version int64             `json:"version"`
+	Config  AppSettingsConfig `json:"config"`
+}
+
 type adminConfigResponse struct {
-	OK        bool                        `json:"ok"`
-	Providers adminConfigSectionProviders `json:"providers"`
-	Security  adminConfigSectionSecurity  `json:"security"`
-	MFA       adminConfigSectionMFA       `json:"mfa"`
-	LoadedAt  time.Time                   `json:"loadedAt"`
+	OK          bool                          `json:"ok"`
+	Providers   adminConfigSectionProviders   `json:"providers"`
+	Security    adminConfigSectionSecurity    `json:"security"`
+	MFA         adminConfigSectionMFA         `json:"mfa"`
+	AppSettings adminConfigSectionAppSettings `json:"appSettings"`
+	LoadedAt    time.Time                     `json:"loadedAt"`
 }
 
 type adminConfigUpdateRequest struct {
@@ -163,6 +170,19 @@ func adminConfigUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		normalizeMFAConfig(&cfg)
 		if err := validateMFAConfig(cfg); err != nil {
+			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		payload = cfg
+		normalized = cfg
+	case configstore.SectionAppSettings:
+		var cfg AppSettingsConfig
+		if err := json.Unmarshal(req.Config, &cfg); err != nil {
+			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid app settings config"})
+			return
+		}
+		normalizeAppSettingsConfig(&cfg)
+		if err := validateAppSettingsConfig(cfg); err != nil {
 			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
@@ -411,6 +431,10 @@ func buildAdminConfigResponse(cfg RuntimeConfig) adminConfigResponse {
 			Version: cfg.MFAVersion,
 			Config:  cfg.MFA,
 		},
+		AppSettings: adminConfigSectionAppSettings{
+			Version: cfg.AppSettingsVersion,
+			Config:  cfg.AppSettings,
+		},
 		LoadedAt: cfg.loadedAt(),
 	}
 }
@@ -423,6 +447,8 @@ func sectionFromKey(key string) (configstore.Section, error) {
 		return configstore.SectionSecurity, nil
 	case "mfa":
 		return configstore.SectionMFA, nil
+	case "app-settings":
+		return configstore.SectionAppSettings, nil
 	default:
 		return "", errors.New("unknown section")
 	}
@@ -470,7 +496,7 @@ func sanitizeOAuthClientRequest(req adminOAuthClientRequest) (adminOAuthClientRe
 func normalizeAdminStringList(values []string) []string {
 	if len(values) == 0 {
 		return []string{}
- 	}
+	}
 	set := make(map[string]struct{}, len(values))
 	for _, val := range values {
 		val = strings.TrimSpace(val)
@@ -519,6 +545,14 @@ func normalizeMFAConfig(cfg *MFAConfig) {
 	cfg.Issuer = strings.TrimSpace(firstNonEmpty(cfg.Issuer, defaults.Issuer))
 }
 
+func normalizeAppSettingsConfig(cfg *AppSettingsConfig) {
+	defaults := defaultAppSettingsConfig()
+	cfg.LoginExtraLinkURL = strings.TrimSpace(firstNonEmpty(cfg.LoginExtraLinkURL, defaults.LoginExtraLinkURL))
+	cfg.LoginExtraLinkText = strings.TrimSpace(firstNonEmpty(cfg.LoginExtraLinkText, defaults.LoginExtraLinkText))
+	cfg.UnauthRequestEmail = strings.TrimSpace(firstNonEmpty(cfg.UnauthRequestEmail, defaults.UnauthRequestEmail))
+	cfg.UnauthRequestSubject = strings.TrimSpace(firstNonEmpty(cfg.UnauthRequestSubject, defaults.UnauthRequestSubject))
+}
+
 func validateProvidersConfig(cfg ProvidersConfig) error {
 	switch cfg.Active {
 	case "plex", "emby", "jellyfin":
@@ -564,3 +598,19 @@ func validateMFAConfig(cfg MFAConfig) error {
 	return nil
 }
 
+func validateAppSettingsConfig(cfg AppSettingsConfig) error {
+	link := strings.TrimSpace(cfg.LoginExtraLinkURL)
+	if link != "" && !strings.HasPrefix(link, "/") {
+		u, err := url.Parse(link)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return errors.New("login extra link URL must be a relative path or absolute URL")
+		}
+	}
+	email := strings.TrimSpace(cfg.UnauthRequestEmail)
+	if email != "" {
+		if _, err := mail.ParseAddress(email); err != nil {
+			return fmt.Errorf("invalid unauth request email: %v", err)
+		}
+	}
+	return nil
+}

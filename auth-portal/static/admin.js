@@ -67,13 +67,18 @@
     return;
   }
 
-  const configSections = ['providers', 'security', 'mfa'];
-  const labels = { providers: 'Providers', security: 'Security', mfa: 'MFA' };
+  const configSections = ['providers', 'security', 'mfa', 'app-settings'];
+  const labels = {
+    providers: 'Providers',
+    security: 'Security',
+    mfa: 'MFA',
+    'app-settings': 'App Settings',
+  };
   let currentSection = 'providers';
 
   const state = {
-    data: { providers: null, security: null, mfa: null },
-    history: { providers: [], security: [], mfa: [] },
+    data: { providers: null, security: null, mfa: null, 'app-settings': null },
+    history: { providers: [], security: [], mfa: [], 'app-settings': [] },
     loadedAt: null,
   };
 
@@ -165,6 +170,23 @@
   "enforceForAllUsers": false
 }</code></pre>
         <p>After enabling enforcement, communicate the change so users enroll before their next sign-in.</p>
+      `,
+    },
+    'app-settings': {
+      title: 'App Settings Configuration',
+      body: `
+        <p>Customize small pieces of the user experience that do not belong to a specific provider or security setting.</p>
+        <ul>
+          <li><code>loginExtraLinkUrl</code> and <code>loginExtraLinkText</code> add an optional button to the authorized portal header. Leave either blank to fall back to the shipped defaults.</li>
+          <li><code>unauthRequestEmail</code> and <code>unauthRequestSubject</code> power the mailto link shown on the unauthorized page. Provide a valid email address so users can reach you; empty values revert to defaults.</li>
+        </ul>
+        <pre><code>{
+  "loginExtraLinkUrl": "/support",
+  "loginExtraLinkText": "Support",
+  "unauthRequestEmail": "help@example.com",
+  "unauthRequestSubject": "Request Access"
+}</code></pre>
+        <p>Relative URLs are allowed for the extra login link; absolute URLs must include a scheme such as <code>https://</code>.</p>
       `,
     },
   };
@@ -315,7 +337,7 @@
     }
   };
 
-  const backupDefaultSections = ['providers', 'security', 'mfa'];
+  const backupDefaultSections = ['providers', 'security', 'mfa', 'app-settings'];
 
   const getSelectedBackupSections = () => {
     if (!backupSectionCheckboxes.length) {
@@ -804,6 +826,7 @@
     state.data.providers = json.providers;
     state.data.security = json.security;
     state.data.mfa = json.mfa;
+    state.data['app-settings'] = json.appSettings || null;
     state.loadedAt = json.loadedAt;
     updateLoadedAt();
   };

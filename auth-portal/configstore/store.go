@@ -15,11 +15,12 @@ import (
 type Section string
 
 const (
-	SectionGeneral   Section = "general"
-	SectionProviders Section = "providers"
-	SectionSecurity  Section = "security"
-	SectionMFA       Section = "mfa"
-	SectionBackups   Section = "backups"
+	SectionGeneral     Section = "general"
+	SectionProviders   Section = "providers"
+	SectionSecurity    Section = "security"
+	SectionMFA         Section = "mfa"
+	SectionAppSettings Section = "app-settings"
+	SectionBackups     Section = "backups"
 
 	// SectionDocumentKey is the default key used to persist a full section document.
 	SectionDocumentKey = "__doc"

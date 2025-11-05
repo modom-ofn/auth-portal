@@ -55,6 +55,14 @@ type MFAConfig struct {
 	EnforceForAllUsers bool   `json:"enforceForAllUsers"`
 }
 
+// AppSettingsConfig captures miscellaneous portal presentation controls.
+type AppSettingsConfig struct {
+	LoginExtraLinkURL    string `json:"loginExtraLinkUrl"`
+	LoginExtraLinkText   string `json:"loginExtraLinkText"`
+	UnauthRequestEmail   string `json:"unauthRequestEmail"`
+	UnauthRequestSubject string `json:"unauthRequestSubject"`
+}
+
 // RuntimeConfig represents all typed configuration sections with revision metadata.
 type RuntimeConfig struct {
 	Providers        ProvidersConfig
@@ -66,13 +74,16 @@ type RuntimeConfig struct {
 	MFA        MFAConfig
 	MFAVersion int64
 
+	AppSettings        AppSettingsConfig
+	AppSettingsVersion int64
+
 	LoadedAt time.Time
 }
 
 var runtimeConfigValue atomic.Value
 
 func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
-	defaults := make(map[configstore.Section]json.RawMessage, 3)
+	defaults := make(map[configstore.Section]json.RawMessage, 4)
 
 	if raw, err := json.Marshal(defaultProvidersConfig()); err != nil {
 		return nil, err
@@ -90,6 +101,12 @@ func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
 		return nil, err
 	} else {
 		defaults[configstore.SectionMFA] = raw
+	}
+
+	if raw, err := json.Marshal(defaultAppSettingsConfig()); err != nil {
+		return nil, err
+	} else {
+		defaults[configstore.SectionAppSettings] = raw
 	}
 
 	return defaults, nil
@@ -146,6 +163,29 @@ func defaultMFAConfig() MFAConfig {
 	}
 }
 
+func defaultAppSettingsConfig() AppSettingsConfig {
+	cfg := AppSettingsConfig{
+		LoginExtraLinkURL:    strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_URL")),
+		LoginExtraLinkText:   strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_TEXT")),
+		UnauthRequestEmail:   strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_EMAIL")),
+		UnauthRequestSubject: strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_SUBJECT")),
+	}
+
+	if cfg.LoginExtraLinkURL == "" {
+		cfg.LoginExtraLinkURL = "/some-internal-app"
+	}
+	if cfg.LoginExtraLinkText == "" {
+		cfg.LoginExtraLinkText = "Open Internal App"
+	}
+	if cfg.UnauthRequestEmail == "" {
+		cfg.UnauthRequestEmail = "admin@example.com"
+	}
+	if cfg.UnauthRequestSubject == "" {
+		cfg.UnauthRequestSubject = "Request Access"
+	}
+	return cfg
+}
+
 func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 	if store == nil {
 		return RuntimeConfig{}, errors.New("configstore: store is nil")
@@ -173,12 +213,20 @@ func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 		return RuntimeConfig{}, err
 	}
 
+	var app AppSettingsConfig
+	aVersion, err := store.Section(configstore.SectionAppSettings, &app)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+
 	rc.Providers = providers
 	rc.ProvidersVersion = pVersion
 	rc.Security = security
 	rc.SecurityVersion = sVersion
 	rc.MFA = mfa
 	rc.MFAVersion = mVersion
+	rc.AppSettings = app
+	rc.AppSettingsVersion = aVersion
 
 	snap := store.Snapshot()
 	if !snap.LoadedAt.IsZero() {
@@ -192,9 +240,10 @@ func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 
 func applyRuntimeConfig(cfg RuntimeConfig) {
 	defaults := RuntimeConfig{
-		Providers: defaultProvidersConfig(),
-		Security:  defaultSecurityConfig(),
-		MFA:       defaultMFAConfig(),
+		Providers:   defaultProvidersConfig(),
+		Security:    defaultSecurityConfig(),
+		MFA:         defaultMFAConfig(),
+		AppSettings: defaultAppSettingsConfig(),
 	}
 
 	selectedProvider := strings.TrimSpace(cfg.Providers.Active)
@@ -256,6 +305,18 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	mfaEnforceForAllUsers = cfg.MFA.EnforceForAllUsers
 	ensureMFAConsistency()
 
+	loginExtraLinkURL = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.LoginExtraLinkURL, defaults.AppSettings.LoginExtraLinkURL))
+	cfg.AppSettings.LoginExtraLinkURL = loginExtraLinkURL
+	loginExtraLinkText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.LoginExtraLinkText, defaults.AppSettings.LoginExtraLinkText))
+	cfg.AppSettings.LoginExtraLinkText = loginExtraLinkText
+	unauthRequestEmail = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthRequestEmail, defaults.AppSettings.UnauthRequestEmail))
+	cfg.AppSettings.UnauthRequestEmail = unauthRequestEmail
+	unauthRequestSubject = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthRequestSubject, defaults.AppSettings.UnauthRequestSubject))
+	if unauthRequestSubject == "" {
+		unauthRequestSubject = defaults.AppSettings.UnauthRequestSubject
+	}
+	cfg.AppSettings.UnauthRequestSubject = unauthRequestSubject
+
 	if cfg.LoadedAt.IsZero() {
 		cfg.LoadedAt = time.Now().UTC()
 	}
@@ -269,10 +330,11 @@ func currentRuntimeConfig() RuntimeConfig {
 		}
 	}
 	return RuntimeConfig{
-		Providers: defaultProvidersConfig(),
-		Security:  defaultSecurityConfig(),
-		MFA:       defaultMFAConfig(),
-		LoadedAt:  time.Now().UTC(),
+		Providers:   defaultProvidersConfig(),
+		Security:    defaultSecurityConfig(),
+		MFA:         defaultMFAConfig(),
+		AppSettings: defaultAppSettingsConfig(),
+		LoadedAt:    time.Now().UTC(),
 	}
 }
 

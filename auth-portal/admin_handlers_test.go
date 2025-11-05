@@ -53,3 +53,25 @@ func TestNormalizeAdminStringList(t *testing.T) {
 		t.Fatalf("unexpected normalized list: %+v", normalized)
 	}
 }
+
+func TestValidateAppSettingsConfig(t *testing.T) {
+	cfg := AppSettingsConfig{
+		LoginExtraLinkURL:    "/docs",
+		LoginExtraLinkText:   "Docs",
+		UnauthRequestEmail:   "admin@example.com",
+		UnauthRequestSubject: "Need Access",
+	}
+	normalizeAppSettingsConfig(&cfg)
+	if err := validateAppSettingsConfig(cfg); err != nil {
+		t.Fatalf("expected valid config, got error: %v", err)
+	}
+
+	invalid := AppSettingsConfig{
+		LoginExtraLinkURL:  "ht!tp://bad",
+		UnauthRequestEmail: "not-an-email",
+	}
+	normalizeAppSettingsConfig(&invalid)
+	if err := validateAppSettingsConfig(invalid); err == nil {
+		t.Fatalf("expected validation error for invalid config")
+	}
+}

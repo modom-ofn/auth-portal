@@ -314,7 +314,7 @@ func (s *backupService) CreateManualBackup(ctx context.Context, sections []strin
 func (s *backupService) createBackup(ctx context.Context, sections []string, author string) (backupMetadata, error) {
 	validSections := normalizeBackupSections(sections)
 	if len(validSections) == 0 {
-		validSections = []string{"providers", "security", "mfa"}
+		validSections = []string{"providers", "security", "mfa", "app-settings"}
 	}
 
 	doc := backupDocument{
@@ -557,6 +557,18 @@ func decodeSectionPayload(key string, raw json.RawMessage) (any, error) {
 			return nil, err
 		}
 		return cfg, nil
+	case "app-settings":
+		var cfg AppSettingsConfig
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &cfg); err != nil {
+				return nil, err
+			}
+		}
+		normalizeAppSettingsConfig(&cfg)
+		if err := validateAppSettingsConfig(cfg); err != nil {
+			return nil, err
+		}
+		return cfg, nil
 	default:
 		return nil, errUnknownBackupSection
 	}
@@ -569,7 +581,7 @@ func defaultBackupSchedule() backupSchedule {
 		TimeOfDay: "02:00",
 		DayOfWeek: "sunday",
 		Minute:    0,
-		Sections:  []string{"providers", "security", "mfa"},
+		Sections:  []string{"providers", "security", "mfa", "app-settings"},
 		Retention: 30,
 	}
 }
@@ -625,7 +637,7 @@ func normalizeBackupSchedule(sched backupSchedule) (backupSchedule, error) {
 	}
 
 	if len(normalized.Sections) == 0 {
-		normalized.Sections = []string{"providers", "security", "mfa"}
+		normalized.Sections = []string{"providers", "security", "mfa", "app-settings"}
 	}
 	return normalized, nil
 }
@@ -638,7 +650,7 @@ func normalizeBackupSections(sections []string) []string {
 	for _, section := range sections {
 		key := strings.ToLower(strings.TrimSpace(section))
 		switch key {
-		case "providers", "security", "mfa":
+		case "providers", "security", "mfa", "app-settings":
 			set[key] = struct{}{}
 		}
 	}

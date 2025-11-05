@@ -7,11 +7,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"time"
 )
 
 // providerUI returns the provider key used by code ("plex"/"emby")
@@ -31,18 +30,19 @@ func providerUI() (key, display string) {
 	return
 }
 
-// live getters (read env each request)
+// live getters read the current runtime configuration each request.
 func getExtraLink() (urlStr, text string) {
-	return strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_URL")),
-		strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_TEXT"))
+	cfg := currentRuntimeConfig().AppSettings
+	return strings.TrimSpace(cfg.LoginExtraLinkURL), strings.TrimSpace(cfg.LoginExtraLinkText)
 }
 
 func getRequestAccess(providerDisplay string) (email, subj, subjQP string) {
-	email = strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_EMAIL"))
+	cfg := currentRuntimeConfig().AppSettings
+	email = strings.TrimSpace(cfg.UnauthRequestEmail)
 	if email == "" {
 		email = "admin@example.com"
 	}
-	subj = strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_SUBJECT"))
+	subj = strings.TrimSpace(cfg.UnauthRequestSubject)
 	if subj == "" {
 		subj = providerDisplay + " Access Request"
 	}
