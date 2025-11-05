@@ -30,6 +30,7 @@ import (
 var (
 	db                                     *sql.DB
 	configStore                            *configstore.Store
+	backupSvc                              *backupService
 	tmpl                                   *template.Template
 	sessionSecret                          = []byte(envOr("SESSION_SECRET", "dev-insecure-change-me"))
 	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
@@ -173,6 +174,12 @@ func main() {
 		log.Fatalf("Config load error: %v", err)
 	}
 	applyRuntimeConfig(runtimeCfg)
+
+	backupDir := envOr("BACKUP_DIR", defaultBackupDirName)
+	backupSvc, err = newBackupService(configStore, backupDir)
+	if err != nil {
+		log.Fatalf("Backup service init error: %v", err)
+	}
 
 	oauthService = oauth.Service{
 		DB:              db,
@@ -387,6 +394,12 @@ func main() {
 	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
 	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientDelete))).Methods("DELETE")
 	adminAPI.Handle("/oauth/clients/{id}/rotate-secret", adminProtected(http.HandlerFunc(adminOAuthClientRotateSecret))).Methods("POST")
+	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsListHandler))).Methods("GET")
+	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsCreateHandler))).Methods("POST")
+	adminAPI.Handle("/backups/schedule", adminProtected(http.HandlerFunc(adminBackupsScheduleUpdate))).Methods("PUT")
+	adminAPI.Handle("/backups/{name}/restore", adminProtected(http.HandlerFunc(adminBackupsRestoreHandler))).Methods("POST")
+	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
+	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
 	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
 
 	// --- Health endpoints ---

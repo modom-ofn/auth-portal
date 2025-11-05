@@ -25,6 +25,33 @@
   const oauthCancel = document.getElementById('oauth-client-cancel');
   const oauthSave = document.getElementById('oauth-client-save');
   const oauthSecretBanner = document.getElementById('oauth-secret-banner');
+  const exportBtn = document.getElementById('config-export-btn');
+  const importBtn = document.getElementById('config-import-btn');
+  const importInput = document.getElementById('config-import-input');
+  const helpBtn = document.getElementById('config-help-btn');
+  const helpModal = document.getElementById('help-modal');
+  const helpModalClose = document.getElementById('help-modal-close');
+  const helpModalTitle = document.getElementById('help-modal-title');
+  const helpModalBody = document.getElementById('help-modal-body');
+
+  const backupsPanel = document.getElementById('backups-panel');
+  const backupRefreshBtn = document.getElementById('backups-refresh-btn');
+  const backupRunBtn = document.getElementById('backups-run-btn');
+  const backupScheduleForm = document.getElementById('backup-schedule-form');
+  const backupScheduleEnabled = document.getElementById('backup-schedule-enabled');
+  const backupFrequency = document.getElementById('backup-frequency');
+  const backupTime = document.getElementById('backup-time');
+  const backupWeekday = document.getElementById('backup-weekday');
+  const backupMinute = document.getElementById('backup-minute');
+  const backupRetention = document.getElementById('backup-retention');
+  const backupScheduleSave = document.getElementById('backup-schedule-save');
+  const backupLastRun = document.getElementById('backup-last-run');
+  const backupNextRun = document.getElementById('backup-next-run');
+  const backupTableWrapper = document.getElementById('backup-table-wrapper');
+  const backupTableBody = document.getElementById('backup-rows');
+  const backupEmptyState = document.getElementById('backup-empty');
+  const backupSectionCheckboxes = Array.from(document.querySelectorAll('.backup-section-checkbox'));
+  const backupFrequencyRows = Array.from(document.querySelectorAll('[data-frequency-row]'));
 
   if (
     !configForm ||
@@ -55,6 +82,95 @@
     loading: false,
   };
 
+  const backupState = {
+    loading: false,
+    loaded: false,
+    savingSchedule: false,
+    runningBackup: false,
+    schedule: null,
+    backups: [],
+  };
+
+  const defaultHelpContent = {
+    title: 'Configuration Help',
+    body: '<p>No help content is available for this section yet.</p>',
+  };
+
+  const helpContent = {
+    providers: {
+      title: 'Providers Configuration',
+      body: `
+        <p>Use this JSON to choose the active media provider and supply the credentials that AuthPortal needs to manage users on Plex, Emby, or Jellyfin.</p>
+        <ul>
+          <li><code>active</code> selects the provider key: <code>plex</code>, <code>emby</code>, or <code>jellyfin</code>.</li>
+          <li>The nested provider objects hold connection details—only the active provider must be fully populated, but keeping the others filled lets you switch quickly.</li>
+          <li>Values such as <code>serverUrl</code> should be fully qualified URLs, and API tokens/keys should be copied from your media server.</li>
+        </ul>
+        <pre><code>{
+  "active": "plex",
+  "plex": {
+    "ownerToken": "your-plex-token",
+    "serverMachineId": "machine-id",
+    "serverName": "My Plex Server"
+  },
+  "emby": {
+    "serverUrl": "https://emby.example.com",
+    "appName": "AuthPortal",
+    "appVersion": "2.0.3",
+    "apiKey": "emby-api-key",
+    "ownerUsername": "embyadmin",
+    "ownerId": "12345"
+  },
+  "jellyfin": {
+    "serverUrl": "https://jellyfin.example.com",
+    "appName": "AuthPortal",
+    "appVersion": "2.0.3",
+    "apiKey": "jellyfin-api-key"
+  }
+}</code></pre>
+        <p>Keep tokens secure&mdash;changes save immediately and update the live provider integration.</p>
+      `,
+    },
+    security: {
+      title: 'Security Configuration',
+      body: `
+        <p>Control cookie lifetimes and browser security posture for the admin and portal experience.</p>
+        <ul>
+          <li><code>sessionTtl</code> is a Go duration (<code>24h</code>, <code>2h30m</code>, <code>7d</code>) for authenticated sessions.</li>
+          <li><code>sessionSameSite</code> accepts <code>lax</code>, <code>strict</code>, or <code>none</code>. Use <code>none</code> only with HTTPS.</li>
+          <li><code>forceSecureCookie</code> forces cookies to use the Secure flag even if <code>APP_BASE_URL</code> is HTTP.</li>
+          <li><code>sessionCookieDomain</code> can scope cookies to a parent domain (e.g., <code>auth.example.com</code>).</li>
+        </ul>
+        <pre><code>{
+  "sessionTtl": "24h",
+  "sessionSameSite": "lax",
+  "forceSecureCookie": true,
+  "sessionCookieDomain": "auth.example.com"
+}</code></pre>
+        <p>Trim whitespace and only set <code>forceSecureCookie</code> to <code>true</code> when end-users connect over HTTPS.</p>
+      `,
+    },
+    mfa: {
+      title: 'MFA Configuration',
+      body: `
+        <p>Fine-tune multi-factor authentication behaviour for end-users.</p>
+        <ul>
+          <li><code>issuer</code> is the label displayed in authenticator apps (short and recognizable).</li>
+          <li><code>enrollmentEnabled</code> controls whether users can enroll MFA devices.</li>
+          <li><code>enforceForAllUsers</code> forces MFA at sign-in&mdash;make sure enrollment remains enabled if you enforce MFA.</li>
+        </ul>
+        <pre><code>{
+  "issuer": "AuthPortal",
+  "enrollmentEnabled": true,
+  "enforceForAllUsers": false
+}</code></pre>
+        <p>After enabling enforcement, communicate the change so users enroll before their next sign-in.</p>
+      `,
+    },
+  };
+
+  let helpModalIsOpen = false;
+
   const isConfigSection = (section) => configSections.includes(section);
 
   const clearStatus = () => {
@@ -82,6 +198,66 @@
     }
   };
 
+  const getHelpContent = (section) => helpContent[section] || defaultHelpContent;
+
+  const handleHelpKeydown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeHelpModal();
+    }
+  };
+
+  const closeHelpModal = () => {
+    if (!helpModalIsOpen || !helpModal) {
+      return;
+    }
+    helpModal.hidden = true;
+    helpModalIsOpen = false;
+    document.body.classList.remove('modal-open');
+    document.removeEventListener('keydown', handleHelpKeydown);
+    if (helpBtn && !helpBtn.hidden) {
+      helpBtn.focus();
+    }
+  };
+
+  const openHelpModal = (section) => {
+    if (!helpModal || !helpModalBody || !helpModalTitle) {
+      return;
+    }
+    const content = getHelpContent(section);
+    helpModalTitle.textContent = content.title || defaultHelpContent.title;
+    helpModalBody.innerHTML = (content.body || defaultHelpContent.body).trim();
+    helpModal.hidden = false;
+    helpModalIsOpen = true;
+    document.body.classList.add('modal-open');
+    document.addEventListener('keydown', handleHelpKeydown);
+    if (helpModalClose) {
+      helpModalClose.focus();
+    }
+  };
+
+  const updateHelpButton = (section) => {
+    if (!helpBtn) {
+      return;
+    }
+    const show = isConfigSection(section);
+    helpBtn.hidden = !show;
+    helpBtn.disabled = !show;
+    if (show) {
+      const label = labels[section] || section;
+      helpBtn.dataset.section = section;
+      helpBtn.setAttribute('aria-label', `Show help for ${label} configuration`);
+      helpBtn.title = `Show ${label} help`;
+    } else {
+      delete helpBtn.dataset.section;
+      helpBtn.removeAttribute('aria-label');
+      helpBtn.removeAttribute('title');
+      if (helpModalIsOpen) {
+        closeHelpModal();
+      }
+    }
+  };
+
   const setActiveTab = () => {
     tabs.forEach((tab) => {
       tab.classList.toggle('active', tab.getAttribute('data-section') === currentSection);
@@ -94,6 +270,9 @@
     if (oauthPanel) {
       oauthPanel.hidden = true;
     }
+    if (backupsPanel) {
+      backupsPanel.hidden = true;
+    }
   };
 
   const showOAuthPanel = () => {
@@ -101,6 +280,20 @@
     historyPanel.hidden = true;
     if (oauthPanel) {
       oauthPanel.hidden = false;
+    }
+    if (backupsPanel) {
+      backupsPanel.hidden = true;
+    }
+  };
+
+  const showBackupsPanel = () => {
+    configForm.hidden = true;
+    historyPanel.hidden = true;
+    if (oauthPanel) {
+      oauthPanel.hidden = true;
+    }
+    if (backupsPanel) {
+      backupsPanel.hidden = false;
     }
   };
 
@@ -120,6 +313,452 @@
       reasonInput.disabled = false;
       saveBtn.disabled = false;
     }
+  };
+
+  const backupDefaultSections = ['providers', 'security', 'mfa'];
+
+  const getSelectedBackupSections = () => {
+    if (!backupSectionCheckboxes.length) {
+      return backupDefaultSections.slice();
+    }
+    const selected = backupSectionCheckboxes
+      .filter((checkbox) => checkbox.checked)
+      .map((checkbox) => checkbox.value)
+      .filter(Boolean);
+    if (!selected.length) {
+      return backupDefaultSections.slice();
+    }
+    return selected;
+  };
+
+  const updateBackupControls = () => {
+    const busy = backupState.loading || backupState.runningBackup;
+    if (backupRunBtn) {
+      backupRunBtn.disabled = busy;
+    }
+    if (backupRefreshBtn) {
+      backupRefreshBtn.disabled = backupState.loading;
+    }
+    if (backupScheduleSave) {
+      backupScheduleSave.disabled = backupState.savingSchedule;
+    }
+    const scheduleInputs = [
+      backupScheduleEnabled,
+      backupFrequency,
+      backupTime,
+      backupWeekday,
+      backupMinute,
+      backupRetention,
+    ].filter(Boolean);
+    scheduleInputs.forEach((input) => {
+      input.disabled = backupState.savingSchedule;
+    });
+    backupSectionCheckboxes.forEach((checkbox) => {
+      checkbox.disabled = backupState.savingSchedule;
+    });
+  };
+
+  const updateScheduleVisibility = () => {
+    if (!backupFrequency || !backupFrequencyRows.length) {
+      return;
+    }
+    const frequency = String(backupFrequency.value || 'daily').toLowerCase();
+    backupFrequencyRows.forEach((row) => {
+      const allowed = (row.dataset.frequencyRow || '')
+        .split(/\s+/)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+      row.hidden = allowed.length > 0 && !allowed.includes(frequency);
+    });
+  };
+
+  const downloadBackup = (name) => {
+    if (!name) {
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = `/api/admin/backups/${encodeURIComponent(name)}`;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const renderBackupSchedule = () => {
+    if (!backupScheduleForm) {
+      return;
+    }
+    const schedule = backupState.schedule || {};
+    if (backupScheduleEnabled) {
+      backupScheduleEnabled.checked = Boolean(schedule.enabled);
+    }
+    if (backupFrequency) {
+      backupFrequency.value = String(schedule.frequency || 'daily');
+    }
+    if (backupTime) {
+      backupTime.value = schedule.timeOfDay || '02:00';
+    }
+    if (backupWeekday) {
+      backupWeekday.value = schedule.dayOfWeek || 'sunday';
+    }
+    if (backupMinute) {
+      const minuteValue = typeof schedule.minute === 'number' ? schedule.minute : 0;
+      backupMinute.value = minuteValue;
+    }
+    if (backupRetention) {
+      const retentionValue = typeof schedule.retention === 'number' ? schedule.retention : 30;
+      backupRetention.value = retentionValue;
+    }
+    const sections =
+      schedule.sections && schedule.sections.length ? schedule.sections : backupDefaultSections;
+    backupSectionCheckboxes.forEach((checkbox) => {
+      checkbox.checked = sections.includes(checkbox.value);
+    });
+    if (backupLastRun) {
+      backupLastRun.textContent = schedule.lastRun ? formatDate(schedule.lastRun) : '-';
+    }
+    if (backupNextRun) {
+      if (schedule.enabled) {
+        backupNextRun.textContent = schedule.nextRun ? formatDate(schedule.nextRun) : '-';
+      } else {
+        backupNextRun.textContent = 'Disabled';
+      }
+    }
+    updateScheduleVisibility();
+  };
+
+  const renderBackupList = () => {
+    if (!backupTableBody || !backupEmptyState) {
+      return;
+    }
+    backupTableBody.innerHTML = '';
+    if (!backupState.backups.length) {
+      backupEmptyState.hidden = false;
+      if (backupTableWrapper) {
+        backupTableWrapper.hidden = true;
+      }
+      return;
+    }
+    backupEmptyState.hidden = true;
+    if (backupTableWrapper) {
+      backupTableWrapper.hidden = false;
+    }
+    backupState.backups.forEach((item) => {
+      const tr = document.createElement('tr');
+
+      const createdTd = document.createElement('td');
+      createdTd.textContent = formatDate(item.createdAt);
+      tr.appendChild(createdTd);
+
+      const sizeTd = document.createElement('td');
+      sizeTd.textContent = formatBytes(item.size);
+      tr.appendChild(sizeTd);
+
+      const sectionsTd = document.createElement('td');
+      sectionsTd.textContent = (item.sections || []).join(', ') || '-';
+      tr.appendChild(sectionsTd);
+
+      const authorTd = document.createElement('td');
+      authorTd.textContent = item.createdBy || '-';
+      tr.appendChild(authorTd);
+
+      const actionsTd = document.createElement('td');
+      actionsTd.className = 'backup-actions';
+
+      const downloadButton = document.createElement('button');
+      downloadButton.type = 'button';
+      downloadButton.className = 'ghost-btn';
+      downloadButton.textContent = 'Download';
+      downloadButton.addEventListener('click', () => {
+        downloadBackup(item.name);
+      });
+      actionsTd.appendChild(downloadButton);
+
+      const restoreButton = document.createElement('button');
+      restoreButton.type = 'button';
+      restoreButton.className = 'primary-btn';
+      restoreButton.textContent = 'Restore';
+      restoreButton.addEventListener('click', () => {
+        restoreBackupByName(item.name);
+      });
+      actionsTd.appendChild(restoreButton);
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'danger-btn';
+      deleteButton.textContent = 'Delete';
+      deleteButton.addEventListener('click', () => {
+        deleteBackupByName(item.name);
+      });
+      actionsTd.appendChild(deleteButton);
+
+      tr.appendChild(actionsTd);
+      backupTableBody.appendChild(tr);
+    });
+  };
+
+  const renderBackups = () => {
+    renderBackupSchedule();
+    renderBackupList();
+    updateBackupControls();
+  };
+
+  const loadBackups = async (options = {}) => {
+    if (!backupsPanel || backupState.loading) {
+      return;
+    }
+    backupState.loading = true;
+    updateBackupControls();
+    try {
+      const res = await fetch('/api/admin/backups', { credentials: 'same-origin' });
+      if (!res.ok) {
+        throw new Error(`Backups fetch failed (${res.status})`);
+      }
+      const json = await res.json();
+      if (!json || !json.ok) {
+        throw new Error(json?.error || 'Backups fetch failed');
+      }
+      backupState.schedule = json.schedule || null;
+      backupState.backups = Array.isArray(json.backups) ? json.backups : [];
+      backupState.loaded = true;
+      renderBackups();
+      if (options.announce) {
+        showStatus('Backups refreshed.', 'success');
+      }
+    } catch (err) {
+      showStatus(err.message || 'Backups load failed', 'error');
+    } finally {
+      backupState.loading = false;
+      updateBackupControls();
+    }
+  };
+
+  const runBackup = async () => {
+    if (backupState.runningBackup) {
+      return;
+    }
+    backupState.runningBackup = true;
+    updateBackupControls();
+    showStatus('Creating backup.', 'info');
+    try {
+      const payload = { sections: getSelectedBackupSections() };
+      const res = await fetch('/api/admin/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok || !json || !json.ok) {
+        throw new Error(json?.error || `Backup failed (${res.status})`);
+      }
+      showStatus('Backup created.', 'success');
+      await loadBackups();
+    } catch (err) {
+      showStatus(err.message || 'Backup failed', 'error');
+    } finally {
+      backupState.runningBackup = false;
+      updateBackupControls();
+    }
+  };
+
+  const saveBackupSchedule = async (event) => {
+    if (event) {
+      event.preventDefault();
+    }
+    if (backupState.savingSchedule) {
+      return;
+    }
+    backupState.savingSchedule = true;
+    updateBackupControls();
+    showStatus('Saving backup schedule.', 'info');
+    const payload = {
+      enabled: backupScheduleEnabled ? backupScheduleEnabled.checked : false,
+      frequency: backupFrequency ? backupFrequency.value : 'daily',
+      timeOfDay: backupTime ? backupTime.value : '',
+      dayOfWeek: backupWeekday ? backupWeekday.value : '',
+      minute: backupMinute ? Number(backupMinute.value || 0) : 0,
+      sections: getSelectedBackupSections(),
+      retention: backupRetention ? Number(backupRetention.value || 0) : 0,
+    };
+    try {
+      const res = await fetch('/api/admin/backups/schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok || !json || !json.ok) {
+        throw new Error(json?.error || `Schedule update failed (${res.status})`);
+      }
+      backupState.schedule = json.schedule || payload;
+      showStatus('Backup schedule saved.', 'success');
+      renderBackups();
+    } catch (err) {
+      showStatus(err.message || 'Schedule update failed', 'error');
+    } finally {
+      backupState.savingSchedule = false;
+      updateBackupControls();
+    }
+  };
+
+  const deleteBackupByName = async (name) => {
+    if (!name) {
+      return;
+    }
+    if (!window.confirm('Delete this backup? This cannot be undone.')) {
+      return;
+    }
+    backupState.loading = true;
+    updateBackupControls();
+    showStatus('Deleting backup.', 'info');
+    let deleted = false;
+    try {
+      const res = await fetch(`/api/admin/backups/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      const json = await res.json();
+      if (!res.ok || !json || !json.ok) {
+        throw new Error(json?.error || `Delete failed (${res.status})`);
+      }
+      deleted = true;
+      showStatus('Backup deleted.', 'success');
+    } catch (err) {
+      showStatus(err.message || 'Delete failed', 'error');
+    } finally {
+      backupState.loading = false;
+      updateBackupControls();
+    }
+    if (deleted) {
+      await loadBackups();
+    }
+  };
+
+  const restoreBackupByName = async (name) => {
+    if (!name) {
+      return;
+    }
+    if (
+      !window.confirm(
+        'Restore this backup? Current configuration will be overwritten immediately.',
+      )
+    ) {
+      return;
+    }
+    backupState.loading = true;
+    updateBackupControls();
+    showStatus('Restoring backup.', 'info');
+    let restored = false;
+    try {
+      const res = await fetch(`/api/admin/backups/${encodeURIComponent(name)}/restore`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+      const json = await res.json();
+      if (!res.ok || !json || !json.ok) {
+        throw new Error(json?.error || `Restore failed (${res.status})`);
+      }
+      if (json.config) {
+        state.data.providers = json.config.providers;
+        state.data.security = json.config.security;
+        state.data.mfa = json.config.mfa;
+        state.loadedAt = json.config.loadedAt;
+        updateLoadedAt();
+        try {
+          await Promise.all(configSections.map((section) => fetchHistory(section)));
+        } catch (historyErr) {
+          console.error('Backup restore history refresh failed', historyErr);
+        }
+        if (isConfigSection(currentSection)) {
+          renderConfigSection(currentSection);
+          renderConfigHistory(currentSection);
+        }
+      }
+      restored = true;
+      showStatus('Backup restored.', 'success');
+    } catch (err) {
+      showStatus(err.message || 'Restore failed', 'error');
+    } finally {
+      backupState.loading = false;
+      updateBackupControls();
+    }
+    if (restored) {
+      await loadBackups();
+    }
+  };
+
+  const exportCurrentConfig = () => {
+    if (!isConfigSection(currentSection)) {
+      showStatus('Select a configuration tab before exporting.', 'info');
+      return;
+    }
+    let parsed;
+    try {
+      const raw = configEditor.value && configEditor.value.trim() ? configEditor.value : '{}';
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      showStatus(`Cannot export invalid JSON: ${err.message}`, 'error');
+      return;
+    }
+    const pretty = JSON.stringify(parsed, null, 2);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const name = `authportal-${currentSection}-config-${timestamp}.json`;
+    const blob = new Blob([pretty], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => {
+      URL.revokeObjectURL(link.href);
+    }, 0);
+    showStatus(`${labels[currentSection] || currentSection} configuration exported.`, 'success');
+  };
+
+  const triggerConfigImport = () => {
+    if (!isConfigSection(currentSection) || !importInput) {
+      showStatus('Select a configuration tab before importing.', 'info');
+      return;
+    }
+    importInput.value = '';
+    importInput.click();
+  };
+
+  const handleConfigImport = (event) => {
+    if (!event) {
+      return;
+    }
+    const input = event.target;
+    if (!input || !input.files || !input.files.length) {
+      return;
+    }
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (!isConfigSection(currentSection)) {
+        showStatus('Select a configuration tab before importing.', 'info');
+        importInput.value = '';
+        return;
+      }
+      const text = typeof reader.result === 'string' ? reader.result : '';
+      try {
+        const parsed = JSON.parse(text || '{}');
+        configEditor.value = JSON.stringify(parsed, null, 2);
+        showStatus('Configuration imported. Review and save to apply changes.', 'success');
+      } catch (err) {
+        showStatus(`Import failed: ${err.message}`, 'error');
+      } finally {
+        importInput.value = '';
+      }
+    };
+    reader.onerror = () => {
+      showStatus('Import failed: unable to read file.', 'error');
+      importInput.value = '';
+    };
+    reader.readAsText(file);
   };
 
   const renderConfigSection = (section) => {
@@ -275,6 +914,25 @@
     } catch {
       return value;
     }
+  };
+
+  const formatBytes = (value) => {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes < 0) {
+      return '0 B';
+    }
+    if (bytes === 0) {
+      return '0 B';
+    }
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    const precision = unitIndex === 0 ? 0 : size < 10 ? 1 : 0;
+    return `${size.toFixed(precision)} ${units[unitIndex]}`;
   };
 
   const renderOAuthClients = () => {
@@ -453,10 +1111,11 @@
     if (!section) {
       return;
     }
-    if (section === currentSection && section !== 'oauth') {
+    if (section === currentSection && section !== 'oauth' && section !== 'backups') {
       return;
     }
     currentSection = section;
+    updateHelpButton(section);
     setActiveTab();
     clearStatus();
     if (isConfigSection(section)) {
@@ -468,6 +1127,17 @@
     if (section === 'oauth' && oauthPanel) {
       showOAuthPanel();
       await loadOAuthClients();
+      return;
+    }
+    if (section === 'backups' && backupsPanel) {
+      showBackupsPanel();
+      clearSecretBanner();
+      if (!backupState.loaded) {
+        await loadBackups();
+      } else {
+        renderBackups();
+      }
+      return;
     }
   };
 
@@ -605,6 +1275,66 @@
     });
   }
 
+  if (helpBtn) {
+    helpBtn.addEventListener('click', () => {
+      const targetSection =
+        helpBtn.dataset.section || (isConfigSection(currentSection) ? currentSection : '');
+      openHelpModal(targetSection || currentSection);
+    });
+  }
+
+  if (helpModalClose) {
+    helpModalClose.addEventListener('click', () => {
+      closeHelpModal();
+    });
+  }
+
+  if (helpModal) {
+    helpModal.addEventListener('click', (event) => {
+      if (event.target === helpModal || event.target.hasAttribute('data-help-close')) {
+        closeHelpModal();
+      }
+    });
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', exportCurrentConfig);
+  }
+
+  if (importBtn) {
+    importBtn.addEventListener('click', triggerConfigImport);
+  }
+
+  if (importInput) {
+    importInput.addEventListener('change', handleConfigImport);
+  }
+
+  if (backupRunBtn) {
+    backupRunBtn.addEventListener('click', async () => {
+      await runBackup();
+    });
+  }
+
+  if (backupRefreshBtn) {
+    backupRefreshBtn.addEventListener('click', async () => {
+      await loadBackups({ announce: true });
+    });
+  }
+
+  if (backupScheduleForm) {
+    backupScheduleForm.addEventListener('submit', saveBackupSchedule);
+  }
+
+  if (backupFrequency) {
+    backupFrequency.addEventListener('change', updateScheduleVisibility);
+  }
+
+  if (backupsPanel) {
+    updateScheduleVisibility();
+    updateBackupControls();
+  }
+
+  updateHelpButton(currentSection);
   showConfigPanels();
   activateSection(currentSection);
 })();

@@ -22,6 +22,7 @@
             <button type="button" class="admin-tab" data-section="security">Security</button>
             <button type="button" class="admin-tab" data-section="mfa">MFA</button>
             <button type="button" class="admin-tab" data-section="oauth">OAuth Clients</button>
+            <button type="button" class="admin-tab" data-section="backups">Backups</button>
         </aside>
 
         <section class="admin-content">
@@ -29,9 +30,17 @@
                 <form id="config-form" class="panel" autocomplete="off">
                     <div class="panel-header">
                         <h2 id="panel-title">Providers</h2>
-                        <span id="version-badge" class="version-badge">v—</span>
+                        <div class="panel-header-actions">
+                            <button type="button" id="config-help-btn" class="icon-btn" aria-label="Show help for this configuration" title="Show help">?</button>
+                            <span id="version-badge" class="version-badge">v-</span>
+                        </div>
                     </div>
                     <p class="panel-helper">Edit the configuration JSON for this section. Provide a short reason before saving.</p>
+                    <div class="config-tools">
+                        <button type="button" id="config-export-btn" class="ghost-btn">Export</button>
+                        <button type="button" id="config-import-btn" class="ghost-btn">Import</button>
+                        <input type="file" id="config-import-input" accept="application/json" hidden>
+                    </div>
                     <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON"></textarea>
                     <div class="admin-actions">
                         <input id="reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
@@ -91,9 +100,99 @@
                         </div>
                     </form>
                 </div>
+                <div id="backups-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <h2>Backups</h2>
+                        <div class="backup-header-actions">
+                            <button type="button" id="backups-refresh-btn" class="ghost-btn">Refresh</button>
+                            <button type="button" id="backups-run-btn" class="primary-btn">Run Backup</button>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Schedule or create configuration backups. Files are written to <code>./backups</code> inside the container.</p>
+                    <form id="backup-schedule-form" class="backup-schedule" autocomplete="off">
+                        <div class="backup-toggle">
+                            <label>
+                                <input type="checkbox" id="backup-schedule-enabled">
+                                Enable automatic backups
+                            </label>
+                            <span class="muted">Selected sections are included in scheduled runs.</span>
+                        </div>
+                        <div class="backup-schedule-grid">
+                            <div class="backup-schedule-row">
+                                <label for="backup-frequency">Frequency</label>
+                                <select id="backup-frequency">
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="hourly">Hourly</option>
+                                </select>
+                            </div>
+                            <div class="backup-schedule-row" data-frequency-row="daily weekly">
+                                <label for="backup-time">Run at</label>
+                                <input type="time" id="backup-time" value="02:00">
+                            </div>
+                            <div class="backup-schedule-row" data-frequency-row="weekly">
+                                <label for="backup-weekday">Day</label>
+                                <select id="backup-weekday">
+                                    <option value="sunday">Sunday</option>
+                                    <option value="monday">Monday</option>
+                                    <option value="tuesday">Tuesday</option>
+                                    <option value="wednesday">Wednesday</option>
+                                    <option value="thursday">Thursday</option>
+                                    <option value="friday">Friday</option>
+                                    <option value="saturday">Saturday</option>
+                                </select>
+                            </div>
+                            <div class="backup-schedule-row" data-frequency-row="hourly">
+                                <label for="backup-minute">Minute past the hour</label>
+                                <input type="number" id="backup-minute" min="0" max="59" value="0">
+                            </div>
+                            <div class="backup-schedule-row">
+                                <label for="backup-retention">Retention (files)</label>
+                                <input type="number" id="backup-retention" min="0" value="30">
+                            </div>
+                        </div>
+                        <fieldset class="backup-sections">
+                            <legend>Include sections</legend>
+                            <label><input type="checkbox" class="backup-section-checkbox" value="providers" checked> Providers</label>
+                            <label><input type="checkbox" class="backup-section-checkbox" value="security" checked> Security</label>
+                            <label><input type="checkbox" class="backup-section-checkbox" value="mfa" checked> MFA</label>
+                        </fieldset>
+                        <div class="backup-schedule-actions">
+                            <button type="submit" id="backup-schedule-save" class="ghost-btn">Save Schedule</button>
+                            <div class="backup-run-meta">
+                                <span>Last run: <span id="backup-last-run">-</span></span>
+                                <span>Next run: <span id="backup-next-run">-</span></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="backup-empty" class="muted">No backups created yet.</div>
+                    <div id="backup-table-wrapper" class="backup-table-wrapper" hidden>
+                        <table class="backup-table">
+                            <thead>
+                                <tr>
+                                    <th>Created</th>
+                                    <th>Size</th>
+                                    <th>Sections</th>
+                                    <th>Created By</th>
+                                    <th class="actions-col"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="backup-rows"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
+
+    <div id="help-modal" class="modal" hidden>
+        <div class="modal-backdrop" data-help-close></div>
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+            <button type="button" id="help-modal-close" class="icon-btn close-btn" aria-label="Close help" title="Close">×</button>
+            <h3 id="help-modal-title">Configuration Help</h3>
+            <div id="help-modal-body" class="modal-body"></div>
+        </div>
+    </div>
 
     <footer class="admin-footer">
         <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>

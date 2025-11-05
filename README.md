@@ -45,6 +45,7 @@ AuthPortal authenticates users directly against their connected media server acc
 - **Runtime configuration & admin console**
   - Web-based editing of Providers, Security, and MFA JSON with versioning and history
   - OAuth client management (list/create/update/delete + secret rotation) without leaving the browser
+  - Config backup tab with manual exports, scheduled runs (hourly/daily/weekly), retention, and one-click restore/download actions
 
 - **First-party OAuth 2.1 / OIDC**
   - Authorization-code + PKCE, optional `offline_access` refresh rotation, RS256-signed ID tokens
@@ -60,6 +61,7 @@ AuthPortal authenticates users directly against their connected media server acc
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Admin Console & Config Store (new in v2.0.3)](#admin-console--config-store-new-in-v203)
+  - [Backups](#backups)
   - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)](#oauth-21--oidc-authorization-server-new-in-v203)
   - [Multi-factor authentication](#multi-factor-authentication)
   - [Plex](#plex)
@@ -369,6 +371,7 @@ docker compose --profile ldap up -d --build
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
 - `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
+- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./backups` relative to the binary).
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 
 ### Admin Console & Config Store (new in v2.0.3)
@@ -377,6 +380,14 @@ docker compose --profile ldap up -d --build
 - Providers, Security, and MFA settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
 - Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
 - The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation) backed by the `/api/admin/oauth/*` endpoints.
+
+### Backups
+
+- The **Backups** tab under `/admin` lets you export the current Providers/Security/MFA documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
+- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
+- Scheduled backup settings now live in the config store (section `backups`), so your cadence, selected sections, and retention persist across container rebuilds and are auditable like other config updates.
+- Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
+- The same functionality is exposed via the REST API (`/api/admin/backups*`); see [HTTP Routes](#http-routes) below for endpoint details.
 
 ### OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)
 
@@ -558,6 +569,12 @@ DEBUG plex: resources match via machine id
   - `PUT /api/admin/oauth/clients/{id}`  update client metadata.
   - `DELETE /api/admin/oauth/clients/{id}`  delete a client.
   - `POST /api/admin/oauth/clients/{id}/rotate-secret`  rotate client secret and return the new value.
+  - `GET /api/admin/backups`  return the current schedule metadata plus available backup files.
+  - `POST /api/admin/backups`  create a manual backup for the selected sections.
+  - `PUT /api/admin/backups/schedule`  update the automated backup schedule (frequency, sections, retention).
+  - `GET /api/admin/backups/{name}`  download a specific backup file.
+  - `DELETE /api/admin/backups/{name}`  remove a backup file from storage.
+  - `POST /api/admin/backups/{name}/restore`  restore Providers/Security/MFA configs from a saved backup.
 
 - **Health & readiness**
   - `GET /healthz`  liveness check.

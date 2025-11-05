@@ -17,6 +17,7 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+body.modal-open{overflow:hidden;}
 
 /* ========== Overseerr-like background ========== */
 /* Layered gradients for rich depth */
@@ -290,14 +291,21 @@ a:hover{opacity:.9}
 .admin-panels{display:grid;gap:1.5rem;grid-template-columns:minmax(0,1fr) 320px;align-items:start;}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.5rem;box-shadow:0 8px 28px rgba(0,0,0,.28);}
 .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;}
+.panel-header-actions{display:flex;align-items:center;gap:.75rem;}
 .panel-helper{color:var(--muted);margin:0 0 1rem;font-size:.9rem;}
 .version-badge{font-size:.85rem;color:var(--muted);}
+.icon-btn{background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.35);color:var(--text);width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;transition:background .2s ease,transform .2s ease,opacity .2s ease;}
+.icon-btn:hover:not(:disabled){background:rgba(245,158,11,.2);transform:translateY(-1px);}
+.icon-btn:disabled{opacity:.5;cursor:not-allowed;}
 #config-editor{width:100%;min-height:260px;background:#0b1220;border:1px solid var(--border);color:var(--text);border-radius:12px;padding:1rem;font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;font-size:.95rem;resize:vertical;}
 .admin-actions{display:flex;align-items:center;gap:1rem;margin-top:1rem;}
 .admin-actions input{flex:1;background:#0b1220;border:1px solid var(--border);border-radius:10px;padding:.6rem .85rem;color:var(--text);}
 .admin-actions button{padding:.7rem 1.4rem;border-radius:10px;border:1px solid var(--brand);background:var(--brand);color:#1d1200;font-weight:600;cursor:pointer;transition:opacity .2s ease,transform .2s ease;}
 .admin-actions button:disabled{opacity:.55;cursor:not-allowed;transform:none;}
 .admin-actions button:hover:not(:disabled){transform:translateY(-1px);}
+.config-tools{display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;}
+.config-tools .ghost-btn{min-width:110px;}
+.config-tools input[type="file"]{display:none;}
 .history-panel{max-height:100%;overflow:auto;}
 .history-list{list-style:none;margin:0;padding:0;font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;font-size:.85rem;background:#0b1220;border:1px solid var(--border);border-radius:12px;padding:1rem;max-height:340px;overflow:auto;}
 .history-list li+li{margin-top:.75rem;padding-top:.75rem;border-top:1px solid #1e293b;}
@@ -324,6 +332,38 @@ a:hover{opacity:.9}
 .field-hint{color:var(--muted);font-size:.8rem;}
 .oauth-form-actions{display:flex;align-items:center;gap:.75rem;}
 .oauth-form-actions .ghost-btn{border-color:rgba(148,163,184,.35);}
+.backup-header-actions{display:flex;gap:.75rem;flex-wrap:wrap;justify-content:flex-end;}
+.backup-schedule{display:flex;flex-direction:column;gap:1.2rem;margin:1.25rem 0;}
+.backup-toggle{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.backup-toggle label{display:flex;align-items:center;gap:.5rem;font-weight:600;}
+.backup-toggle .muted{font-size:.85rem;}
+.backup-schedule-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}
+.backup-schedule-row{display:flex;flex-direction:column;gap:.4rem;}
+.backup-schedule-row input,
+.backup-schedule-row select{background:#0b1220;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:.6rem .85rem;}
+.backup-sections{border:1px dashed rgba(148,163,184,.35);border-radius:12px;padding:1rem;display:flex;flex-wrap:wrap;gap:1rem;margin:0;}
+.backup-sections legend{padding:0 .5rem;font-weight:600;}
+.backup-sections label{display:flex;align-items:center;gap:.5rem;}
+.backup-schedule-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-top:.5rem;}
+.backup-run-meta{display:flex;gap:1.5rem;color:var(--muted);font-size:.85rem;}
+.backup-table-wrapper{width:100%;overflow-x:auto;margin-top:1rem;}
+.backup-table{width:100%;border-collapse:collapse;min-width:540px;}
+.backup-table th,.backup-table td{padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:left;}
+.backup-table th{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+.backup-actions{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end;}
+#backup-empty{margin:1rem 0;color:var(--muted);}
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:2rem;z-index:2000;}
+.modal[hidden]{display:none;}
+.modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.8);}
+.modal-dialog{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;max-width:640px;width:100%;padding:2.25rem 2rem 2rem;box-shadow:0 24px 48px rgba(0,0,0,.45);}
+.modal-dialog:focus{outline:none;}
+.modal-body{max-height:60vh;overflow:auto;line-height:1.5;color:var(--text);}
+.modal-body p{margin:0 0 1rem;}
+.modal-body ul{margin:0 0 1rem 1.25rem;padding:0;}
+.modal-body li{margin:.35rem 0;}
+.modal-body pre{background:#0b1220;border:1px solid var(--border);border-radius:12px;padding:1rem;overflow:auto;font-size:.9rem;}
+.modal-body code{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;}
+.close-btn{position:absolute;top:1rem;right:1rem;}
 .admin-footer{padding:1rem 2rem;border-top:1px solid var(--border);background:var(--card);color:var(--muted);text-align:center;}
 
 .consent-card{max-width:520px;}

@@ -19,6 +19,7 @@ const (
 	SectionProviders Section = "providers"
 	SectionSecurity  Section = "security"
 	SectionMFA       Section = "mfa"
+	SectionBackups   Section = "backups"
 
 	// SectionDocumentKey is the default key used to persist a full section document.
 	SectionDocumentKey = "__doc"
