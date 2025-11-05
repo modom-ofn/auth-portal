@@ -55,12 +55,11 @@ AuthPortal authenticates users directly against their connected media server acc
 ## Table of Contents
 
 - [What's New in v2.0.3](#whats-new-in-v203)
-- [What's New in v2.0.2](#whats-new-in-v202)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Admin Console & Config Store (new in v2.0.3)](#admin-console--config-store-new-in-v203)
-  - [OAuth 2.1 / OIDC Authorization Server](#oauth-21--oidc-authorization-server)
-  - [Multi-factor authentication (new in v2.0.2)](#multi-factor-authentication-new-in-v202)
+  - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)](#oauth-21--oidc-authorization-server-new-in-v203)
+  - [Multi-factor authentication](#multi-factor-authentication)
   - [Plex](#plex)
   - [Jellyfin](#jellyfin)
   - [Emby](#emby)
@@ -377,7 +376,7 @@ docker compose --profile ldap up -d --build
 - Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
 - The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation) backed by the `/api/admin/oauth/*` endpoints.
 
-### OAuth 2.1 / OIDC Authorization Server (nre in v2.0.3)
+### OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)
 
 - Discovery endpoint `/.well-known/openid-configuration` advertises JWKS (`/oidc/jwks.json`), authorize (`/oidc/authorize`), token (`/oidc/token`), and userinfo (`/oidc/userinfo`) URLs.
 - `/oidc/authorize` implements the authorization-code grant with PKCE. User consent is recorded per client/scope, supports `prompt=consent`, and returns `consent_required` when `prompt=none` is requested without prior approval.
@@ -415,7 +414,7 @@ docker compose --profile ldap up -d --build
 
 ---
 
-## Providers (Plex / Jelly Fin / Emby)
+## Providers (Plex / Jellyfin / Emby)
 
 - **Plex**:
 `StartWeb` creates a PIN and returns the Plex Auth URL  popup opens.
@@ -474,7 +473,7 @@ CREATE TABLE IF NOT EXISTS pins (
 );
 ```
 
-### Identities (new in v2.0.1)
+### Identities
 
 - Purpose: multi-provider identity linking (one row per provider per user).
 - Columns: `user_id (FK)`, `provider`, `media_uuid`, `media_token`, `media_access`, timestamps.
