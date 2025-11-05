@@ -2,7 +2,7 @@ name: build-and-publish
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "v*" ]
     tags: [ "v*" ]
     paths:
       - "auth-portal/**"
@@ -88,6 +88,19 @@ jobs:
               echo "channel=edge" >> $GITHUB_OUTPUT
               if [[ -n "$VERSION" ]]; then
                 echo "dev_version_tag=v${VERSION}-dev-$SHA" >> $GITHUB_OUTPUT
+              fi
+              ;;
+            refs/heads/v[0-9]*)
+              BRANCH_VERSION="${GITHUB_REF#refs/heads/}"
+              if [[ -n "$VERSION" ]]; then
+                echo "version_tag=v$VERSION" >> $GITHUB_OUTPUT
+              else
+                echo "version_tag=$BRANCH_VERSION" >> $GITHUB_OUTPUT
+              fi
+              if [[ "$BRANCH_VERSION" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+                echo "ver=$BRANCH_VERSION" >> $GITHUB_OUTPUT
+                echo "major=v${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+                echo "minor=v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> $GITHUB_OUTPUT
               fi
               ;;
           esac
