@@ -11,7 +11,7 @@
 AuthPortal authenticates users directly against their connected media server accounts, seals the server tokens for reuse, and manages session lifecycle via HTTP-only cookies. Authorized users are directed to their personalized home page, while unrecognized users are served a restricted or “guest” view.
 
 > [!IMPORTANT]
-> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from plex, Emby, or Jellyfin.
+> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from Plex, Emby, or Jellyfin.
 
 > [!NOTE]
 > - Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
@@ -644,7 +644,7 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 
 > [!IMPORTANT]
-> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from plex, Emby, or Jellyfin.
+> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from Plex, Emby, or Jellyfin.
 
 ---
 
