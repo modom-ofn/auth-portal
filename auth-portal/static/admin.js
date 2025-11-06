@@ -1134,7 +1134,12 @@
     if (!section) {
       return;
     }
-    if (section === currentSection && section !== 'oauth' && section !== 'backups') {
+    if (
+      section === currentSection &&
+      section !== 'oauth' &&
+      section !== 'backups' &&
+      state.data[section]
+    ) {
       return;
     }
     currentSection = section;
