@@ -64,7 +64,8 @@ ALTER TABLE users
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS is_admin         BOOLEAN     NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS admin_granted_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS admin_granted_by TEXT
+  ADD COLUMN IF NOT EXISTS admin_granted_by TEXT,
+  ADD COLUMN IF NOT EXISTS session_version  BIGINT      NOT NULL DEFAULT 0
 `); err != nil {
 		return err
 	}
@@ -349,6 +350,7 @@ type User struct {
 	IsAdmin        bool
 	AdminGrantedAt sql.NullTime
 	AdminGrantedBy sql.NullString
+	SessionVersion int64
 
 	// Legacy (will be ignored if Media* are set)
 	PlexUUID   sql.NullString

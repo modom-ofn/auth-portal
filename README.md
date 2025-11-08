@@ -367,6 +367,7 @@ docker compose --profile ldap up -d --build
 - `DATA_KEY`  base64 32-byte key for sealing provider tokens at rest (required).
 - `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
 - `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
+- `FORCE_HSTS`  set to `1` to always emit Strict-Transport-Security even if `APP_BASE_URL` is http (use when TLS terminates upstream).
 - `TRUSTED_PROXY_CIDRS`  comma-separated CIDR ranges of proxies allowed to supply `X-Forwarded-For`/`X-Real-IP`; leave empty to rely on `RemoteAddr`.
 - `LOGIN_EXTRA_LINK_URL`  external URL on authorized page.
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
@@ -626,6 +627,7 @@ DEBUG plex: resources match via machine id
 - OAuth client secrets are hashed with bcrypt before storage; rotate legacy secrets so they’re re-hashed and unusable if the DB or backups leak.
 - Access and refresh tokens are stored as deterministic SHA-256 digests, so leaked database rows don’t expose bearer tokens (rotate outstanding tokens after upgrading).
 - Config backups written to disk are encrypted with the same `DATA_KEY`, so keep that key secret and re-bootstrap older plaintext backups if needed.
+- Admin flag changes immediately revoke outstanding sessions by bumping an internal session version; reissue cookies after any privilege change.
 - Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
 - Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).

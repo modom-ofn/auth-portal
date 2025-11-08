@@ -76,6 +76,7 @@ var (
 	forceSecureCookie            = os.Getenv("FORCE_SECURE_COOKIE") == "1"                 // force 'Secure' even if APP_BASE_URL is http
 	sessionCookieDomain          = strings.TrimSpace(os.Getenv("SESSION_COOKIE_DOMAIN"))
 	sessionSameSiteWarningLogged bool
+	forceHSTS                    = os.Getenv("FORCE_HSTS") == "1"
 )
 
 func envOr(k, d string) string {
@@ -451,7 +452,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 			"default-src 'self'; img-src 'self' data: https://plex.tv https://api.qrserver.com; style-src 'self' 'unsafe-inline'; script-src 'self'")
 
 		// HSTS only if base URL is HTTPS or you know you're behind TLS
-		if strings.HasPrefix(strings.ToLower(appBaseURL), "https://") {
+		if strings.HasPrefix(strings.ToLower(appBaseURL), "https://") || forceHSTS {
 			w.Header().Set("Strict-Transport-Security", "max-age=86400; includeSubDomains; preload")
 		}
 		next.ServeHTTP(w, r)
@@ -470,6 +471,7 @@ type sessionClaims struct {
 	UUID     string `json:"uuid"`
 	Username string `json:"username"`
 	Admin    bool   `json:"admin,omitempty"`
+	Version  int64  `json:"sessionVersion,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -477,6 +479,25 @@ type pendingMFAClaims struct {
 	UUID     string `json:"uuid"`
 	Username string `json:"username"`
 	jwt.RegisteredClaims
+}
+
+func validateSessionClaims(claims *sessionClaims) (bool, bool) {
+	if claims == nil {
+		return false, false
+	}
+	uuid := strings.TrimSpace(claims.UUID)
+	username := strings.TrimSpace(claims.Username)
+	if uuid == "" && username == "" {
+		return false, false
+	}
+	isAdmin, version, err := userSessionState(uuid, username)
+	if err != nil {
+		return false, false
+	}
+	if version != claims.Version {
+		return false, false
+	}
+	return true, isAdmin
 }
 
 func cookieSettings() (http.SameSite, bool) {
@@ -495,7 +516,7 @@ func cookieSettings() (http.SameSite, bool) {
 func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl time.Duration) error {
 	now := time.Now()
 
-	isAdmin, err := userIsAdmin(uuid, username)
+	isAdmin, sessionVersion, err := userSessionState(uuid, username)
 	if err != nil {
 		return err
 	}
@@ -504,6 +525,7 @@ func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl t
 		UUID:     uuid,
 		Username: username,
 		Admin:    isAdmin,
+		Version:  sessionVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-portal-go",
 			Subject:   uuid,
@@ -689,12 +711,15 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 				}, jwt.WithValidMethods(allowedJWTAlgs))
 				if err == nil && tok != nil && tok.Valid {
 					if claims, ok := tok.Claims.(*sessionClaims); ok {
-						username = strings.TrimSpace(claims.Username)
-						uuid = strings.TrimSpace(claims.UUID)
-						isAdmin = claims.Admin
+						if valid, adminFlag := validateSessionClaims(claims); valid {
+							username = strings.TrimSpace(claims.Username)
+							uuid = strings.TrimSpace(claims.UUID)
+							isAdmin = adminFlag
+						} else {
+							expireSessionCookieOnly(w)
+						}
 					}
-				}
-				if username == "" || uuid == "" {
+				} else {
 					expireSessionCookieOnly(w)
 				}
 			}
@@ -743,10 +768,16 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(*sessionClaims); ok {
-			ctx := withUsername(r.Context(), claims.Username)
-			ctx = withUUID(ctx, claims.UUID)
-			ctx = withAdmin(ctx, claims.Admin)
-			r = r.WithContext(ctx)
+			if valid, adminFlag := validateSessionClaims(claims); valid {
+				ctx := withUsername(r.Context(), claims.Username)
+				ctx = withUUID(ctx, claims.UUID)
+				ctx = withAdmin(ctx, adminFlag)
+				r = r.WithContext(ctx)
+			} else {
+				clearSessionCookie(w)
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -760,7 +791,14 @@ func hasValidSession(r *http.Request) bool {
 	token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return sessionSecret, nil
 	}, jwt.WithValidMethods(allowedJWTAlgs))
-	return err == nil && token.Valid
+	if err != nil || !token.Valid {
+		return false
+	}
+	if claims, ok := token.Claims.(*sessionClaims); ok {
+		valid, _ := validateSessionClaims(claims)
+		return valid
+	}
+	return false
 }
 
 // ---------- CSRF-lite for state-changing routes ----------
