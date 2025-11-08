@@ -625,6 +625,7 @@ DEBUG plex: resources match via machine id
 - Set strong `SESSION_SECRET` (startup now fails if it's missing/short), `DATA_KEY`, and DB credentials.
 - OAuth client secrets are hashed with bcrypt before storage; rotate legacy secrets so they’re re-hashed and unusable if the DB or backups leak.
 - Access and refresh tokens are stored as deterministic SHA-256 digests, so leaked database rows don’t expose bearer tokens (rotate outstanding tokens after upgrading).
+- Config backups written to disk are encrypted with the same `DATA_KEY`, so keep that key secret and re-bootstrap older plaintext backups if needed.
 - Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
 - Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).

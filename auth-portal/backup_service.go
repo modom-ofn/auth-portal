@@ -23,6 +23,7 @@ import (
 const (
 	defaultBackupDirName   = "backups"
 	legacyScheduleFilename = "schedule.json"
+	backupEnvelopeVersion  = "enc-v1"
 )
 
 var (
@@ -63,6 +64,11 @@ type backupDocument struct {
 type backupDocumentRecord struct {
 	Version int64           `json:"version"`
 	Config  json.RawMessage `json:"config"`
+}
+
+type backupEnvelope struct {
+	Version    string `json:"version"`
+	Ciphertext string `json:"ciphertext"`
 }
 
 type backupMetadata struct {
@@ -340,7 +346,7 @@ func (s *backupService) createBackup(ctx context.Context, sections []string, aut
 
 	filename := fmt.Sprintf("backup-%s.json", doc.CreatedAt.Format("20060102-150405"))
 	path := filepath.Join(s.dir, filename)
-	data, err := json.MarshalIndent(doc, "", "  ")
+	data, err := encodeBackupDocument(doc)
 	if err != nil {
 		return backupMetadata{}, err
 	}
@@ -420,12 +426,8 @@ func (s *backupService) listBackupsUnlocked() ([]backupMetadata, error) {
 
 func (s *backupService) readBackupMetadata(entry fs.DirEntry, name string) (backupMetadata, error) {
 	path := filepath.Join(s.dir, name)
-	data, err := os.ReadFile(path)
+	doc, _, err := readBackupDocument(path)
 	if err != nil {
-		return backupMetadata{}, err
-	}
-	var doc backupDocument
-	if err := json.Unmarshal(data, &doc); err != nil {
 		return backupMetadata{}, err
 	}
 	info, err := entry.Info()
@@ -459,15 +461,11 @@ func (s *backupService) OpenBackup(name string) (io.ReadCloser, time.Time, error
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	data, err := os.ReadFile(path)
+	doc, plaintext, err := readBackupDocument(path)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	var doc backupDocument
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, time.Time{}, err
-	}
-	return io.NopCloser(bytes.NewReader(data)), doc.CreatedAt.UTC(), nil
+	return io.NopCloser(bytes.NewReader(plaintext)), doc.CreatedAt.UTC(), nil
 }
 
 func (s *backupService) RestoreBackup(ctx context.Context, name, actor string) (RuntimeConfig, error) {
@@ -475,12 +473,8 @@ func (s *backupService) RestoreBackup(ctx context.Context, name, actor string) (
 	if err != nil {
 		return RuntimeConfig{}, err
 	}
-	data, err := os.ReadFile(path)
+	doc, _, err := readBackupDocument(path)
 	if err != nil {
-		return RuntimeConfig{}, err
-	}
-	var doc backupDocument
-	if err := json.Unmarshal(data, &doc); err != nil {
 		return RuntimeConfig{}, err
 	}
 
@@ -773,4 +767,62 @@ func cloneRawMessage(raw json.RawMessage) json.RawMessage {
 	buf := make([]byte, len(raw))
 	copy(buf, raw)
 	return json.RawMessage(buf)
+}
+
+func encodeBackupDocument(doc backupDocument) ([]byte, error) {
+	plaintext, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if tokenAEAD == nil {
+		return plaintext, nil
+	}
+	sealed, err := SealToken(string(plaintext))
+	if err != nil {
+		return nil, err
+	}
+	env := backupEnvelope{
+		Version:    backupEnvelopeVersion,
+		Ciphertext: sealed,
+	}
+	return json.MarshalIndent(env, "", "  ")
+}
+
+func readBackupDocument(path string) (backupDocument, []byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return backupDocument{}, nil, err
+	}
+	doc, plaintext, err := decodeBackupDocument(data)
+	if err != nil {
+		return backupDocument{}, nil, err
+	}
+	return doc, plaintext, nil
+}
+
+func decodeBackupDocument(data []byte) (backupDocument, []byte, error) {
+	var doc backupDocument
+	if err := json.Unmarshal(data, &doc); err == nil && (!doc.CreatedAt.IsZero() || len(doc.Sections) > 0) {
+		return doc, data, nil
+	}
+
+	var env backupEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return backupDocument{}, nil, err
+	}
+	ciphertext := strings.TrimSpace(env.Ciphertext)
+	if ciphertext == "" {
+		return backupDocument{}, nil, errors.New("backup: missing ciphertext")
+	}
+	if env.Version != "" && env.Version != backupEnvelopeVersion {
+		return backupDocument{}, nil, fmt.Errorf("backup: unsupported envelope %s", env.Version)
+	}
+	plaintext, err := OpenToken(ciphertext)
+	if err != nil {
+		return backupDocument{}, nil, err
+	}
+	if err := json.Unmarshal([]byte(plaintext), &doc); err != nil {
+		return backupDocument{}, nil, err
+	}
+	return doc, []byte(plaintext), nil
 }
