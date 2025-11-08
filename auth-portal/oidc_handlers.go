@@ -296,16 +296,15 @@ func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := oauthService.GetClient(r.Context(), clientID)
+	client, err := oauthService.AuthenticateClient(r.Context(), clientID, clientSecret)
 	if err != nil {
-		writeOIDCError(w, http.StatusUnauthorized, "invalid_client", "client not found")
-		return
-	}
-	if client.ClientSecret.Valid {
-		if clientSecret == "" || client.ClientSecret.String != clientSecret {
-			writeOIDCError(w, http.StatusUnauthorized, "invalid_client", "client secret mismatch")
+		if errors.Is(err, oauth.ErrClientNotFound) || errors.Is(err, oauth.ErrClientAuthFailed) {
+			writeOIDCError(w, http.StatusUnauthorized, "invalid_client", "client authentication failed")
 			return
 		}
+		log.Printf("oidc token: client lookup failed: %v", err)
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", "client lookup failed")
+		return
 	}
 
 	grantType := strings.TrimSpace(r.PostFormValue("grant_type"))

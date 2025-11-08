@@ -8,6 +8,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestServiceCreateClient(t *testing.T) {
@@ -229,6 +230,152 @@ func TestServiceDeleteClient(t *testing.T) {
 	if err := svc.DeleteClient(context.Background(), "client-123"); err != nil {
 		t.Fatalf("DeleteClient: %v", err)
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthenticateClientHashedSecret(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := Service{DB: db}
+	query := `
+SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+  FROM oauth_clients
+ WHERE client_id = $1
+ LIMIT 1
+`
+	redirects := pq.StringArray{"https://example.com/callback"}
+	scopes := pq.StringArray{"openid"}
+	grantTypes := pq.StringArray{"authorization_code"}
+	responseTypes := pq.StringArray{"code"}
+	now := time.Now().UTC()
+	hashed, _ := bcrypt.GenerateFromPassword([]byte("super-secret"), bcrypt.DefaultCost)
+
+	row := sqlmock.NewRows([]string{
+		"client_id", "client_secret", "name", "redirect_uris", "scopes", "grant_types", "response_types", "created_at", "updated_at",
+	}).AddRow(
+		"client-123", string(hashed), "My App", redirects, scopes, grantTypes, responseTypes, now, now,
+	)
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs("client-123").WillReturnRows(row)
+
+	client, err := svc.AuthenticateClient(context.Background(), "client-123", "super-secret")
+	if err != nil {
+		t.Fatalf("AuthenticateClient: %v", err)
+	}
+	if client.ClientSecret.Valid {
+		t.Fatalf("expected sanitized client secret")
+	}
+
+	row2 := sqlmock.NewRows([]string{
+		"client_id", "client_secret", "name", "redirect_uris", "scopes", "grant_types", "response_types", "created_at", "updated_at",
+	}).AddRow(
+		"client-123", string(hashed), "My App", redirects, scopes, grantTypes, responseTypes, now, now,
+	)
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs("client-123").WillReturnRows(row2)
+
+	if _, err := svc.AuthenticateClient(context.Background(), "client-123", "wrong"); err != ErrClientAuthFailed {
+		t.Fatalf("expected ErrClientAuthFailed, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthenticateClientLegacySecret(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := Service{DB: db}
+	query := `
+SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+  FROM oauth_clients
+ WHERE client_id = $1
+ LIMIT 1
+`
+	redirects := pq.StringArray{"https://example.com/callback"}
+	scopes := pq.StringArray{"openid"}
+	grantTypes := pq.StringArray{"authorization_code"}
+	responseTypes := pq.StringArray{"code"}
+	now := time.Now().UTC()
+
+	row := sqlmock.NewRows([]string{
+		"client_id", "client_secret", "name", "redirect_uris", "scopes", "grant_types", "response_types", "created_at", "updated_at",
+	}).AddRow(
+		"client-legacy", "legacy-secret", "Legacy App", redirects, scopes, grantTypes, responseTypes, now, now,
+	)
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs("client-legacy").WillReturnRows(row)
+
+	if _, err := svc.AuthenticateClient(context.Background(), "client-legacy", "legacy-secret"); err != nil {
+		t.Fatalf("AuthenticateClient legacy: %v", err)
+	}
+
+	row2 := sqlmock.NewRows([]string{
+		"client_id", "client_secret", "name", "redirect_uris", "scopes", "grant_types", "response_types", "created_at", "updated_at",
+	}).AddRow(
+		"client-legacy", "legacy-secret", "Legacy App", redirects, scopes, grantTypes, responseTypes, now, now,
+	)
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs("client-legacy").WillReturnRows(row2)
+
+	if _, err := svc.AuthenticateClient(context.Background(), "client-legacy", "bad"); err != ErrClientAuthFailed {
+		t.Fatalf("expected ErrClientAuthFailed for legacy mismatch, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestAuthenticateClientPublic(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := Service{DB: db}
+	query := `
+SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+  FROM oauth_clients
+ WHERE client_id = $1
+ LIMIT 1
+`
+	redirects := pq.StringArray{"https://example.com/callback"}
+	scopes := pq.StringArray{"openid"}
+	grantTypes := pq.StringArray{"authorization_code"}
+	responseTypes := pq.StringArray{"code"}
+	now := time.Now().UTC()
+
+	row := sqlmock.NewRows([]string{
+		"client_id", "client_secret", "name", "redirect_uris", "scopes", "grant_types", "response_types", "created_at", "updated_at",
+	}).AddRow(
+		"public-client", nil, "Public App", redirects, scopes, grantTypes, responseTypes, now, now,
+	)
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs("public-client").WillReturnRows(row)
+
+	if _, err := svc.AuthenticateClient(context.Background(), "public-client", ""); err != nil {
+		t.Fatalf("AuthenticateClient public: %v", err)
+	}
+
+	row2 := sqlmock.NewRows([]string{
+		"client_id", "client_secret", "name", "redirect_uris", "scopes", "grant_types", "response_types", "created_at", "updated_at",
+	}).AddRow(
+		"public-client", nil, "Public App", redirects, scopes, grantTypes, responseTypes, now, now,
+	)
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs("public-client").WillReturnRows(row2)
+
+	if _, err := svc.AuthenticateClient(context.Background(), "public-client", "unexpected"); err != ErrClientAuthFailed {
+		t.Fatalf("expected ErrClientAuthFailed for unexpected secret, got %v", err)
+	}
+
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
 	}

@@ -3,6 +3,7 @@ package oauth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -13,15 +14,17 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
-	ErrClientNotFound  = errors.New("oauth: client not found")
-	ErrAuthCodeInvalid = errors.New("oauth: authorization code invalid")
-	ErrTokenNotFound   = errors.New("oauth: token not found")
-	ErrTokenExpired    = errors.New("oauth: token expired")
-	ErrTokenRevoked    = errors.New("oauth: token revoked")
-	ErrConsentRequired = errors.New("oauth: consent required")
+	ErrClientNotFound   = errors.New("oauth: client not found")
+	ErrAuthCodeInvalid  = errors.New("oauth: authorization code invalid")
+	ErrTokenNotFound    = errors.New("oauth: token not found")
+	ErrTokenExpired     = errors.New("oauth: token expired")
+	ErrTokenRevoked     = errors.New("oauth: token revoked")
+	ErrConsentRequired  = errors.New("oauth: consent required")
+	ErrClientAuthFailed = errors.New("oauth: client authentication failed")
 )
 
 const (
@@ -76,12 +79,29 @@ type AccessToken struct {
 }
 
 func (s Service) GetClient(ctx context.Context, id string) (Client, error) {
+	client, _, err := s.getClientRow(ctx, id)
+	return client, err
+}
+
+func (s Service) AuthenticateClient(ctx context.Context, id, providedSecret string) (Client, error) {
+	client, storedSecret, err := s.getClientRow(ctx, id)
+	if err != nil {
+		return Client{}, err
+	}
+	if err := verifyClientSecret(storedSecret, providedSecret); err != nil {
+		return Client{}, ErrClientAuthFailed
+	}
+	return client, nil
+}
+
+func (s Service) getClientRow(ctx context.Context, id string) (Client, string, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return Client{}, ErrClientNotFound
+		return Client{}, "", ErrClientNotFound
 	}
 	var (
 		client        Client
+		secret        sql.NullString
 		redirectURIs  pq.StringArray
 		scopes        pq.StringArray
 		grantTypes    pq.StringArray
@@ -94,7 +114,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
  LIMIT 1
 `, id).Scan(
 		&client.ClientID,
-		&client.ClientSecret,
+		&secret,
 		&client.Name,
 		&redirectURIs,
 		&scopes,
@@ -105,15 +125,15 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Client{}, ErrClientNotFound
+			return Client{}, "", ErrClientNotFound
 		}
-		return Client{}, err
+		return Client{}, "", err
 	}
 	client.RedirectURIs = redirectURIs
 	client.Scopes = scopes
 	client.GrantTypes = grantTypes
 	client.ResponseTypes = responseTypes
-	return sanitizeClient(client), nil
+	return sanitizeClient(client), strings.TrimSpace(secret.String), nil
 }
 
 func (s Service) ListClients(ctx context.Context) ([]Client, error) {
@@ -176,6 +196,10 @@ func (s Service) CreateClient(ctx context.Context, name string, redirectURIs, sc
 	if err != nil {
 		return Client{}, "", err
 	}
+	hashedSecret, err := hashClientSecret(secret)
+	if err != nil {
+		return Client{}, "", err
+	}
 	grantTypes := []string{"authorization_code", "refresh_token"}
 	responseTypes := []string{"code"}
 	now := time.Now().UTC()
@@ -191,7 +215,7 @@ func (s Service) CreateClient(ctx context.Context, name string, redirectURIs, sc
 INSERT INTO oauth_clients (client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
 RETURNING client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
-`, clientID, secret, name, pq.StringArray(redirects), pq.StringArray(normScopes), pq.StringArray(grantTypes), pq.StringArray(responseTypes), now).Scan(
+`, clientID, hashedSecret, name, pq.StringArray(redirects), pq.StringArray(normScopes), pq.StringArray(grantTypes), pq.StringArray(responseTypes), now).Scan(
 		&client.ClientID,
 		&client.ClientSecret,
 		&client.Name,
@@ -276,12 +300,16 @@ func (s Service) RotateClientSecret(ctx context.Context, clientID string) (strin
 	if err != nil {
 		return "", err
 	}
+	hashed, err := hashClientSecret(secret)
+	if err != nil {
+		return "", err
+	}
 	res, err := s.DB.ExecContext(ctx, `
 UPDATE oauth_clients
    SET client_secret = $2,
        updated_at = now()
  WHERE client_id = $1
-`, clientID, secret)
+`, clientID, hashed)
 	if err != nil {
 		return "", err
 	}
@@ -312,6 +340,39 @@ func (s Service) DeleteClient(ctx context.Context, clientID string) error {
 		return ErrClientNotFound
 	}
 	return nil
+}
+
+func hashClientSecret(secret string) (string, error) {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return "", errors.New("oauth: empty client secret")
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashed), nil
+}
+
+func verifyClientSecret(stored, provided string) error {
+	stored = strings.TrimSpace(stored)
+	provided = strings.TrimSpace(provided)
+	if stored == "" && provided == "" {
+		return nil
+	}
+	if stored == "" && provided != "" {
+		return errors.New("oauth: client is public, secret not expected")
+	}
+	if stored != "" && provided == "" {
+		return errors.New("oauth: client secret required")
+	}
+	if strings.HasPrefix(stored, "$2") {
+		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(provided))
+	}
+	if subtle.ConstantTimeCompare([]byte(stored), []byte(provided)) == 1 {
+		return nil
+	}
+	return errors.New("oauth: client secret mismatch")
 }
 
 func sanitizeClient(c Client) Client {
