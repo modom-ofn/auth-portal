@@ -702,8 +702,10 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			isAdmin := adminFrom(r.Context())
 			var (
-				username string
-				uuid     string
+				username          string
+				uuid              string
+				sessionAuthorized bool
+				pendingAllowed    bool
 			)
 
 			if c, err := r.Cookie(sessionCookie); err == nil && strings.TrimSpace(c.Value) != "" {
@@ -716,6 +718,15 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 							username = strings.TrimSpace(claims.Username)
 							uuid = strings.TrimSpace(claims.UUID)
 							isAdmin = adminFlag
+							if adminFlag {
+								sessionAuthorized = true
+							} else if currentProvider != nil && uuid != "" {
+								if ok, err := currentProvider.IsAuthorized(uuid, username); err == nil {
+									sessionAuthorized = ok
+								} else {
+									log.Printf("requireSessionOrPending: authorization check failed for %s (%s): %v", username, uuid, err)
+								}
+							}
 						} else {
 							expireSessionCookieOnly(w)
 						}
@@ -725,14 +736,15 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 				}
 			}
 
-			if username == "" || uuid == "" {
+			if sessionAuthorized == false {
 				if claims, err := pendingClaimsFromRequest(r); err == nil {
 					username = strings.TrimSpace(claims.Username)
 					uuid = strings.TrimSpace(claims.UUID)
+					pendingAllowed = true
 				}
 			}
 
-			if username == "" || uuid == "" {
+			if username == "" || uuid == "" || (!sessionAuthorized && !pendingAllowed) {
 				if redirectOnFail {
 					http.Redirect(w, r, "/", http.StatusFound)
 				} else {
