@@ -10,6 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
       # reuse same flag as app
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-UTC}
     command:
       - sh
       - -c
@@ -50,6 +51,8 @@ services:
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
+      APP_TIMEZONE: ${APP_TIMEZONE:-UTC}
+      TZ: ${TZ:-UTC}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
@@ -112,6 +115,7 @@ services:
       LDAP_ORGANISATION: AuthPortal
       LDAP_DOMAIN: authportal.local
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
+      TZ: ${TZ:-UTC}
     # Uncomment if you need external LDAP access from host:
     # ports:
     #   - "389:389"
@@ -145,6 +149,7 @@ services:
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
       BASE_DN: ou=users,dc=authportal,dc=local
       # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
+      TZ: ${TZ:-UTC}
     restart: "no"
     networks: [authnet]
 
@@ -154,6 +159,7 @@ services:
     environment:
       PHPLDAPADMIN_LDAP_HOSTS: openldap
       PHPLDAPADMIN_HTTPS: "false"
+      TZ: ${TZ:-UTC}
     ports:
       - "8087:80"
     depends_on:

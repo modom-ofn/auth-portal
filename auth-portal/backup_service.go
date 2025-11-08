@@ -700,26 +700,30 @@ func computeNextRun(sched backupSchedule, from time.Time) (time.Time, error) {
 	if !sched.Enabled {
 		return time.Time{}, nil
 	}
-	now := from.UTC()
+	loc := appLocation
+	if loc == nil {
+		loc = time.UTC
+	}
+	now := from.In(loc)
 	switch sched.Frequency {
 	case "hourly":
 		minute := sched.Minute
-		base := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), minute, 0, 0, time.UTC)
+		base := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), minute, 0, 0, loc)
 		if !base.After(now) {
 			base = base.Add(time.Hour)
-			base = time.Date(base.Year(), base.Month(), base.Day(), base.Hour(), minute, 0, 0, time.UTC)
+			base = time.Date(base.Year(), base.Month(), base.Day(), base.Hour(), minute, 0, 0, loc)
 		}
-		return base, nil
+		return base.In(time.UTC), nil
 	case "daily":
 		hour, minute, err := parseTimeOfDay(sched.TimeOfDay)
 		if err != nil {
 			return time.Time{}, err
 		}
-		next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, time.UTC)
+		next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, loc)
 		if !next.After(now) {
 			next = next.Add(24 * time.Hour)
 		}
-		return next, nil
+		return next.In(time.UTC), nil
 	case "weekly":
 		hour, minute, err := parseTimeOfDay(sched.TimeOfDay)
 		if err != nil {
@@ -731,12 +735,12 @@ func computeNextRun(sched backupSchedule, from time.Time) (time.Time, error) {
 		}
 		daysAhead := (int(weekday) - int(now.Weekday()) + 7) % 7
 		nextDate := now.AddDate(0, 0, daysAhead)
-		next := time.Date(nextDate.Year(), nextDate.Month(), nextDate.Day(), hour, minute, 0, 0, time.UTC)
+		next := time.Date(nextDate.Year(), nextDate.Month(), nextDate.Day(), hour, minute, 0, 0, loc)
 		if !next.After(now) {
 			nextDate = nextDate.AddDate(0, 0, 7)
-			next = time.Date(nextDate.Year(), nextDate.Month(), nextDate.Day(), hour, minute, 0, 0, time.UTC)
+			next = time.Date(nextDate.Year(), nextDate.Month(), nextDate.Day(), hour, minute, 0, 0, loc)
 		}
-		return next, nil
+		return next.In(time.UTC), nil
 	default:
 		return time.Time{}, fmt.Errorf("unsupported frequency %q", sched.Frequency)
 	}

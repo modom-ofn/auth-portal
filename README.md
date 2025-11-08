@@ -134,6 +134,10 @@ MEDIA_SERVER=plex
 FORCE_SECURE_COOKIE=0
 # Force HSTS headers even if APP_BASE_URL is http (set to 1 when TLS terminates upstream)
 FORCE_HSTS=0
+# Timezone (IANA name, e.g., America/New_York) used for schedules and timestamps
+APP_TIMEZONE=UTC
+# Container timezone (usually matches APP_TIMEZONE)
+TZ=UTC
 
 # 32-byte base64 key (e.g., openssl rand -base64 32) (Do Not Reuse Example Below)
 DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
@@ -191,6 +195,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
       # reuse same flag as app
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-UTC}
     command:
       - sh
       - -c
@@ -231,6 +236,8 @@ services:
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
+      APP_TIMEZONE: ${APP_TIMEZONE:-UTC}
+      TZ: ${TZ:-UTC}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
@@ -293,6 +300,7 @@ services:
       LDAP_ORGANISATION: AuthPortal
       LDAP_DOMAIN: authportal.local
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
+      TZ: ${TZ:-UTC}
     # Uncomment if you need external LDAP access from host:
     # ports:
     #   - "389:389"
@@ -326,6 +334,7 @@ services:
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
       BASE_DN: ou=users,dc=authportal,dc=local
       # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
+      TZ: ${TZ:-UTC}
     restart: "no"
     networks: [authnet]
 
@@ -335,6 +344,7 @@ services:
     environment:
       PHPLDAPADMIN_LDAP_HOSTS: openldap
       PHPLDAPADMIN_HTTPS: "false"
+      TZ: ${TZ:-UTC}
     ports:
       - "8087:80"
     depends_on:
@@ -375,6 +385,7 @@ docker compose --profile ldap up -d --build
 - `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
 - `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
 - `FORCE_HSTS`  set to `1` to always emit Strict-Transport-Security even if `APP_BASE_URL` is http (use when TLS terminates upstream).
+- `APP_TIMEZONE`  IANA timezone (e.g., `America/New_York`) used for backup scheduling and admin timestamps; set `TZ` to the same value in Docker to keep the container clock aligned.
 - `TRUSTED_PROXY_CIDRS`  comma-separated CIDR ranges of proxies allowed to supply `X-Forwarded-For`/`X-Real-IP`; leave empty to rely on `RemoteAddr`.
 - `LOGIN_EXTRA_LINK_URL`  external URL on authorized page.
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.

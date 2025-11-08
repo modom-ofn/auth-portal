@@ -413,6 +413,7 @@ func adminPageHandler(w http.ResponseWriter, r *http.Request) {
 	render(w, "admin.html", map[string]any{
 		"ProviderDisplay": mediaProviderDisplay,
 		"ConfigLoadedAt":  cfg.loadedAt().Format(time.RFC3339),
+		"AppTimeZone":     appTimeZone,
 	})
 }
 

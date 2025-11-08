@@ -34,6 +34,7 @@ var (
 	tmpl                                   *template.Template
 	sessionSecret                          []byte
 	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
+	appTimeZone                            = envOr("APP_TIMEZONE", "UTC")
 	plexOwnerToken                         = envOr("PLEX_OWNER_TOKEN", "")
 	plexServerMachineID                    = envOr("PLEX_SERVER_MACHINE_ID", "")
 	plexServerName                         = envOr("PLEX_SERVER_NAME", "")
@@ -77,6 +78,7 @@ var (
 	sessionCookieDomain          = strings.TrimSpace(os.Getenv("SESSION_COOKIE_DOMAIN"))
 	sessionSameSiteWarningLogged bool
 	forceHSTS                    = os.Getenv("FORCE_HSTS") == "1"
+	appLocation                  = time.UTC
 )
 
 func envOr(k, d string) string {
@@ -155,6 +157,19 @@ func dbChecker(db *sql.DB) health.Checker {
 }
 
 func main() {
+	tzName := strings.TrimSpace(appTimeZone)
+	if tzName == "" {
+		tzName = "UTC"
+	}
+	if loc, err := time.LoadLocation(tzName); err != nil {
+		log.Printf("Invalid APP_TIMEZONE %q; defaulting to UTC: %v", tzName, err)
+		appLocation = time.UTC
+		appTimeZone = "UTC"
+	} else {
+		appLocation = loc
+		appTimeZone = tzName
+	}
+
 	// ---- DB ----
 	dsn := os.Getenv("DATABASE_URL")
 

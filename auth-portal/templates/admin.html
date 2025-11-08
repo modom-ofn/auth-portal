@@ -5,7 +5,7 @@
     <title>AuthPortal Admin Console</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="admin-page">
+<body class="admin-page" data-app-timezone="{{.AppTimeZone}}">
     <header class="admin-header">
         <div>
             <h1>AuthPortal Admin Console</h1>
@@ -128,7 +128,7 @@
                                 </select>
                             </div>
                             <div class="backup-schedule-row" data-frequency-row="daily weekly">
-                                <label for="backup-time">Run at</label>
+                                <label for="backup-time">Run at ({{.AppTimeZone}})</label>
                                 <input type="time" id="backup-time" value="02:00">
                             </div>
                             <div class="backup-schedule-row" data-frequency-row="weekly">
@@ -159,13 +159,13 @@
                             <label><input type="checkbox" class="backup-section-checkbox" value="mfa" checked> MFA</label>
                             <label><input type="checkbox" class="backup-section-checkbox" value="app-settings" checked> App Settings</label>
                         </fieldset>
-                        <div class="backup-schedule-actions">
-                            <button type="submit" id="backup-schedule-save" class="ghost-btn">Save Schedule</button>
-                            <div class="backup-run-meta">
-                                <span>Last run: <span id="backup-last-run">-</span></span>
-                                <span>Next run: <span id="backup-next-run">-</span></span>
+                            <div class="backup-schedule-actions">
+                                <button type="submit" id="backup-schedule-save" class="ghost-btn">Save Schedule</button>
+                                <div class="backup-run-meta">
+                                    <span>Last run ({{.AppTimeZone}}): <span id="backup-last-run">-</span></span>
+                                    <span>Next run ({{.AppTimeZone}}): <span id="backup-next-run">-</span></span>
+                                </div>
                             </div>
-                        </div>
                     </form>
                     <div id="backup-empty" class="muted">No backups created yet.</div>
                     <div id="backup-table-wrapper" class="backup-table-wrapper" hidden>

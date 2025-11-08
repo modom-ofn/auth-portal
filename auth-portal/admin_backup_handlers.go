@@ -250,13 +250,17 @@ func mapScheduleResponse(sched backupSchedule, next time.Time) adminBackupSchedu
 		Sections:  append([]string(nil), sched.Sections...),
 		Retention: sched.Retention,
 	}
+	loc := appLocation
+	if loc == nil {
+		loc = time.UTC
+	}
 	if !sched.LastRun.IsZero() {
-		last := sched.LastRun.UTC()
+		last := sched.LastRun.In(loc)
 		resp.LastRun = &last
 	}
 	if !next.IsZero() {
-		nextUTC := next.UTC()
-		resp.NextRun = &nextUTC
+		nextLocal := next.In(loc)
+		resp.NextRun = &nextLocal
 	}
 	return resp
 }

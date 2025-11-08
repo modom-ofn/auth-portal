@@ -52,6 +52,7 @@
   const backupEmptyState = document.getElementById('backup-empty');
   const backupSectionCheckboxes = Array.from(document.querySelectorAll('.backup-section-checkbox'));
   const backupFrequencyRows = Array.from(document.querySelectorAll('[data-frequency-row]'));
+  const appTimeZone = document.body?.dataset?.appTimezone || 'UTC';
 
   if (
     !configForm ||
@@ -928,14 +929,37 @@
     }
   };
 
+  const createDateFormatter = () => {
+    const options = {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZoneName: 'short',
+    };
+    try {
+      return new Intl.DateTimeFormat(undefined, { ...options, timeZone: appTimeZone || 'UTC' });
+    } catch {
+      return new Intl.DateTimeFormat(undefined, options);
+    }
+  };
+
+  const dateFormatter = createDateFormatter();
+
   const formatDate = (value) => {
     if (!value) {
       return '-';
     }
-    try {
-      return new Date(value).toLocaleString();
-    } catch {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
       return value;
+    }
+    try {
+      return dateFormatter.format(date);
+    } catch {
+      return date.toLocaleString();
     }
   };
 
