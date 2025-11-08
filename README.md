@@ -363,7 +363,7 @@ docker compose --profile ldap up -d --build
 - `APP_BASE_URL`  external URL users hit (drives redirects & cookie flags). Use HTTPS in production.
 - `SESSION_COOKIE_DOMAIN`  domain scope for session + pending-MFA cookies (e.g., `auth.example.com`).
 - `MEDIA_SERVER`  `plex`, `jellyfin`, or `emby`.
-- `SESSION_SECRET`  HMAC secret for the session JWT cookie (required).
+- `SESSION_SECRET`  HMAC secret for the session JWT cookie (required, 32+ random bytes; the service refuses to start if unset or using the legacy default).
 - `DATA_KEY`  base64 32-byte key for sealing provider tokens at rest (required).
 - `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
 - `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
@@ -622,7 +622,7 @@ DEBUG plex: resources match via machine id
 ## Security best practices
 
 - Put AuthPortal behind **HTTPS** (e.g., Caddy / NGINX / Traefik).
-- Set strong `SESSION_SECRET`, `DATA_KEY`, and DB credentials.
+- Set strong `SESSION_SECRET` (startup now fails if it's missing/short), `DATA_KEY`, and DB credentials.
 - Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
 - Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).

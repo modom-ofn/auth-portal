@@ -70,7 +70,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse JWT to avoid redirecting with an orphaned cookie.
 	tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return sessionSecret, nil
-	})
+	}, jwt.WithValidMethods(allowedJWTAlgs))
 	if err != nil || !tok.Valid {
 		clearSessionCookie(w)
 		render(w, "login.html", map[string]any{
@@ -159,7 +159,12 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 	var admin bool
 	var issuedAtStr, expiryStr string
 	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-		if tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) { return sessionSecret, nil }); err == nil && tok.Valid {
+		if tok, err := jwt.ParseWithClaims(
+			c.Value,
+			&sessionClaims{},
+			func(t *jwt.Token) (interface{}, error) { return sessionSecret, nil },
+			jwt.WithValidMethods(allowedJWTAlgs),
+		); err == nil && tok.Valid {
 			if claims, ok := tok.Claims.(*sessionClaims); ok {
 				uname = claims.Username
 				uid = claims.UUID

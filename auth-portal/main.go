@@ -32,7 +32,7 @@ var (
 	configStore                            *configstore.Store
 	backupSvc                              *backupService
 	tmpl                                   *template.Template
-	sessionSecret                          = []byte(envOr("SESSION_SECRET", "dev-insecure-change-me"))
+	sessionSecret                          []byte
 	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
 	plexOwnerToken                         = envOr("PLEX_OWNER_TOKEN", "")
 	plexServerMachineID                    = envOr("PLEX_SERVER_MACHINE_ID", "")
@@ -101,7 +101,26 @@ func envBool(key string, def bool) bool {
 }
 
 func init() {
+	initSessionSecret()
 	ensureMFAConsistency()
+}
+
+const minSessionSecretBytes = 32
+
+var allowedJWTAlgs = []string{jwt.SigningMethodHS256.Alg()}
+
+func initSessionSecret() {
+	raw := os.Getenv("SESSION_SECRET")
+	if strings.TrimSpace(raw) == "" {
+		log.Fatal("SESSION_SECRET is required and must be at least 32 random bytes")
+	}
+	if raw == "dev-insecure-change-me" {
+		log.Fatal("SESSION_SECRET must be changed from the default value")
+	}
+	if len(raw) < minSessionSecretBytes {
+		log.Fatalf("SESSION_SECRET must be at least %d bytes (got %d)", minSessionSecretBytes, len(raw))
+	}
+	sessionSecret = []byte(raw)
 }
 
 // pickProvider selects the active media provider using the canonical key.
@@ -598,7 +617,7 @@ func pendingClaimsFromRequest(r *http.Request) (pendingMFAClaims, error) {
 
 	tok, err := jwt.ParseWithClaims(c.Value, &pendingMFAClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return sessionSecret, nil
-	})
+	}, jwt.WithValidMethods(allowedJWTAlgs))
 
 	if err != nil || tok == nil {
 		return pendingMFAClaims{}, err
@@ -667,7 +686,7 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 			if c, err := r.Cookie(sessionCookie); err == nil && strings.TrimSpace(c.Value) != "" {
 				tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 					return sessionSecret, nil
-				})
+				}, jwt.WithValidMethods(allowedJWTAlgs))
 				if err == nil && tok != nil && tok.Valid {
 					if claims, ok := tok.Claims.(*sessionClaims); ok {
 						username = strings.TrimSpace(claims.Username)
@@ -715,7 +734,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 		token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 			return sessionSecret, nil
-		})
+		}, jwt.WithValidMethods(allowedJWTAlgs))
 
 		if err != nil || !token.Valid {
 			clearSessionCookie(w)
@@ -740,7 +759,7 @@ func hasValidSession(r *http.Request) bool {
 	}
 	token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return sessionSecret, nil
-	})
+	}, jwt.WithValidMethods(allowedJWTAlgs))
 	return err == nil && token.Valid
 }
 
