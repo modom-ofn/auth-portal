@@ -132,6 +132,8 @@ MEDIA_SERVER=plex
 
 # Set 'FORCE_SECURE_COOKIE=1' in prod; if behind TLS/NGINX with X-Forwarded-Proto use 1
 FORCE_SECURE_COOKIE=0
+# Force HSTS headers even if APP_BASE_URL is http (set to 1 when TLS terminates upstream)
+FORCE_HSTS=0
 
 # 32-byte base64 key (e.g., openssl rand -base64 32) (Do Not Reuse Example Below)
 DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
@@ -229,6 +231,7 @@ services:
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
@@ -237,10 +240,14 @@ services:
       UNAUTH_REQUEST_EMAIL: ${UNAUTH_REQUEST_EMAIL:-}
       UNAUTH_REQUEST_SUBJECT: ${UNAUTH_REQUEST_SUBJECT:-}
       FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
+      FORCE_HSTS: ${FORCE_HSTS:-0}
       MEDIA_SERVER: ${MEDIA_SERVER:-plex}
       MFA_ENABLE: ${MFA_ENABLE:-1}
       MFA_ENFORCE: ${MFA_ENFORCE:-0}
       MFA_ISSUER: ${MFA_ISSUER:-AuthPortal}
+      OIDC_SIGNING_KEY_PATH: ${OIDC_SIGNING_KEY_PATH:-}
+      OIDC_SIGNING_KEY: ${OIDC_SIGNING_KEY:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8089}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
       # Admin Config
