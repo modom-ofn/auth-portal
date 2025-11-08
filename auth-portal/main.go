@@ -280,6 +280,7 @@ func main() {
 	// Rate limiters for auth-sensitive routes
 	loginLimiter := newIPRateLimiter(rate.Every(6*time.Second), 5, 15*time.Minute)
 	mfaLimiter := newIPRateLimiter(rate.Every(12*time.Second), 3, 15*time.Minute)
+	plexPollLimiter := newIPRateLimiter(rate.Every(1*time.Second), 6, 10*time.Minute)
 
 	// Static assets
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
@@ -387,7 +388,7 @@ func main() {
 	r.Handle("/auth/forward", requireSameOrigin(forwardLimited)).Methods("POST")
 
 	// Plex fallback: JSON poll to complete auth if forwardUrl navigation fails
-	r.Handle("/auth/poll", rateLimitMiddleware(loginLimiter, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
+	r.Handle("/auth/poll", rateLimitMiddleware(plexPollLimiter, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
 
 	// Logout (protect with a simple same-origin check)
 	r.Handle("/logout", requireSameOrigin(rateLimitMiddleware(loginLimiter, http.HandlerFunc(logoutHandler)))).Methods("POST")
