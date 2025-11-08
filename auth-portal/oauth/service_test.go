@@ -381,6 +381,23 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	}
 }
 
+func TestHashTokenIdentifier(t *testing.T) {
+	hash1, err := hashTokenIdentifier(" token ")
+	if err != nil {
+		t.Fatalf("hashTokenIdentifier error: %v", err)
+	}
+	hash2, err := hashTokenIdentifier("token")
+	if err != nil {
+		t.Fatalf("hashTokenIdentifier error: %v", err)
+	}
+	if hash1 != hash2 {
+		t.Fatalf("expected trimmed tokens to hash identically")
+	}
+	if _, err := hashTokenIdentifier(""); err == nil {
+		t.Fatalf("expected error for empty token")
+	}
+}
+
 func TestNormalizeRedirectURIs(t *testing.T) {
 	uris, err := normalizeRedirectURIs([]string{
 		" https://example.com/callback ",

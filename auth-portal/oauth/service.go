@@ -3,6 +3,7 @@ package oauth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
@@ -380,6 +381,15 @@ func sanitizeClient(c Client) Client {
 	return c
 }
 
+func hashTokenIdentifier(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", errors.New("oauth: empty token")
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
+}
+
 func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int64, redirectURI string, scopes []string, codeChallenge, codeMethod, nonce string) (AuthCode, error) {
 	code, err := generateOpaqueToken(32)
 	if err != nil {
@@ -464,6 +474,10 @@ func (s Service) UseRefreshToken(ctx context.Context, tokenID string) (AccessTok
 	if tokenID == "" {
 		return AccessToken{}, "", time.Time{}, ErrTokenNotFound
 	}
+	digest, err := hashTokenIdentifier(tokenID)
+	if err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -485,7 +499,7 @@ SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoke
   FROM oauth_refresh_tokens
  WHERE token_id = $1
  FOR UPDATE
-`, tokenID).Scan(
+`, digest).Scan(
 		&refreshTokenID,
 		&accessTokenID,
 		&clientID,
@@ -506,12 +520,12 @@ SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoke
 		return AccessToken{}, "", time.Time{}, ErrTokenRevoked
 	}
 	if now.After(expiresAt) {
-		_, _ = tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, tokenID)
+		_, _ = tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest)
 		return AccessToken{}, "", time.Time{}, ErrTokenExpired
 	}
 
 	// Revoke previous tokens
-	if _, err := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, tokenID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest); err != nil {
 		return AccessToken{}, "", time.Time{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE oauth_access_tokens SET revoked_at = now() WHERE token_id = $1`, accessTokenID); err != nil {
@@ -539,17 +553,21 @@ func (s Service) GetAccessToken(ctx context.Context, tokenID string) (AccessToke
 	if tokenID == "" {
 		return AccessToken{}, ErrTokenNotFound
 	}
+	digest, err := hashTokenIdentifier(tokenID)
+	if err != nil {
+		return AccessToken{}, err
+	}
 	var (
 		token   AccessToken
 		scopes  pq.StringArray
 		revoked sql.NullTime
 	)
-	err := s.DB.QueryRowContext(ctx, `
+	err = s.DB.QueryRowContext(ctx, `
 SELECT token_id, client_id, user_id, scopes, expires_at, revoked_at, created_at
   FROM oauth_access_tokens
  WHERE token_id = $1
  LIMIT 1
-`, tokenID).Scan(
+`, digest).Scan(
 		&token.TokenID,
 		&token.ClientID,
 		&token.UserID,
@@ -571,6 +589,7 @@ SELECT token_id, client_id, user_id, scopes, expires_at, revoked_at, created_at
 		return AccessToken{}, ErrTokenExpired
 	}
 	token.Scopes = scopes
+	token.TokenID = tokenID
 	return token, nil
 }
 
@@ -658,13 +677,17 @@ func (s Service) insertAccessToken(ctx context.Context, exec sqlExecutor, client
 	if err != nil {
 		return AccessToken{}, err
 	}
+	hashedID, err := hashTokenIdentifier(tokenID)
+	if err != nil {
+		return AccessToken{}, err
+	}
 	now := time.Now().UTC()
 	expires := now.Add(s.accessTokenTTL())
 	normalized := normalizeScopes(scopes)
 	if _, err := exec.ExecContext(ctx, `
 INSERT INTO oauth_access_tokens (token_id, client_id, user_id, scopes, expires_at, created_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-`, tokenID, clientID, userID, pq.StringArray(normalized), expires, now); err != nil {
+`, hashedID, clientID, userID, pq.StringArray(normalized), expires, now); err != nil {
 		return AccessToken{}, err
 	}
 	return AccessToken{
@@ -678,7 +701,15 @@ VALUES ($1, $2, $3, $4, $5, $6)
 }
 
 func (s Service) insertRefreshToken(ctx context.Context, exec sqlExecutor, accessTokenID string, clientID string, userID int64, scopes []string) (string, time.Time, error) {
+	accessDigest, err := hashTokenIdentifier(accessTokenID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
 	tokenID, err := generateOpaqueToken(48)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	hashedID, err := hashTokenIdentifier(tokenID)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -687,7 +718,7 @@ func (s Service) insertRefreshToken(ctx context.Context, exec sqlExecutor, acces
 	if _, err := exec.ExecContext(ctx, `
 INSERT INTO oauth_refresh_tokens (token_id, access_token_id, client_id, user_id, scopes, expires_at, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-`, tokenID, accessTokenID, clientID, userID, pq.StringArray(normalizeScopes(scopes)), expires, now); err != nil {
+`, hashedID, accessDigest, clientID, userID, pq.StringArray(normalizeScopes(scopes)), expires, now); err != nil {
 		return "", time.Time{}, err
 	}
 	return tokenID, expires, nil
