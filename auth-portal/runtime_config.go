@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -187,6 +188,10 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 }
 
 func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
+	return loadRuntimeConfigInternal(store, false)
+}
+
+func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeConfig, error) {
 	if store == nil {
 		return RuntimeConfig{}, errors.New("configstore: store is nil")
 	}
@@ -233,6 +238,14 @@ func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 		rc.LoadedAt = snap.LoadedAt
 	} else {
 		rc.LoadedAt = time.Now().UTC()
+	}
+
+	missing := detectMissingSections(pVersion, sVersion, mVersion, aVersion)
+	if len(missing) > 0 && !retried {
+		if err := persistInitialSections(store, rc, missing); err != nil {
+			return RuntimeConfig{}, err
+		}
+		return loadRuntimeConfigInternal(store, true)
 	}
 
 	return rc, nil
@@ -379,4 +392,48 @@ func ensureMFAConsistency() {
 		log.Println("MFA enforcement enabled but enrollment disabled; enabling enrollment so enforcement can proceed")
 		mfaEnrollmentEnabled = true
 	}
+}
+
+func detectMissingSections(pVersion, sVersion, mVersion, aVersion int64) []configstore.Section {
+	var sections []configstore.Section
+	if pVersion == 0 {
+		sections = append(sections, configstore.SectionProviders)
+	}
+	if sVersion == 0 {
+		sections = append(sections, configstore.SectionSecurity)
+	}
+	if mVersion == 0 {
+		sections = append(sections, configstore.SectionMFA)
+	}
+	if aVersion == 0 {
+		sections = append(sections, configstore.SectionAppSettings)
+	}
+	return sections
+}
+
+func persistInitialSections(store *configstore.Store, cfg RuntimeConfig, sections []configstore.Section) error {
+	ctx := context.Background()
+	for _, section := range sections {
+		var payload any
+		switch section {
+		case configstore.SectionProviders:
+			payload = cfg.Providers
+		case configstore.SectionSecurity:
+			payload = cfg.Security
+		case configstore.SectionMFA:
+			payload = cfg.MFA
+		case configstore.SectionAppSettings:
+			payload = cfg.AppSettings
+		default:
+			continue
+		}
+
+		if _, err := store.UpsertSection(ctx, section, payload, configstore.UpdateOptions{
+			UpdatedBy: "system:bootstrap",
+			Reason:    "initial default config",
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
