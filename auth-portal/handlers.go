@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strings"
 	"time"
@@ -33,12 +34,12 @@ func providerUI() (key, display string) {
 // live getters read the current runtime configuration each request.
 func getExtraLink() (urlStr, text string) {
 	cfg := currentRuntimeConfig().AppSettings
-	return strings.TrimSpace(cfg.LoginExtraLinkURL), strings.TrimSpace(cfg.LoginExtraLinkText)
+	return sanitizeDisplayURL(cfg.LoginExtraLinkURL), strings.TrimSpace(cfg.LoginExtraLinkText)
 }
 
 func getRequestAccess(providerDisplay string) (email, subj, subjQP string) {
 	cfg := currentRuntimeConfig().AppSettings
-	email = strings.TrimSpace(cfg.UnauthRequestEmail)
+	email = sanitizeMailAddress(cfg.UnauthRequestEmail)
 	if email == "" {
 		email = "admin@example.com"
 	}
@@ -48,6 +49,37 @@ func getRequestAccess(providerDisplay string) (email, subj, subjQP string) {
 	}
 	subjQP = url.QueryEscape(subj)
 	return
+}
+
+func sanitizeDisplayURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	return u.String()
+}
+
+func sanitizeMailAddress(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	addr, err := mail.ParseAddress(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(addr.Address)
 }
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
