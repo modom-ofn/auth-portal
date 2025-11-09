@@ -128,6 +128,23 @@ func TestEnforceClientScopePolicyAllowsDefaultScopes(t *testing.T) {
 	}
 }
 
+func TestEnforceClientScopePolicyFallsBackToOpenID(t *testing.T) {
+	t.Parallel()
+
+	client := oauth.Client{Scopes: []string{"openid", "profile"}}
+	requested := []string{"   ", "", "\t"}
+
+	filtered, err := enforceClientScopePolicy(requested, client)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"openid"}
+	if !reflect.DeepEqual(filtered, want) {
+		t.Fatalf("unexpected scopes: got %v want %v", filtered, want)
+	}
+}
+
 func TestAllowedScopesForClientEnsuresOpenID(t *testing.T) {
 	client := oauth.Client{Scopes: []string{"profile"}}
 
