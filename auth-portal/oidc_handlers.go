@@ -278,6 +278,12 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scopes, err = enforceClientScopePolicy(scopes, client)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_scope", err.Error())
+		return
+	}
+
 	if decision == "deny" {
 		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user denied the request")
 		return
