@@ -319,7 +319,7 @@ func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	grantType := strings.TrimSpace(r.PostFormValue("grant_type"))
+	grantType := strings.ToLower(strings.TrimSpace(r.PostFormValue("grant_type")))
 	switch grantType {
 	case "authorization_code":
 		handleAuthorizationCodeGrant(w, r, client)
