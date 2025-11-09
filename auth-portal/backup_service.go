@@ -203,7 +203,7 @@ func (s *backupService) loadSchedule(ctx context.Context) error {
 			} else {
 				log.Printf("Legacy backup schedule decode failed: %v", err)
 			}
-		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			log.Printf("Legacy backup schedule read failed: %v", err)
 		}
 
@@ -318,6 +318,15 @@ func (s *backupService) CreateManualBackup(ctx context.Context, sections []strin
 }
 
 func (s *backupService) createBackup(ctx context.Context, sections []string, author string) (backupMetadata, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return backupMetadata{}, ctx.Err()
+	default:
+	}
+
 	validSections := normalizeBackupSections(sections)
 	if len(validSections) == 0 {
 		validSections = []string{"providers", "security", "mfa", "app-settings"}

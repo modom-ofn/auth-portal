@@ -13,7 +13,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 )
 
 var (
@@ -21,7 +20,6 @@ var (
 	oidcSigningKeyID string
 	oidcJWKSCache    []byte
 	oidcKeyGenerated bool
-	oidcKeyLoadedAt  time.Time
 )
 
 func initOIDCSigningKey() error {
@@ -73,7 +71,6 @@ func initOIDCSigningKey() error {
 	oidcSigningKey = priv
 	oidcSigningKeyID = keyID
 	oidcJWKSCache = jwks
-	oidcKeyLoadedAt = time.Now().UTC()
 
 	if oidcKeyGenerated {
 		log.Printf("OIDC: generated ephemeral RSA signing key (kid=%s)", oidcSigningKeyID)

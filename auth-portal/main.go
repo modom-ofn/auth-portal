@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"html/template"
 	"log"
 	"net"
 	"net/http"
@@ -30,7 +29,6 @@ var (
 	db                                     *sql.DB
 	configStore                            *configstore.Store
 	backupSvc                              *backupService
-	tmpl                                   *template.Template
 	sessionSecret                          []byte
 	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
 	appTimeZone                            = envOr("APP_TIMEZONE", "UTC")
@@ -234,7 +232,6 @@ func main() {
 	log.Printf("Config store loaded with %d items", snap.TotalItems())
 
 	// ---- Templates ----
-	tmpl = template.Must(template.ParseGlob("templates/*.html"))
 
 	// ---- Provider configuration (DI init) ----
 	providers.Init(providers.ProviderDeps{
@@ -668,11 +665,6 @@ func pendingClaimsFromRequest(r *http.Request) (pendingMFAClaims, error) {
 	return *claims, nil
 }
 
-func hasPendingMFACookie(r *http.Request) bool {
-	_, err := pendingClaimsFromRequest(r)
-	return err == nil
-}
-
 func finalizeLoginSession(w http.ResponseWriter, uuid, username string) (bool, error) {
 	enabled, err := userHasMFAEnabled(uuid, username)
 	if err != nil {
@@ -747,7 +739,7 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 				}
 			}
 
-			if sessionAuthorized == false {
+			if !sessionAuthorized {
 				if claims, err := pendingClaimsFromRequest(r); err == nil {
 					username = strings.TrimSpace(claims.Username)
 					uuid = strings.TrimSpace(claims.UUID)

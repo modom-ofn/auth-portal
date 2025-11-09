@@ -129,11 +129,6 @@ WHERE username = $2`, access, username)
 	return err
 }
 
-// Back-compat shim (older code still calling Plex-named helper)
-func setUserPlexAccessByUsername(username string, access bool) error {
-	return setUserMediaAccessByUsername(username, access)
-}
-
 // setUserAdminByUsername toggles administrative privileges for a user, recording audit metadata.
 func setUserAdminByUsername(username string, admin bool, grantedBy string) error {
 	username = strings.TrimSpace(username)
@@ -240,52 +235,6 @@ type Identity struct {
 	MediaUUID   string
 	MediaToken  sql.NullString
 	MediaAccess bool
-}
-
-// getUserIdentities returns all provider identities for a given user id.
-func getUserIdentities(userID int) ([]Identity, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
-	rows, err := db.QueryContext(ctx, `
-        SELECT user_id, provider, media_uuid, media_token, media_access
-          FROM identities
-         WHERE user_id = $1
-         ORDER BY provider
-    `, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []Identity
-	for rows.Next() {
-		var id Identity
-		if err := rows.Scan(&id.UserID, &id.Provider, &id.MediaUUID, &id.MediaToken, &id.MediaAccess); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
-}
-
-// getIdentityByProviderUUID fetches one identity by provider and media uuid.
-func getIdentityByProviderUUID(provider, mediaUUID string) (Identity, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-	var id Identity
-	err := db.QueryRowContext(ctx, `
-        SELECT user_id, provider, media_uuid, media_token, media_access
-          FROM identities
-         WHERE provider = $1 AND media_uuid = $2
-         LIMIT 1
-    `, strings.TrimSpace(provider), strings.TrimSpace(mediaUUID)).Scan(
-		&id.UserID, &id.Provider, &id.MediaUUID, &id.MediaToken, &id.MediaAccess,
-	)
-	if err != nil {
-		return Identity{}, err
-	}
-	return id, nil
 }
 
 // upsertUserIdentity ensures a user row exists (by username) and then

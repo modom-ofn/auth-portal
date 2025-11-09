@@ -4,7 +4,6 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"log"
 	"strings"
 
@@ -310,27 +309,6 @@ CREATE INDEX IF NOT EXISTS idx_oauth_consents_client ON oauth_consents (client_i
 	return nil
 }
 
-// ---------- PIN storage ----------
-
-func savePin(code string, pinID int) error {
-	_, err := db.Exec(`
-INSERT INTO pins (code, pin_id) VALUES ($1, $2)
-ON CONFLICT (code) DO UPDATE
-SET pin_id = EXCLUDED.pin_id,
-    created_at = now()
-`, code, pinID)
-	return err
-}
-
-func getPinIDByCode(code string) (int, error) {
-	var id int
-	err := db.QueryRow(`SELECT pin_id FROM pins WHERE code = $1`, code).Scan(&id)
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
-}
-
 // ---------- Users ----------
 
 // Backward-compatible struct: prefer Media* fields, but keep Plex* for callers
@@ -363,29 +341,12 @@ func nullStringFrom(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
 
-func strOrNil(ns sql.NullString) *string {
-	if ns.Valid {
-		s := strings.TrimSpace(ns.String)
-		if s != "" {
-			return &s
-		}
-	}
-	return nil
-}
-
 // Helper: return trimmed string or empty for NULLIF
 func nn(ns sql.NullString) string {
 	if !ns.Valid {
 		return ""
 	}
 	return strings.TrimSpace(ns.String)
-}
-
-func strOrEmpty(ns sql.NullString) string {
-	if ns.Valid {
-		return strings.TrimSpace(ns.String)
-	}
-	return ""
 }
 
 // Choose values, preferring Media* (new) over Plex* (legacy)
@@ -498,23 +459,4 @@ UPDATE users
 	return id, nil
 }
 
-// Set media_access by UUID (preferred, provider-agnostic)
-func setUserMediaAccessByUUID(uuid string, access bool) error {
-	uuid = strings.TrimSpace(uuid)
-	if uuid == "" {
-		return fmt.Errorf("setUserMediaAccessByUUID: empty uuid")
-	}
-	_, err := db.Exec(`
-UPDATE users
-   SET media_access = $2,
-       updated_at   = now()
- WHERE media_uuid = $1
-`, uuid, access)
-	return err
-}
-
-// Legacy shims (keep old callers working)
-func setUserPlexAccessByUUID(uuid string, access bool) error {
-	return setUserMediaAccessByUUID(uuid, access)
-}
-func setUserPlexAccess(uuid string, access bool) error { return setUserMediaAccessByUUID(uuid, access) }
+//lint:ignore U1000 kept for future provider use (UUID-based access toggles)
