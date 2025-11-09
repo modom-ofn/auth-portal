@@ -142,6 +142,12 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scopes, err = enforceClientScopePolicy(scopes, client)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_scope", err.Error())
+		return
+	}
+
 	codeChallenge := strings.TrimSpace(query.Get("code_challenge"))
 	codeMethod := strings.TrimSpace(query.Get("code_challenge_method"))
 	if codeChallenge != "" {
@@ -311,6 +317,8 @@ func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
 	switch grantType {
 	case "authorization_code":
 		handleAuthorizationCodeGrant(w, r, client)
+	case "refresh_token":
+		handleRefreshTokenGrant(w, r, client)
 	default:
 		writeOIDCError(w, http.StatusBadRequest, "unsupported_grant_type", "grant type not supported")
 	}
@@ -668,6 +676,48 @@ func containsScope(scopes []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func enforceClientScopePolicy(requested []string, client oauth.Client) ([]string, error) {
+	allowed := allowedScopesForClient(client)
+	unique := make([]string, 0, len(requested))
+	seen := make(map[string]struct{}, len(requested))
+	for _, scope := range requested {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if _, ok := allowed[scope]; !ok {
+			return nil, fmt.Errorf("scope %q is not allowed for this client", scope)
+		}
+		if _, dup := seen[scope]; dup {
+			continue
+		}
+		seen[scope] = struct{}{}
+		unique = append(unique, scope)
+	}
+	if len(unique) == 0 {
+		return []string{"openid"}, nil
+	}
+	return unique, nil
+}
+
+func allowedScopesForClient(client oauth.Client) map[string]struct{} {
+	allowed := make(map[string]struct{})
+	for _, scope := range client.Scopes {
+		scope = strings.TrimSpace(scope)
+		if scope != "" {
+			allowed[scope] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		for _, def := range []string{"openid", "profile", "email"} {
+			allowed[def] = struct{}{}
+		}
+	} else if _, ok := allowed["openid"]; !ok {
+		allowed["openid"] = struct{}{}
+	}
+	return allowed
 }
 
 func extractClientCredentials(r *http.Request) (string, string, error) {
