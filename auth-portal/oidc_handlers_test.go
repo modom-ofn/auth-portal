@@ -2,9 +2,11 @@ package main
 
 import (
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"auth-portal/oauth"
+
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
@@ -76,5 +78,30 @@ func TestScopeDisplayList(t *testing.T) {
 	}
 	if len(expected) != 0 {
 		t.Fatalf("missing scopes in display: %+v", expected)
+	}
+}
+
+func TestEnforceClientScopePolicyAllowsConfiguredScopes(t *testing.T) {
+	client := oauth.Client{Scopes: []string{"openid", "profile", "offline_access"}}
+	requested := []string{"openid", "profile", "offline_access", "profile"}
+
+	filtered, err := enforceClientScopePolicy(requested, client)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"openid", "profile", "offline_access"}
+	if !reflect.DeepEqual(filtered, want) {
+		t.Fatalf("unexpected scopes: got %v want %v", filtered, want)
+	}
+}
+
+func TestEnforceClientScopePolicyRejectsUnconfiguredScope(t *testing.T) {
+	client := oauth.Client{Scopes: []string{"openid", "profile"}}
+	requested := []string{"openid", "offline_access"}
+
+	_, err := enforceClientScopePolicy(requested, client)
+	if err == nil {
+		t.Fatal("expected error for disallowed scope")
 	}
 }
