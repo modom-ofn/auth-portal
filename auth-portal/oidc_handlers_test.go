@@ -216,3 +216,77 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 		t.Fatalf("unmet expectations: %v", err)
 	}
 }
+
+func TestOIDCTokenHandlerRejectsUnauthorizedGrant(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	originalService := oauthService
+	defer func() { oauthService = originalService }()
+
+	oauthService = oauth.Service{DB: db}
+
+	now := time.Now()
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+  FROM oauth_clients
+ WHERE client_id = $1
+ LIMIT 1
+`)).
+		WithArgs("client-123").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"client_id",
+			"client_secret",
+			"name",
+			"redirect_uris",
+			"scopes",
+			"grant_types",
+			"response_types",
+			"created_at",
+			"updated_at",
+		}).
+			AddRow(
+				"client-123",
+				"",
+				"Test App",
+				pq.StringArray{"https://example.com/callback"},
+				pq.StringArray{"openid"},
+				pq.StringArray{"authorization_code"},
+				pq.StringArray{"code"},
+				now,
+				now,
+			))
+
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("client_id", "client-123")
+
+	req := httptest.NewRequest(http.MethodPost, "/oidc/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rr := httptest.NewRecorder()
+	oidcTokenHandler(rr, req)
+
+	resp := rr.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unexpected status: got %d want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+
+	var payload map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["error"] != "unauthorized_client" {
+		t.Fatalf("unexpected error code: got %q want %q", payload["error"], "unauthorized_client")
+	}
+	if payload["error_description"] != "grant type not allowed for this client" {
+		t.Fatalf("unexpected description: got %q want %q", payload["error_description"], "grant type not allowed for this client")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}

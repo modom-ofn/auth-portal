@@ -319,8 +319,19 @@ func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	grantType := strings.ToLower(strings.TrimSpace(r.PostFormValue("grant_type")))
-	switch grantType {
+	grantType := strings.TrimSpace(r.PostFormValue("grant_type"))
+	if grantType == "" {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "grant_type required")
+		return
+	}
+
+	normalizedGrant := strings.ToLower(grantType)
+	if !clientAllowsGrant(client, normalizedGrant) {
+		writeOIDCError(w, http.StatusBadRequest, "unauthorized_client", "grant type not allowed for this client")
+		return
+	}
+
+	switch normalizedGrant {
 	case "authorization_code":
 		handleAuthorizationCodeGrant(w, r, client)
 	case "refresh_token":
@@ -577,6 +588,22 @@ func clientAllowsRedirect(client oauth.Client, redirect string) bool {
 	}
 	for _, reg := range client.RedirectURIs {
 		if strings.TrimSpace(reg) == redirect {
+			return true
+		}
+	}
+	return false
+}
+
+func clientAllowsGrant(client oauth.Client, grant string) bool {
+	grant = strings.TrimSpace(strings.ToLower(grant))
+	if grant == "" {
+		return false
+	}
+	if len(client.GrantTypes) == 0 {
+		return grant == "authorization_code"
+	}
+	for _, allowed := range client.GrantTypes {
+		if strings.TrimSpace(strings.ToLower(allowed)) == grant {
 			return true
 		}
 	}
