@@ -134,11 +134,12 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 
 	client, err := oauthService.GetClient(r.Context(), clientID)
 	if err != nil {
-		writeOIDCRedirectError(w, r, redirectURI, state, "unauthorized_client", "client not registered")
+		writeOIDCError(w, http.StatusBadRequest, "unauthorized_client", "client not registered")
 		return
 	}
-	if !clientAllowsRedirect(client, redirectURI) {
-		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "redirect_uri is not registered")
+	redirectURI, err = validateRegisteredRedirectURI(client, redirectURI)
+	if err != nil {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
@@ -256,6 +257,17 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client, err := oauthService.GetClient(r.Context(), clientID)
+	if err != nil {
+		http.Error(w, "client not registered", http.StatusBadRequest)
+		return
+	}
+	redirectURI, err = validateRegisteredRedirectURI(client, redirectURI)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	uuid := uuidFrom(r.Context())
 	if uuid == "" {
 		http.Error(w, "session required", http.StatusUnauthorized)
@@ -265,16 +277,6 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 	user, err := getUserByUUIDPreferred(uuid)
 	if err != nil {
 		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user not found")
-		return
-	}
-
-	client, err := oauthService.GetClient(r.Context(), clientID)
-	if err != nil {
-		writeOIDCRedirectError(w, r, redirectURI, state, "unauthorized_client", "client not registered")
-		return
-	}
-	if !clientAllowsRedirect(client, redirectURI) {
-		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "redirect_uri is not registered")
 		return
 	}
 
@@ -460,7 +462,7 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oaut
 		return
 	}
 
-	access, newRefresh, refreshExpiry, err := oauthService.UseRefreshToken(r.Context(), refreshToken)
+	access, newRefresh, refreshExpiry, err := oauthService.UseRefreshToken(r.Context(), refreshToken, client.ClientID)
 	if err != nil {
 		if errors.Is(err, oauth.ErrTokenNotFound) || errors.Is(err, oauth.ErrTokenExpired) || errors.Is(err, oauth.ErrTokenRevoked) {
 			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "refresh token invalid or expired")
@@ -582,16 +584,35 @@ func writeOIDCRedirectError(w http.ResponseWriter, r *http.Request, redirectURI,
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
-func clientAllowsRedirect(client oauth.Client, redirect string) bool {
-	if len(client.RedirectURIs) == 0 {
-		return false
+func validateRegisteredRedirectURI(client oauth.Client, redirectURI string) (string, error) {
+	normalized := strings.TrimSpace(redirectURI)
+	if normalized == "" {
+		return "", errors.New("redirect_uri required")
 	}
+	if len(client.RedirectURIs) == 0 {
+		return "", errors.New("redirect_uri is not registered for this client")
+	}
+
+	parsed, err := url.Parse(normalized)
+	if err != nil || parsed.String() == "" {
+		return "", errors.New("invalid redirect_uri")
+	}
+	if parsed.Fragment != "" {
+		return "", errors.New("redirect_uri must not include a fragment component")
+	}
+
 	for _, reg := range client.RedirectURIs {
-		if strings.TrimSpace(reg) == redirect {
-			return true
+		if strings.TrimSpace(reg) == normalized {
+			return normalized, nil
 		}
 	}
-	return false
+
+	return "", errors.New("redirect_uri is not registered for this client")
+}
+
+func clientAllowsRedirect(client oauth.Client, redirect string) bool {
+	_, err := validateRegisteredRedirectURI(client, redirect)
+	return err == nil
 }
 
 func clientAllowsGrant(client oauth.Client, grant string) bool {
@@ -676,6 +697,14 @@ func scopeDescription(scope string) string {
 }
 
 func finishAuthorizeFlow(w http.ResponseWriter, r *http.Request, user User, client oauth.Client, redirectURI, state string, scopes []string, codeChallenge, codeMethod, nonce string) {
+	validatedRedirect, err := validateRegisteredRedirectURI(client, redirectURI)
+	if err != nil {
+		log.Printf("oidc authorize: refusing redirect for %s to %s: %v", client.ClientID, redirectURI, err)
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "redirect_uri is not registered for this client")
+		return
+	}
+	redirectURI = validatedRedirect
+
 	if err := oauthService.RecordConsent(r.Context(), int64(user.ID), client.ClientID, scopes); err != nil {
 		log.Printf("oidc authorize: record consent failed for %s/%s: %v", user.Username, client.ClientID, err)
 	}
