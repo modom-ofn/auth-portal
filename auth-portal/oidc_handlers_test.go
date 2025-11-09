@@ -363,3 +363,51 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 		t.Fatalf("unmet expectations: %v", err)
 	}
 }
+
+func TestClientAllowsGrant(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		client oauth.Client
+		grant  string
+		allow  bool
+	}{
+		"defaults to authorization_code": {
+			client: oauth.Client{},
+			grant:  "authorization_code",
+			allow:  true,
+		},
+		"defaults reject refresh": {
+			client: oauth.Client{},
+			grant:  "refresh_token",
+			allow:  false,
+		},
+		"honors configured list": {
+			client: oauth.Client{GrantTypes: []string{"authorization_code", "refresh_token"}},
+			grant:  "refresh_token",
+			allow:  true,
+		},
+		"normalizes casing and whitespace": {
+			client: oauth.Client{GrantTypes: []string{"  REFRESH_TOKEN  "}},
+			grant:  "  ReFrEsH_ToKeN  ",
+			allow:  true,
+		},
+		"rejects unknown grant": {
+			client: oauth.Client{GrantTypes: []string{"authorization_code"}},
+			grant:  "password",
+			allow:  false,
+		},
+	}
+
+	for name, tc := range cases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			allowed := clientAllowsGrant(tc.client, tc.grant)
+			if allowed != tc.allow {
+				t.Fatalf("clientAllowsGrant(%q) = %t, want %t", tc.grant, allowed, tc.allow)
+			}
+		})
+	}
+}
