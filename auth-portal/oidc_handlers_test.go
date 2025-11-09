@@ -105,3 +105,33 @@ func TestEnforceClientScopePolicyRejectsUnconfiguredScope(t *testing.T) {
 		t.Fatal("expected error for disallowed scope")
 	}
 }
+
+func TestEnforceClientScopePolicyAllowsDefaultScopes(t *testing.T) {
+	client := oauth.Client{Scopes: nil}
+	requested := []string{"openid", "profile"}
+
+	filtered, err := enforceClientScopePolicy(requested, client)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"openid", "profile"}
+	if !reflect.DeepEqual(filtered, want) {
+		t.Fatalf("unexpected scopes: got %v want %v", filtered, want)
+	}
+}
+
+func TestAllowedScopesForClientEnsuresOpenID(t *testing.T) {
+	client := oauth.Client{Scopes: []string{"profile"}}
+
+	allowed := allowedScopesForClient(client)
+	if _, ok := allowed["openid"]; !ok {
+		t.Fatal("expected openid to be allowed")
+	}
+	if _, ok := allowed["profile"]; !ok {
+		t.Fatal("expected profile to be allowed")
+	}
+	if _, ok := allowed["email"]; ok {
+		t.Fatal("did not expect email to be allowed")
+	}
+}
