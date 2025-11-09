@@ -92,7 +92,7 @@ func mfaEnrollmentStartHandler(w http.ResponseWriter, r *http.Request) {
 	previouslyEnabled := false
 	if rec, err := getMFARecord(user.ID); err == nil {
 		previouslyEnabled = rec.IsVerified
-	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		log.Printf("mfa enroll: load existing record failed: %v", err)
 	}
 

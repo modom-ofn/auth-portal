@@ -270,14 +270,11 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<html><head><title>Signed in — AuthPortal</title></head><body style="font-family:system-ui;padding:2rem">
-              <h1>Signed in — you can close this window.</h1>
-              <script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ ok: true, type: "emby-auth", redirect: "/home" }, window.location.origin);}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script>
-            </body></html>`))
+	WriteAuthCompletePage(w, AuthCompletePageOptions{
+		Message:  "Signed in - you can close this window.",
+		Provider: "emby-auth",
+		Redirect: "/home",
+	})
 }
 
 func (EmbyProvider) IsAuthorized(uuid, _username string) (bool, error) {

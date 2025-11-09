@@ -19,6 +19,50 @@
     window.location.assign(target);
   }
 
+  function notifyOpener(payload) {
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(
+          {
+            ok: true,
+            type: payload?.type || "auth-portal",
+            redirect: payload?.redirect || "/home",
+            mfa: !!payload?.mfa
+          },
+          window.location.origin
+        );
+      }
+    } catch (err) {
+      console.warn("auth completion postMessage failed", err);
+    }
+  }
+
+  function handlePopupCompletionIfNeeded() {
+    const body = document.body;
+    if (!body) return false;
+    const data = body.dataset || {};
+    if (data.authComplete !== "1") {
+      return false;
+    }
+    notifyOpener({
+      type: data.authProvider || "auth-portal",
+      redirect: data.authRedirect || "/home",
+      mfa: data.authMfa === "true"
+    });
+    setTimeout(() => {
+      try {
+        window.close();
+      } catch (err) {
+        console.warn("window.close failed", err);
+      }
+    }, 600);
+    return true;
+  }
+
+  if (handlePopupCompletionIfNeeded()) {
+    return;
+  }
+
   // Only accept messages from our own origin
   window.addEventListener("message", (ev) => {
     if (ev.origin !== window.location.origin) return;

@@ -4,7 +4,6 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"log"
 	"strings"
 
@@ -55,6 +54,22 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS media_access  BOOLEAN    NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+`); err != nil {
+		return err
+	}
+
+	// Admin flags
+	if _, err := db.Exec(`
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS is_admin         BOOLEAN     NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS admin_granted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS admin_granted_by TEXT,
+  ADD COLUMN IF NOT EXISTS session_version  BIGINT      NOT NULL DEFAULT 0
+`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users (is_admin);
 `); err != nil {
 		return err
 	}
@@ -167,28 +182,131 @@ CREATE TABLE IF NOT EXISTS pins (
 		return err
 	}
 
-	return nil
-}
-
-// ---------- PIN storage ----------
-
-func savePin(code string, pinID int) error {
-	_, err := db.Exec(`
-INSERT INTO pins (code, pin_id) VALUES ($1, $2)
-ON CONFLICT (code) DO UPDATE
-SET pin_id = EXCLUDED.pin_id,
-    created_at = now()
-`, code, pinID)
-	return err
-}
-
-func getPinIDByCode(code string) (int, error) {
-	var id int
-	err := db.QueryRow(`SELECT pin_id FROM pins WHERE code = $1`, code).Scan(&id)
-	if err != nil {
-		return 0, err
+	// Runtime configuration store
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS app_config (
+  namespace   TEXT   NOT NULL,
+  key         TEXT   NOT NULL,
+  value       JSONB  NOT NULL,
+  version     BIGINT NOT NULL DEFAULT 1,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by  TEXT,
+  PRIMARY KEY (namespace, key)
+);
+CREATE INDEX IF NOT EXISTS idx_app_config_namespace ON app_config (namespace);
+`); err != nil {
+		return err
 	}
-	return id, nil
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS app_config_history (
+  id            BIGSERIAL PRIMARY KEY,
+  namespace     TEXT   NOT NULL,
+  key           TEXT   NOT NULL,
+  value         JSONB  NOT NULL,
+  version       BIGINT NOT NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by    TEXT,
+  change_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_app_config_history_lookup ON app_config_history (namespace, key, version);
+`); err != nil {
+		return err
+	}
+
+	// OAuth/OIDC clients and tokens
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id      TEXT PRIMARY KEY,
+  client_secret  TEXT,
+  name           TEXT NOT NULL,
+  redirect_uris  TEXT[] NOT NULL DEFAULT '{}',
+  scopes         TEXT[] NOT NULL DEFAULT '{}',
+  grant_types    TEXT[] NOT NULL DEFAULT '{}',
+  response_types TEXT[] NOT NULL DEFAULT '{}',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_clients_name ON oauth_clients (name);
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_auth_codes (
+  code            TEXT PRIMARY KEY,
+  client_id       TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+  user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scopes          TEXT[] NOT NULL DEFAULT '{}',
+  redirect_uri    TEXT NOT NULL,
+  expires_at      TIMESTAMPTZ NOT NULL,
+  consumed_at     TIMESTAMPTZ,
+  code_challenge  TEXT,
+  code_method     TEXT,
+  nonce           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_client ON oauth_auth_codes (client_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_user ON oauth_auth_codes (user_id);
+`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+ALTER TABLE oauth_auth_codes
+  ADD COLUMN IF NOT EXISTS nonce TEXT;
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+  token_id        TEXT PRIMARY KEY,
+  client_id       TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+  user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scopes          TEXT[] NOT NULL DEFAULT '{}',
+  expires_at      TIMESTAMPTZ NOT NULL,
+  revoked_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_client ON oauth_access_tokens (client_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_user ON oauth_access_tokens (user_id);
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+  token_id        TEXT PRIMARY KEY,
+  access_token_id TEXT NOT NULL REFERENCES oauth_access_tokens(token_id) ON DELETE CASCADE,
+  client_id       TEXT NOT NULL,
+  user_id         BIGINT NOT NULL,
+  scopes          TEXT[] NOT NULL DEFAULT '{}',
+  expires_at      TIMESTAMPTZ NOT NULL,
+  revoked_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (access_token_id)
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_client ON oauth_refresh_tokens (client_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_user ON oauth_refresh_tokens (user_id);
+`); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS oauth_consents (
+  user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id  TEXT   NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+  scopes     TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, client_id)
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_consents_client ON oauth_consents (client_id);
+`); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ---------- Users ----------
@@ -206,6 +324,12 @@ type User struct {
 	MediaToken  sql.NullString
 	MediaAccess bool
 
+	// Administrative control
+	IsAdmin        bool
+	AdminGrantedAt sql.NullTime
+	AdminGrantedBy sql.NullString
+	SessionVersion int64
+
 	// Legacy (will be ignored if Media* are set)
 	PlexUUID   sql.NullString
 	PlexToken  sql.NullString
@@ -217,29 +341,12 @@ func nullStringFrom(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
 
-func strOrNil(ns sql.NullString) *string {
-	if ns.Valid {
-		s := strings.TrimSpace(ns.String)
-		if s != "" {
-			return &s
-		}
-	}
-	return nil
-}
-
 // Helper: return trimmed string or empty for NULLIF
 func nn(ns sql.NullString) string {
 	if !ns.Valid {
 		return ""
 	}
 	return strings.TrimSpace(ns.String)
-}
-
-func strOrEmpty(ns sql.NullString) string {
-	if ns.Valid {
-		return strings.TrimSpace(ns.String)
-	}
-	return ""
 }
 
 // Choose values, preferring Media* (new) over Plex* (legacy)
@@ -352,23 +459,4 @@ UPDATE users
 	return id, nil
 }
 
-// Set media_access by UUID (preferred, provider-agnostic)
-func setUserMediaAccessByUUID(uuid string, access bool) error {
-	uuid = strings.TrimSpace(uuid)
-	if uuid == "" {
-		return fmt.Errorf("setUserMediaAccessByUUID: empty uuid")
-	}
-	_, err := db.Exec(`
-UPDATE users
-   SET media_access = $2,
-       updated_at   = now()
- WHERE media_uuid = $1
-`, uuid, access)
-	return err
-}
-
-// Legacy shims (keep old callers working)
-func setUserPlexAccessByUUID(uuid string, access bool) error {
-	return setUserMediaAccessByUUID(uuid, access)
-}
-func setUserPlexAccess(uuid string, access bool) error { return setUserMediaAccessByUUID(uuid, access) }
+//lint:ignore U1000 kept for future provider use (UUID-based access toggles)

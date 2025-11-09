@@ -10,6 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
       # reuse same flag as app
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-UTC}
     command:
       - sh
       - -c
@@ -44,12 +45,14 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.2
+    image: modomofn/auth-portal:v2.0.3
     ports:
       - "8089:8080"
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
+      APP_TIMEZONE: ${APP_TIMEZONE:-UTC}
+      TZ: ${TZ:-UTC}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
@@ -59,11 +62,18 @@ services:
       UNAUTH_REQUEST_EMAIL: ${UNAUTH_REQUEST_EMAIL:-}
       UNAUTH_REQUEST_SUBJECT: ${UNAUTH_REQUEST_SUBJECT:-}
       FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
+      FORCE_HSTS: ${FORCE_HSTS:-0}
       MEDIA_SERVER: ${MEDIA_SERVER:-plex}
       MFA_ENABLE: ${MFA_ENABLE:-1}
       MFA_ENFORCE: ${MFA_ENFORCE:-0}
       MFA_ISSUER: ${MFA_ISSUER:-AuthPortal}
+      OIDC_SIGNING_KEY_PATH: ${OIDC_SIGNING_KEY_PATH:-}
+      OIDC_SIGNING_KEY: ${OIDC_SIGNING_KEY:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8089}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # Admin Config
+      ADMIN_BOOTSTRAP_USERS: ${ADMIN_BOOTSTRAP_USERS:?set-in-.env}
 
       # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
@@ -77,12 +87,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.2}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.3}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.2}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.3}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -105,6 +115,7 @@ services:
       LDAP_ORGANISATION: AuthPortal
       LDAP_DOMAIN: authportal.local
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
+      TZ: ${TZ:-UTC}
     # Uncomment if you need external LDAP access from host:
     # ports:
     #   - "389:389"
@@ -138,6 +149,7 @@ services:
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
       BASE_DN: ou=users,dc=authportal,dc=local
       # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
+      TZ: ${TZ:-UTC}
     restart: "no"
     networks: [authnet]
 
@@ -147,6 +159,7 @@ services:
     environment:
       PHPLDAPADMIN_LDAP_HOSTS: openldap
       PHPLDAPADMIN_HTTPS: "false"
+      TZ: ${TZ:-UTC}
     ports:
       - "8087:80"
     depends_on:
