@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"html/template"
 	"log"
 	"net"
 	"net/http"
@@ -20,29 +18,39 @@ import (
 
 	// Adjust this import path to match your module name from go.mod
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
+	"auth-portal/configstore"
 	"auth-portal/health"
+	"auth-portal/oauth"
 	"auth-portal/providers"
 	"golang.org/x/time/rate"
 )
 
 var (
-	db                  *sql.DB
-	tmpl                *template.Template
-	sessionSecret       = []byte(envOr("SESSION_SECRET", "dev-insecure-change-me"))
-	appBaseURL          = envOr("APP_BASE_URL", "http://localhost:8089")
-	plexOwnerToken      = envOr("PLEX_OWNER_TOKEN", "")
-	plexServerMachineID = envOr("PLEX_SERVER_MACHINE_ID", "")
-	plexServerName      = envOr("PLEX_SERVER_NAME", "")
-	embyServerURL       = envOr("EMBY_SERVER_URL", "http://localhost:8096")
-	embyAppName         = envOr("EMBY_APP_NAME", "AuthPortal")
-	embyAppVersion      = envOr("EMBY_APP_VERSION", "2.0.0")
-	embyAPIKey          = envOr("EMBY_API_KEY", "")
-	embyOwnerUsername   = envOr("EMBY_OWNER_USERNAME", "")
-	embyOwnerID         = envOr("EMBY_OWNER_ID", "")
-	jellyfinServerURL   = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
-	jellyfinAppName     = envOr("JELLYFIN_APP_NAME", "AuthPortal")
-	jellyfinAppVersion  = envOr("JELLYFIN_APP_VERSION", "2.0.0")
-	jellyfinAPIKey      = envOr("JELLYFIN_API_KEY", "")
+	db                                     *sql.DB
+	configStore                            *configstore.Store
+	backupSvc                              *backupService
+	sessionSecret                          []byte
+	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
+	appTimeZone                            = envOr("APP_TIMEZONE", "UTC")
+	plexOwnerToken                         = envOr("PLEX_OWNER_TOKEN", "")
+	plexServerMachineID                    = envOr("PLEX_SERVER_MACHINE_ID", "")
+	plexServerName                         = envOr("PLEX_SERVER_NAME", "")
+	embyServerURL                          = envOr("EMBY_SERVER_URL", "http://localhost:8096")
+	embyAppName                            = envOr("EMBY_APP_NAME", "AuthPortal")
+	embyAppVersion                         = envOr("EMBY_APP_VERSION", "2.0.0")
+	embyAPIKey                             = envOr("EMBY_API_KEY", "")
+	embyOwnerUsername                      = envOr("EMBY_OWNER_USERNAME", "")
+	embyOwnerID                            = envOr("EMBY_OWNER_ID", "")
+	jellyfinServerURL                      = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
+	jellyfinAppName                        = envOr("JELLYFIN_APP_NAME", "AuthPortal")
+	jellyfinAppVersion                     = envOr("JELLYFIN_APP_VERSION", "2.0.0")
+	jellyfinAPIKey                         = envOr("JELLYFIN_API_KEY", "")
+	mediaServerSelection                   = strings.TrimSpace(os.Getenv("MEDIA_SERVER"))
+	mediaProviderKey, mediaProviderDisplay = resolveProviderSelection(mediaServerSelection)
+	oidcSigningKeyPath                     = strings.TrimSpace(os.Getenv("OIDC_SIGNING_KEY_PATH"))
+	oidcSigningKeyPEM                      = strings.TrimSpace(os.Getenv("OIDC_SIGNING_KEY"))
+	oidcIssuerOverride                     = strings.TrimSpace(os.Getenv("OIDC_ISSUER"))
+	oauthService                           oauth.Service
 
 	// MFA configuration
 	mfaIssuer             = envOr("MFA_ISSUER", "AuthPortal")
@@ -66,6 +74,8 @@ var (
 	forceSecureCookie            = os.Getenv("FORCE_SECURE_COOKIE") == "1"                 // force 'Secure' even if APP_BASE_URL is http
 	sessionCookieDomain          = strings.TrimSpace(os.Getenv("SESSION_COOKIE_DOMAIN"))
 	sessionSameSiteWarningLogged bool
+	forceHSTS                    = os.Getenv("FORCE_HSTS") == "1"
+	appLocation                  = time.UTC
 )
 
 func envOr(k, d string) string {
@@ -91,27 +101,42 @@ func envBool(key string, def bool) bool {
 }
 
 func init() {
-	if mfaEnforceForAllUsers && !mfaEnrollmentEnabled {
-		log.Println("MFA_ENFORCE=1 but MFA_ENABLE=0; enabling enrollment so enforcement can proceed")
-		mfaEnrollmentEnabled = true
-	}
+	initSessionSecret()
+	ensureMFAConsistency()
 }
 
-// Pick the auth provider (plex default). MEDIA_SERVER: plex | emby | jellyfin
-func pickProvider() providers.MediaProvider {
-	raw := os.Getenv("MEDIA_SERVER")
-	switch l := strings.ToLower(raw); l {
+const minSessionSecretBytes = 32
+
+var allowedJWTAlgs = []string{jwt.SigningMethodHS256.Alg()}
+
+func initSessionSecret() {
+	raw := os.Getenv("SESSION_SECRET")
+	if strings.TrimSpace(raw) == "" {
+		log.Fatal("SESSION_SECRET is required and must be at least 32 random bytes")
+	}
+	if raw == "dev-insecure-change-me" {
+		log.Fatal("SESSION_SECRET must be changed from the default value")
+	}
+	if len(raw) < minSessionSecretBytes {
+		log.Fatalf("SESSION_SECRET must be at least %d bytes (got %d)", minSessionSecretBytes, len(raw))
+	}
+	sessionSecret = []byte(raw)
+}
+
+// pickProvider selects the active media provider using the canonical key.
+func pickProvider(selection string) providers.MediaProvider {
+	switch key := strings.ToLower(strings.TrimSpace(selection)); key {
 	case "jellyfin":
 		return providers.JellyfinProvider{}
-	case "emby", "emby-connect", "embyconnect", "emby_connect":
-		if l != "emby" {
-			log.Printf("MEDIA_SERVER value %q no longer selects Emby Connect; using standard Emby provider", raw)
-		}
+	case "emby":
+		return providers.EmbyProvider{}
+	case "emby-connect", "embyconnect", "emby_connect":
+		log.Printf("Provider key %q no longer selects Emby Connect; using standard Emby provider", selection)
 		return providers.EmbyProvider{}
 	case "plex", "":
 		return providers.PlexProvider{}
 	default:
-		log.Printf("Unknown MEDIA_SERVER %q; defaulting to plex", raw)
+		log.Printf("Unknown provider %q; defaulting to plex", selection)
 		return providers.PlexProvider{}
 	}
 }
@@ -129,6 +154,19 @@ func dbChecker(db *sql.DB) health.Checker {
 }
 
 func main() {
+	tzName := strings.TrimSpace(appTimeZone)
+	if tzName == "" {
+		tzName = "UTC"
+	}
+	if loc, err := time.LoadLocation(tzName); err != nil {
+		log.Printf("Invalid APP_TIMEZONE %q; defaulting to UTC: %v", tzName, err)
+		appLocation = time.UTC
+		appTimeZone = "UTC"
+	} else {
+		appLocation = loc
+		appTimeZone = tzName
+	}
+
 	// ---- DB ----
 	dsn := os.Getenv("DATABASE_URL")
 
@@ -151,8 +189,49 @@ func main() {
 		log.Fatalf("Schema error: %v", err)
 	}
 
+	defaultSections, err := runtimeConfigDefaults()
+	if err != nil {
+		log.Fatalf("Config defaults error: %v", err)
+	}
+
+	configStore, err = configstore.New(db, configstore.Options{
+		Defaults: defaultSections,
+	})
+	if err != nil {
+		log.Fatalf("Config store init error: %v", err)
+	}
+
+	runtimeCfg, err := loadRuntimeConfig(configStore)
+	if err != nil {
+		log.Fatalf("Config load error: %v", err)
+	}
+	applyRuntimeConfig(runtimeCfg)
+
+	backupDir := envOr("BACKUP_DIR", defaultBackupDirName)
+	backupSvc, err = newBackupService(configStore, backupDir)
+	if err != nil {
+		log.Fatalf("Backup service init error: %v", err)
+	}
+
+	oauthService = oauth.Service{
+		DB:              db,
+		AuthCodeTTL:     5 * time.Minute,
+		AccessTokenTTL:  sessionTTL,
+		RefreshTokenTTL: 30 * 24 * time.Hour,
+	}
+
+	if err := bootstrapAdminUsers(); err != nil {
+		log.Printf("Admin bootstrap encountered issues: %v", err)
+	}
+
+	if err := initOIDCSigningKey(); err != nil {
+		log.Fatalf("OIDC init error: %v", err)
+	}
+
+	snap := configStore.Snapshot()
+	log.Printf("Config store loaded with %d items", snap.TotalItems())
+
 	// ---- Templates ----
-	tmpl = template.Must(template.ParseGlob("templates/*.html"))
 
 	// ---- Provider configuration (DI init) ----
 	providers.Init(providers.ProviderDeps{
@@ -203,7 +282,7 @@ func main() {
 	})
 
 	// ---- Provider ----
-	currentProvider = pickProvider()
+	currentProvider = pickProvider(mediaProviderKey)
 	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
 
 	// ---- Router ----
@@ -212,6 +291,7 @@ func main() {
 	// Rate limiters for auth-sensitive routes
 	loginLimiter := newIPRateLimiter(rate.Every(6*time.Second), 5, 15*time.Minute)
 	mfaLimiter := newIPRateLimiter(rate.Every(12*time.Second), 3, 15*time.Minute)
+	plexPollLimiter := newIPRateLimiter(rate.Every(1*time.Second), 6, 10*time.Minute)
 
 	// Static assets
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
@@ -226,6 +306,14 @@ func main() {
 
 	r.Handle("/mfa/enroll", enrollmentPageGuard(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
 	r.Handle("/mfa/enroll/status", enrollmentAPIGuard(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
+
+	// OIDC discovery & flow endpoints
+	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
+	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
+	r.Handle("/oidc/authorize", authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
+	r.Handle("/oidc/authorize/decision", authMiddleware(requireSameOrigin(http.HandlerFunc(oidcAuthorizeDecisionHandler)))).Methods("POST")
+	r.HandleFunc("/oidc/token", oidcTokenHandler).Methods("POST")
+	r.HandleFunc("/oidc/userinfo", oidcUserinfoHandler).Methods("GET")
 
 	// Provider routes (v2 adapter wraps legacy providers and returns responses we write).
 	v2 := providers.AdaptV2(currentProvider)
@@ -284,10 +372,6 @@ func main() {
 				prov = v2.Name()
 			}
 
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-
 			redirect := "/home"
 			message := "Signed in - you can close this window."
 			if requiresMFA {
@@ -295,11 +379,12 @@ func main() {
 				message = "Continue in the main window to finish multi-factor authentication."
 			}
 
-			payload := fmt.Sprintf(`<!doctype html><meta charset="utf-8"><title>Signed in - AuthPortal</title>`+
-				`<body style="font-family:system-ui;padding:2rem"><h1>%s</h1>`+
-				`<script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ok:true,type:"%s",redirect:"%s",mfa:%t},window.location.origin)}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script>`+
-				`</body>`, template.HTMLEscapeString(message), prov+"-auth", redirect, requiresMFA)
-			_, _ = w.Write([]byte(payload))
+			providers.WriteAuthCompletePage(w, providers.AuthCompletePageOptions{
+				Message:     message,
+				Provider:    prov + "-auth",
+				Redirect:    redirect,
+				RequiresMFA: requiresMFA,
+			})
 			return
 		}
 
@@ -311,7 +396,7 @@ func main() {
 	r.Handle("/auth/forward", requireSameOrigin(forwardLimited)).Methods("POST")
 
 	// Plex fallback: JSON poll to complete auth if forwardUrl navigation fails
-	r.Handle("/auth/poll", rateLimitMiddleware(loginLimiter, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
+	r.Handle("/auth/poll", rateLimitMiddleware(plexPollLimiter, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
 
 	// Logout (protect with a simple same-origin check)
 	r.Handle("/logout", requireSameOrigin(rateLimitMiddleware(loginLimiter, http.HandlerFunc(logoutHandler)))).Methods("POST")
@@ -321,6 +406,30 @@ func main() {
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
 	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
 	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
+
+	// OIDC discovery endpoints
+	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
+	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
+
+	adminProtected := func(h http.Handler) http.Handler {
+		return authMiddleware(requireAdmin(h))
+	}
+	adminAPI := r.PathPrefix("/api/admin").Subrouter()
+	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
+	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
+	adminAPI.Handle("/config/history/{section}", adminProtected(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
+	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
+	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
+	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientDelete))).Methods("DELETE")
+	adminAPI.Handle("/oauth/clients/{id}/rotate-secret", adminProtected(http.HandlerFunc(adminOAuthClientRotateSecret))).Methods("POST")
+	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsListHandler))).Methods("GET")
+	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsCreateHandler))).Methods("POST")
+	adminAPI.Handle("/backups/schedule", adminProtected(http.HandlerFunc(adminBackupsScheduleUpdate))).Methods("PUT")
+	adminAPI.Handle("/backups/{name}/restore", adminProtected(http.HandlerFunc(adminBackupsRestoreHandler))).Methods("POST")
+	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
+	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
+	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
 
 	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
@@ -352,7 +461,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 			"default-src 'self'; img-src 'self' data: https://plex.tv https://api.qrserver.com; style-src 'self' 'unsafe-inline'; script-src 'self'")
 
 		// HSTS only if base URL is HTTPS or you know you're behind TLS
-		if strings.HasPrefix(strings.ToLower(appBaseURL), "https://") {
+		if strings.HasPrefix(strings.ToLower(appBaseURL), "https://") || forceHSTS {
 			w.Header().Set("Strict-Transport-Security", "max-age=86400; includeSubDomains; preload")
 		}
 		next.ServeHTTP(w, r)
@@ -370,6 +479,8 @@ var pendingMFATTL = 10 * time.Minute
 type sessionClaims struct {
 	UUID     string `json:"uuid"`
 	Username string `json:"username"`
+	Admin    bool   `json:"admin,omitempty"`
+	Version  int64  `json:"sessionVersion,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -377,6 +488,25 @@ type pendingMFAClaims struct {
 	UUID     string `json:"uuid"`
 	Username string `json:"username"`
 	jwt.RegisteredClaims
+}
+
+func validateSessionClaims(claims *sessionClaims) (bool, bool) {
+	if claims == nil {
+		return false, false
+	}
+	uuid := strings.TrimSpace(claims.UUID)
+	username := strings.TrimSpace(claims.Username)
+	if uuid == "" && username == "" {
+		return false, false
+	}
+	isAdmin, version, err := userSessionState(uuid, username)
+	if err != nil {
+		return false, false
+	}
+	if version != claims.Version {
+		return false, false
+	}
+	return true, isAdmin
 }
 
 func cookieSettings() (http.SameSite, bool) {
@@ -395,9 +525,16 @@ func cookieSettings() (http.SameSite, bool) {
 func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl time.Duration) error {
 	now := time.Now()
 
+	isAdmin, sessionVersion, err := userSessionState(uuid, username)
+	if err != nil {
+		return err
+	}
+
 	claims := sessionClaims{
 		UUID:     uuid,
 		Username: username,
+		Admin:    isAdmin,
+		Version:  sessionVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-portal-go",
 			Subject:   uuid,
@@ -511,7 +648,7 @@ func pendingClaimsFromRequest(r *http.Request) (pendingMFAClaims, error) {
 
 	tok, err := jwt.ParseWithClaims(c.Value, &pendingMFAClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return sessionSecret, nil
-	})
+	}, jwt.WithValidMethods(allowedJWTAlgs))
 
 	if err != nil || tok == nil {
 		return pendingMFAClaims{}, err
@@ -526,11 +663,6 @@ func pendingClaimsFromRequest(r *http.Request) (pendingMFAClaims, error) {
 		return pendingMFAClaims{}, errors.New("empty pending claims")
 	}
 	return *claims, nil
-}
-
-func hasPendingMFACookie(r *http.Request) bool {
-	_, err := pendingClaimsFromRequest(r)
-	return err == nil
 }
 
 func finalizeLoginSession(w http.ResponseWriter, uuid, username string) (bool, error) {
@@ -571,34 +703,51 @@ func clearSessionCookie(w http.ResponseWriter) {
 func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			isAdmin := adminFrom(r.Context())
 			var (
-				username string
-				uuid     string
+				username          string
+				uuid              string
+				sessionAuthorized bool
+				pendingAllowed    bool
 			)
 
 			if c, err := r.Cookie(sessionCookie); err == nil && strings.TrimSpace(c.Value) != "" {
 				tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 					return sessionSecret, nil
-				})
+				}, jwt.WithValidMethods(allowedJWTAlgs))
 				if err == nil && tok != nil && tok.Valid {
 					if claims, ok := tok.Claims.(*sessionClaims); ok {
-						username = strings.TrimSpace(claims.Username)
-						uuid = strings.TrimSpace(claims.UUID)
+						if valid, adminFlag := validateSessionClaims(claims); valid {
+							username = strings.TrimSpace(claims.Username)
+							uuid = strings.TrimSpace(claims.UUID)
+							isAdmin = adminFlag
+							if adminFlag {
+								sessionAuthorized = true
+							} else if currentProvider != nil && uuid != "" {
+								if ok, err := currentProvider.IsAuthorized(uuid, username); err == nil {
+									sessionAuthorized = ok
+								} else {
+									log.Printf("requireSessionOrPending: authorization check failed for %s (%s): %v", username, uuid, err)
+								}
+							}
+						} else {
+							expireSessionCookieOnly(w)
+						}
 					}
-				}
-				if username == "" || uuid == "" {
+				} else {
 					expireSessionCookieOnly(w)
 				}
 			}
 
-			if username == "" || uuid == "" {
+			if !sessionAuthorized {
 				if claims, err := pendingClaimsFromRequest(r); err == nil {
 					username = strings.TrimSpace(claims.Username)
 					uuid = strings.TrimSpace(claims.UUID)
+					pendingAllowed = true
 				}
 			}
 
-			if username == "" || uuid == "" {
+			if username == "" || uuid == "" || (!sessionAuthorized && !pendingAllowed) {
 				if redirectOnFail {
 					http.Redirect(w, r, "/", http.StatusFound)
 				} else {
@@ -609,6 +758,7 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 
 			ctx := withUsername(r.Context(), username)
 			ctx = withUUID(ctx, uuid)
+			ctx = withAdmin(ctx, isAdmin)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -625,7 +775,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 		token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 			return sessionSecret, nil
-		})
+		}, jwt.WithValidMethods(allowedJWTAlgs))
 
 		if err != nil || !token.Valid {
 			clearSessionCookie(w)
@@ -634,8 +784,16 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(*sessionClaims); ok {
-			r = r.WithContext(withUsername(r.Context(), claims.Username))
-			r = r.WithContext(withUUID(r.Context(), claims.UUID))
+			if valid, adminFlag := validateSessionClaims(claims); valid {
+				ctx := withUsername(r.Context(), claims.Username)
+				ctx = withUUID(ctx, claims.UUID)
+				ctx = withAdmin(ctx, adminFlag)
+				r = r.WithContext(ctx)
+			} else {
+				clearSessionCookie(w)
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -648,8 +806,15 @@ func hasValidSession(r *http.Request) bool {
 	}
 	token, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return sessionSecret, nil
-	})
-	return err == nil && token.Valid
+	}, jwt.WithValidMethods(allowedJWTAlgs))
+	if err != nil || !token.Valid {
+		return false
+	}
+	if claims, ok := token.Claims.(*sessionClaims); ok {
+		valid, _ := validateSessionClaims(claims)
+		return valid
+	}
+	return false
 }
 
 // ---------- CSRF-lite for state-changing routes ----------

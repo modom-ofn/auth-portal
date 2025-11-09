@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,14 @@ type User struct {
 	Provider    string // plex|emby|jellyfin (for multi-provider identity linking)
 }
 
+// AuthCompletePageOptions describe the popup completion view.
+type AuthCompletePageOptions struct {
+	Message     string
+	Provider    string
+	Redirect    string
+	RequiresMFA bool
+}
+
 // Functions and hooks provided by the main application.
 var (
 	UpsertUser                   func(u User) error
@@ -248,4 +257,38 @@ func Init(d ProviderDeps) {
 	SealToken = d.SealToken
 	Debugf = d.Debugf
 	Warnf = d.Warnf
+}
+
+// WriteAuthCompletePage renders a popup-safe completion page without inline scripts.
+func WriteAuthCompletePage(w http.ResponseWriter, opts AuthCompletePageOptions) {
+	message := strings.TrimSpace(opts.Message)
+	if message == "" {
+		message = "Signed in — you can close this window."
+	}
+	provider := strings.TrimSpace(opts.Provider)
+	if provider == "" {
+		provider = "auth-portal"
+	}
+	redirect := strings.TrimSpace(opts.Redirect)
+	if redirect == "" {
+		redirect = "/home"
+	}
+	mfaFlag := "false"
+	if opts.RequiresMFA {
+		mfaFlag = "true"
+	}
+
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self'")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+
+	payload := fmt.Sprintf(
+		`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed in - AuthPortal</title><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/styles.css"></head><body class="bg auth-complete" data-auth-complete="1" data-auth-provider="%s" data-auth-redirect="%s" data-auth-mfa="%s"><main class="center"><section class="card"><div class="brand"><h1>%s</h1><p class="muted">Returning you to the main window…</p></div></section></main><script src="/static/login.js" defer></script></body></html>`,
+		template.HTMLEscapeString(provider),
+		template.HTMLEscapeString(redirect),
+		mfaFlag,
+		template.HTMLEscapeString(message),
+	)
+	_, _ = w.Write([]byte(payload))
 }

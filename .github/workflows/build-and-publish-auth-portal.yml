@@ -2,10 +2,24 @@ name: build-and-publish
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "v*" ]
     tags: [ "v*" ]
+    paths:
+      - "auth-portal/**"
+      - ".github/workflows/build-and-publish-auth-portal.yml"
+      - "VERSION"
+      - "MAKEFILE"
+      - "auth-portal-full-stack-dev_docker-compose.yml"
+      - "auth-portal-full-stack-dev.env"
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "auth-portal/**"
+      - ".github/workflows/build-and-publish-auth-portal.yml"
+      - "VERSION"
+      - "MAKEFILE"
+      - "auth-portal-full-stack-dev_docker-compose.yml"
+      - "auth-portal-full-stack-dev.env"
 
 jobs:
   docker:
@@ -76,6 +90,19 @@ jobs:
                 echo "dev_version_tag=v${VERSION}-dev-$SHA" >> $GITHUB_OUTPUT
               fi
               ;;
+            refs/heads/v[0-9]*)
+              BRANCH_VERSION="${GITHUB_REF#refs/heads/}"
+              if [[ -n "$VERSION" ]]; then
+                echo "version_tag=v$VERSION" >> $GITHUB_OUTPUT
+              else
+                echo "version_tag=$BRANCH_VERSION" >> $GITHUB_OUTPUT
+              fi
+              if [[ "$BRANCH_VERSION" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+                echo "ver=$BRANCH_VERSION" >> $GITHUB_OUTPUT
+                echo "major=v${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+                echo "minor=v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> $GITHUB_OUTPUT
+              fi
+              ;;
           esac
 
           if [[ "$GITHUB_REF" =~ refs/tags/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
@@ -105,6 +132,17 @@ jobs:
             ${{ steps.vars.outputs.minor && format('{0}:{1}', env.IMAGE, steps.vars.outputs.minor) || '' }}
             ${{ steps.vars.outputs.major && format('{0}:{1}', env.IMAGE, steps.vars.outputs.major) || '' }}
 
+      - name: Scan image with Trivy
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}
+          vuln-type: 'os,library'
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
 
       - name: Create GitHub Release (for tags)
         if: startsWith(github.ref, 'refs/tags/v')

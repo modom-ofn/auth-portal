@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Authorize {{.ClientDisplay}}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg">
+    <div class="center">
+        <div class="card consent-card">
+            <div class="brand">
+                <img class="logo" src="/static/plex.svg" alt="AuthPortal">
+                <h1>Authorize {{.ClientDisplay}}</h1>
+                <p class="muted">This application is requesting access to your AuthPortal account.</p>
+            </div>
+
+            <section class="consent-section">
+                <h2>Requested Access</h2>
+                <ul class="scope-list">
+                    {{range .Scopes}}
+                    <li>
+                        <strong>{{.Name}}</strong>
+                        <span>{{.Description}}</span>
+                    </li>
+                    {{end}}
+                </ul>
+            </section>
+
+            {{if .IncludeOffline}}
+            <div class="consent-note">
+                <strong>Offline access</strong> allows this application to refresh tokens without you signing in again.
+            </div>
+            {{end}}
+
+            <form method="post" action="/oidc/authorize/decision" class="consent-form">
+                <input type="hidden" name="client_id" value="{{.ClientID}}">
+                <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
+                <input type="hidden" name="state" value="{{.State}}">
+                <input type="hidden" name="scope" value="{{.Scope}}">
+                <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
+                <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
+                <input type="hidden" name="prompt" value="{{.Prompt}}">
+                <input type="hidden" name="nonce" value="{{.Nonce}}">
+
+                <div class="consent-actions">
+                    <button type="submit" name="decision" value="deny" class="ghost-btn">Deny</button>
+                    <button type="submit" name="decision" value="allow" class="primary-btn">Allow</button>
+                </div>
+            </form>
+
+            <p class="footnote muted">You can revoke access later from the AuthPortal admin console.</p>
+        </div>
+    </div>
+</body>
+</html>

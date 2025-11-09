@@ -1,16 +1,17 @@
-# AuthPortal (v2.0.2)
+# AuthPortal (v2.0.3)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Go Version](https://img.shields.io/badge/Go-1.25.3%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
+[![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
 
 AuthPortal authenticates users directly against their connected media server accounts, seals the server tokens for reuse, and manages session lifecycle via HTTP-only cookies. Authorized users are directed to their personalized home page, while unrecognized users are served a restricted or “guest” view.
 
 > [!IMPORTANT]
-> **Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
+> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from Plex, Emby, or Jellyfin.
 
 > [!NOTE]
 > - Docker Hub: https://hub.docker.com/r/modomofn/auth-portal
@@ -42,14 +43,28 @@ AuthPortal authenticates users directly against their connected media server acc
   - Two distinct home pages: authorized vs. unauthorized
   - Dark, modern UI with branded login buttons
 
+- **Runtime configuration & admin console**
+  - Web-based editing of Providers, Security, and MFA JSON with versioning and history
+  - OAuth client management (list/create/update/delete + secret rotation) without leaving the browser
+  - Config backup tab with manual exports, scheduled runs (hourly/daily/weekly), retention, and one-click restore/download actions
+
+- **First-party OAuth 2.1 / OIDC**
+  - Authorization-code + PKCE, optional `offline_access` refresh rotation, RS256-signed ID tokens
+  - Discovery, JWKS, token, and userinfo endpoints ready for downstream apps and identity brokers
+
 ---
 
 ## Table of Contents
 
-- [What's New in v2.0.2](#whats-new-in-v202)
+- [Features](#features)
+- [What's New in v2.0.3](#whats-new-in-v203)
+- [ldap-sync](#ldap-sync)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
-  - [Multi-factor authentication (new in v2.0.2)](#multi-factor-authentication-new-in-v202)
+  - [Admin Console & Config Store (new in v2.0.3)](#admin-console--config-store-new-in-v203)
+  - [Backups](#backups)
+  - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)](#oauth-21--oidc-authorization-server-new-in-v203)
+  - [Multi-factor authentication](#multi-factor-authentication)
   - [Plex](#plex)
   - [Jellyfin](#jellyfin)
   - [Emby](#emby)
@@ -63,21 +78,19 @@ AuthPortal authenticates users directly against their connected media server acc
 - [How it works](#how-it-works)
 - [Customization](#customization)
 - [Security best practices](#security-best-practices)
-- [Project structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
+- [Upgrade Guide (from < v2.0.2)](#upgrade-guide-from--v202)
 
 ---
 
-## What's New in v2.0.2
+## What's New in v2.0.3
 
-- **Multi-factor authentication:** Enrollment and challenge flows for TOTP with recovery codes. Toggle enforcement per tenant or per user with MFA_ENABLE/MFA_ENFORCE.
-- **Security hardening:** Same-origin CSRF checks on sensitive POST routes, pending-MFA cookie isolation, configurable SESSION_COOKIE_DOMAIN, and consistent JWT rotation after MFA.
-- **Rate limiting:** Shared per-IP throttles now wrap login, MFA enrollment, and verification endpoints to blunt brute-force attacks.
-- **Platform updates:** Upgraded container stack to Go 1.25.3 with patched OpenSSL/BusyBox layers and refreshed UI assets to surface the MFA experience.
+- **Runtime config store + admin console:** JSON-backed providers/security/MFA configuration with optimistic concurrency, history audit, and inline editing from `/admin`. Bootstrap admin accounts via `ADMIN_BOOTSTRAP_USERS`.
+- **OAuth 2.1 / OIDC authorization server:** Authorization-code + refresh grants with PKCE, signed ID tokens, consent tracking, and optional `offline_access` refresh rotation. Includes discovery, JWKS, token, and userinfo endpoints.
+- **Admin OAuth client management:** List/create/update/delete clients, rotate secrets, and expose new secrets in the UI. All backed by new `/api/admin/oauth/*` routes.
 
 ---
-
 
 ## ldap-sync
 
@@ -119,9 +132,23 @@ MEDIA_SERVER=plex
 
 # Set 'FORCE_SECURE_COOKIE=1' in prod; if behind TLS/NGINX with X-Forwarded-Proto use 1
 FORCE_SECURE_COOKIE=0
+# Force HSTS headers even if APP_BASE_URL is http (set to 1 when TLS terminates upstream)
+FORCE_HSTS=0
+# Timezone (IANA name, e.g., America/New_York) used for schedules and timestamps
+APP_TIMEZONE=UTC
+# Container timezone (usually matches APP_TIMEZONE)
+TZ=UTC
 
 # 32-byte base64 key (e.g., openssl rand -base64 32) (Do Not Reuse Example Below)
 DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
+
+# Admin bootstrap (comma-separated username:email pairs)
+ADMIN_BOOTSTRAP_USERS=admin:admin@example.com
+
+# OAuth2/OIDC signing & issuer (provide one of *_KEY or *_KEY_PATH)
+OIDC_SIGNING_KEY_PATH=/run/secrets/oidc_signing_key.pem
+OIDC_SIGNING_KEY=
+OIDC_ISSUER=https://auth.example.com
 
 # Logging # DEBUG | INFO | WARN | ERROR
 LOG_LEVEL=INFO
@@ -140,7 +167,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.2
+EMBY_APP_VERSION=2.0.3
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -149,7 +176,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.2
+JELLYFIN_APP_VERSION=2.0.3
 ```
 
 
@@ -168,6 +195,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-in-.env}
       # reuse same flag as app
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-UTC}
     command:
       - sh
       - -c
@@ -202,12 +230,15 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.2
+    image: modomofn/auth-portal:v2.0.3
     ports:
       - "8089:8080"
     environment:
       # App
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8089}
+      APP_TIMEZONE: ${APP_TIMEZONE:-UTC}
+      TZ: ${TZ:-UTC}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       SESSION_SECRET: ${SESSION_SECRET:?set-in-.env}
       SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:?set-in-.env}
       DATA_KEY: ${DATA_KEY:?set-in-.env}
@@ -216,11 +247,18 @@ services:
       UNAUTH_REQUEST_EMAIL: ${UNAUTH_REQUEST_EMAIL:-}
       UNAUTH_REQUEST_SUBJECT: ${UNAUTH_REQUEST_SUBJECT:-}
       FORCE_SECURE_COOKIE: ${FORCE_SECURE_COOKIE:-0}
+      FORCE_HSTS: ${FORCE_HSTS:-0}
       MEDIA_SERVER: ${MEDIA_SERVER:-plex}
       MFA_ENABLE: ${MFA_ENABLE:-1}
       MFA_ENFORCE: ${MFA_ENFORCE:-0}
       MFA_ISSUER: ${MFA_ISSUER:-AuthPortal}
+      OIDC_SIGNING_KEY_PATH: ${OIDC_SIGNING_KEY_PATH:-}
+      OIDC_SIGNING_KEY: ${OIDC_SIGNING_KEY:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8089}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # Admin Config
+      ADMIN_BOOTSTRAP_USERS: ${ADMIN_BOOTSTRAP_USERS:?set-in-.env}
 
       # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
@@ -234,12 +272,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.2}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.3}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.2}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.3}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -262,6 +300,7 @@ services:
       LDAP_ORGANISATION: AuthPortal
       LDAP_DOMAIN: authportal.local
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
+      TZ: ${TZ:-UTC}
     # Uncomment if you need external LDAP access from host:
     # ports:
     #   - "389:389"
@@ -295,6 +334,7 @@ services:
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
       BASE_DN: ou=users,dc=authportal,dc=local
       # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
+      TZ: ${TZ:-UTC}
     restart: "no"
     networks: [authnet]
 
@@ -304,6 +344,7 @@ services:
     environment:
       PHPLDAPADMIN_LDAP_HOSTS: openldap
       PHPLDAPADMIN_HTTPS: "false"
+      TZ: ${TZ:-UTC}
     ports:
       - "8087:80"
     depends_on:
@@ -339,18 +380,45 @@ docker compose --profile ldap up -d --build
 - `APP_BASE_URL`  external URL users hit (drives redirects & cookie flags). Use HTTPS in production.
 - `SESSION_COOKIE_DOMAIN`  domain scope for session + pending-MFA cookies (e.g., `auth.example.com`).
 - `MEDIA_SERVER`  `plex`, `jellyfin`, or `emby`.
-- `SESSION_SECRET`  HMAC secret for the session JWT cookie (required).
+- `SESSION_SECRET`  HMAC secret for the session JWT cookie (required, 32+ random bytes; the service refuses to start if unset or using the legacy default).
 - `DATA_KEY`  base64 32-byte key for sealing provider tokens at rest (required).
 - `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
 - `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
+- `FORCE_HSTS`  set to `1` to always emit Strict-Transport-Security even if `APP_BASE_URL` is http (use when TLS terminates upstream).
+- `APP_TIMEZONE`  IANA timezone (e.g., `America/New_York`) used for backup scheduling and admin timestamps; set `TZ` to the same value in Docker to keep the container clock aligned.
 - `TRUSTED_PROXY_CIDRS`  comma-separated CIDR ranges of proxies allowed to supply `X-Forwarded-For`/`X-Real-IP`; leave empty to rely on `RemoteAddr`.
 - `LOGIN_EXTRA_LINK_URL`  external URL on authorized page.
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
 - `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
+- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./backups` relative to the binary).
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 
-### Multi-factor authentication (new in v2.0.2)
+### Admin Console & Config Store (new in v2.0.3)
+
+- Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
+- Providers, Security, and MFA settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
+- Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
+- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation) backed by the `/api/admin/oauth/*` endpoints.
+
+### Backups
+
+- The **Backups** tab under `/admin` lets you export the current Providers/Security/MFA documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
+- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
+- Scheduled backup settings now live in the config store (section `backups`), so your cadence, selected sections, and retention persist across container rebuilds and are auditable like other config updates.
+- Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
+- The same functionality is exposed via the REST API (`/api/admin/backups*`); see [HTTP Routes](#http-routes) below for endpoint details.
+
+### OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)
+
+- Discovery endpoint `/.well-known/openid-configuration` advertises JWKS (`/oidc/jwks.json`), authorize (`/oidc/authorize`), token (`/oidc/token`), and userinfo (`/oidc/userinfo`) URLs.
+- `/oidc/authorize` implements the authorization-code grant with PKCE. User consent is recorded per client/scope, supports `prompt=consent`, and returns `consent_required` when `prompt=none` is requested without prior approval.
+- `/oidc/token` handles `authorization_code` and `refresh_token` grants. Refresh tokens rotate on every use and are only issued when the `offline_access` scope is granted.
+- `/oidc/userinfo` returns `sub`, `preferred_username`, and optional email claims based on granted scopes. ID tokens are RS256-signed and echo the incoming `nonce`.
+- Provide signing material with `OIDC_SIGNING_KEY_PATH` (PEM on disk) or inline `OIDC_SIGNING_KEY`; override the advertised issuer with `OIDC_ISSUER` when running behind a reverse proxy.
+- Register clients through the admin console (OAuth tab) or the REST API: `GET/POST /api/admin/oauth/clients`, `PUT/DELETE /api/admin/oauth/clients/{id}`, and `POST /api/admin/oauth/clients/{id}/rotate-secret`.
+
+### Multi-factor authentication
 
 - `MFA_ENABLE` controls whether users can enroll; leave it `1` when enforcing.
 - `MFA_ENFORCE` forces every login to satisfy MFA once a user is enrolled (or immediately when set globally).
@@ -379,7 +447,7 @@ docker compose --profile ldap up -d --build
 
 ---
 
-## Providers (Plex / Jelly Fin / Emby)
+## Providers (Plex / Jellyfin / Emby)
 
 - **Plex**:
 `StartWeb` creates a PIN and returns the Plex Auth URL  popup opens.
@@ -406,7 +474,8 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 - Rate limits: login endpoints share a per-IP limiter (burst 5, ~10 req/min); MFA enrollment/challenge use a tighter burst 3, ~5 req/min (tune in `main.go`).
 - CSRF-lite: POST routes require same-origin via Origin/Referer.
 - Headers:
-  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.
+  Adds `Strict-Transport-Security: max-age=86400; includeSubDomains; preload` when `APP_BASE_URL` is HTTPS.
   Popup pages set a narrowed CSP that allows the tiny inline closing script.
 
 ---
@@ -438,7 +507,7 @@ CREATE TABLE IF NOT EXISTS pins (
 );
 ```
 
-### Identities (new in v2.0.1)
+### Identities
 
 - Purpose: multi-provider identity linking (one row per provider per user).
 - Columns: `user_id (FK)`, `provider`, `media_uuid`, `media_token`, `media_access`, timestamps.
@@ -477,31 +546,65 @@ DEBUG plex: resources match via machine id
 
 ## HTTP Routes
 
-- `GET /`  login page (auto-redirects to `/home` if session present).
-- `POST /auth/start-web`  JSON `{ authUrl }` (per-IP rate limited).
-  - Plex: returns the Plex auth URL for the PIN flow.
-  - Jellyfin/Emby: returns `/auth/forward?jellyfin=1` or `/auth/forward?emby=1`.
-- `GET|POST /auth/forward`  popup finisher for all providers.
-  - Plex: completes PIN polling and closes the popup.
-  - Jellyfin/Emby: GET serves the form; POST authenticates and closes the popup.
-- `GET /auth/poll`  Plex PIN poller (rate limited, JSON `{ status }`).
-- `GET /mfa/challenge`  HTML challenge page shown when MFA is required.
-- `POST /mfa/challenge/verify`  JSON `{ ok, redirect, recoveryUsed, remainingRecoveryCodes }`; rotates the session cookie on success.
-- `GET /mfa/enroll`  HTML enrollment UI for authenticated users.
-- `GET /mfa/enroll/status`  JSON summary of enrollment state (enabled/pending timestamps, remaining recovery codes).
-- `POST /mfa/enroll/start`  JSON `{ ok, secret, otpauth, digits, period, drift, enforced, previouslyEnabled }` to seed authenticator apps.
-- `POST /mfa/enroll/verify`  JSON `{ ok, recoveryCodes }` confirming enrollment and returning fresh recovery codes.
-- `GET /me`  JSON `{ username, uuid }` when logged in.
-- `GET /home`  renders authorized or unauthorized view based on `IsAuthorized`.
-- `POST /logout`  clears cookies; same-origin required.
-- `GET /whoami`  JSON: normalized identity and session metadata.
-- `GET /healthz`  health check.
-- `GET /readyz`  readiness (DB).
-- `GET /static/*`  static assets.
+- **Core portal**
+  - `GET /`  login page (auto-redirects to `/home` if session present).
+  - `GET /home`  renders authorized or unauthorized view based on `IsAuthorized`.
+  - `GET /whoami`  JSON: normalized identity and session metadata.
+  - `GET /me`  JSON `{ username, uuid }` when logged in.
+  - `POST /logout`  clears cookies; same-origin required.
+  - `GET /static/*`  static assets.
+
+- **Authentication**
+  - `POST /auth/start-web`  JSON `{ authUrl }` (per-IP rate limited).
+    - Plex: returns the Plex auth URL for the PIN flow.
+    - Jellyfin/Emby: returns `/auth/forward?jellyfin=1` or `/auth/forward?emby=1`.
+  - `GET|POST /auth/forward`  popup finisher for all providers.
+    - Plex: completes PIN polling and closes the popup.
+    - Jellyfin/Emby: GET serves the form; POST authenticates and closes the popup.
+  - `GET /auth/poll`  Plex PIN poller (rate limited, JSON `{ status }`).
+
+- **Multi-factor authentication**
+  - `GET /mfa/challenge`  HTML challenge page shown when MFA is required.
+  - `POST /mfa/challenge/verify`  JSON `{ ok, redirect, recoveryUsed, remainingRecoveryCodes }`; rotates the session cookie on success.
+  - `GET /mfa/enroll`  HTML enrollment UI for authenticated users.
+  - `GET /mfa/enroll/status`  JSON summary of enrollment state (enabled/pending timestamps, remaining recovery codes).
+  - `POST /mfa/enroll/start`  JSON `{ ok, secret, otpauth, digits, period, drift, enforced, previouslyEnabled }` to seed authenticator apps.
+  - `POST /mfa/enroll/verify`  JSON `{ ok, recoveryCodes }` confirming enrollment and returning fresh recovery codes.
+
+- **OAuth 2.1 / OIDC**
+  - `GET /.well-known/openid-configuration`  discovery document.
+  - `GET /oidc/jwks.json`  JWKS for RS256 validation.
+  - `GET /oidc/authorize`  authorization-code endpoint (requires authenticated portal session).
+  - `POST /oidc/authorize/decision`  consent form postback (`allow`/`deny`).
+  - `POST /oidc/token`  token exchange for authorization code + refresh grants.
+  - `GET /oidc/userinfo`  userinfo endpoint (bearer token required).
+
+- **Admin console & APIs**
+  - `GET /admin`  admin SPA for bootstrap/admin users.
+  - `GET /api/admin/config`  returns Providers/Security/MFA JSON bundle.
+  - `PUT /api/admin/config/{section}`  update a configuration section with optimistic concurrency.
+  - `GET /api/admin/config/history/{section}`  fetch prior revisions.
+  - `GET /api/admin/oauth/clients`  list registered OAuth clients.
+  - `POST /api/admin/oauth/clients`  create a new client.
+  - `PUT /api/admin/oauth/clients/{id}`  update client metadata.
+  - `DELETE /api/admin/oauth/clients/{id}`  delete a client.
+  - `POST /api/admin/oauth/clients/{id}/rotate-secret`  rotate client secret and return the new value.
+  - `GET /api/admin/backups`  return the current schedule metadata plus available backup files.
+  - `POST /api/admin/backups`  create a manual backup for the selected sections.
+  - `PUT /api/admin/backups/schedule`  update the automated backup schedule (frequency, sections, retention).
+  - `GET /api/admin/backups/{name}`  download a specific backup file.
+  - `DELETE /api/admin/backups/{name}`  remove a backup file from storage.
+  - `POST /api/admin/backups/{name}/restore`  restore Providers/Security/MFA configs from a saved backup.
+
+- **Health & readiness**
+  - `GET /healthz`  liveness check.
+  - `GET /readyz`  readiness (DB connectivity).
+  - `GET /startupz`  startup probe sharing the same checks as readiness.
 
 ---
 
 
+## Frontend Bits
 
 - **Styles**: `static/styles.css` (icons clamped to 22"22 inside the sign-in button)
 - **Login script**: `static/login.js`
@@ -538,7 +641,11 @@ DEBUG plex: resources match via machine id
 ## Security best practices
 
 - Put AuthPortal behind **HTTPS** (e.g., Caddy / NGINX / Traefik).
-- Set strong `SESSION_SECRET`, `DATA_KEY`, and DB credentials.
+- Set strong `SESSION_SECRET` (startup now fails if it's missing/short), `DATA_KEY`, and DB credentials.
+- OAuth client secrets are hashed with bcrypt before storage; rotate legacy secrets so they’re re-hashed and unusable if the DB or backups leak.
+- Access and refresh tokens are stored as deterministic SHA-256 digests, so leaked database rows don’t expose bearer tokens (rotate outstanding tokens after upgrading).
+- Config backups written to disk are encrypted with the same `DATA_KEY`, so keep that key secret and re-bootstrap older plaintext backups if needed.
+- Admin flag changes immediately revoke outstanding sessions by bumping an internal session version; reissue cookies after any privilege change.
 - Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
 - Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).
@@ -547,85 +654,26 @@ DEBUG plex: resources match via machine id
 
 ---
 
-## Project structure
-
-```
-.
-" ldap-seed/ # optional LDAP seed
-   " 01-ou-users.ldif
-" auth-portal/
-   " context_helpers.go
-   " crypto.go
-   " crypto_tokens.go
-   " db.go
-   " Dockerfile
-   " go.mod
-   " go.sum
-   " handlers.go
-   " logging.go
-   " main.go
-   " mfa_handlers.go
-   " mfa_helpers.go
-   " rate_limiter.go
-   " store.go
-   " LICENSE
-   " README.md
-   " health/ # health check function
-   	" health.go
-   " providers/
-    " emby.go
-    " httpx_test.go
-    " httpx.go
-    " jellyfin.go
-    " plex.go
-    " provider.go
-   " templates/
-   	" login.html
-    " mfa_challenge.html
-    " mfa_enroll.html
-   	" portal_authorized.html
-	  " portal_unauthorized.html
-   " static/
-   	" styles.css
-   	" login.js
-    " mfa_challenge.js
-    " mfa_enroll.js
-   	" login.svg     # optional login button svg icon
-   	" plex.svg      # optional plex button svg icon
-   	" emby.svg      # optional emby button svg icon
-   	" jellyfin.svg  # optional jellyfin button svg icon
-   	" bg.jpg        # optional hero image
-" auth-portal-full-stack-dev.env					          # full stack docker-compose env template
-" auth-portal-full-stack-dev_docker-compose.yml	    # full stack docker-compose template
-" CHANGELOG.md
-" LICENSE
-" MAKEFILE
-" README.md
-" VERSION
-```
-
----
-
-##  Contributing
+## Contributing
 
 Issues and PRs welcome:  
 https://github.com/modom-ofn/auth-portal/issues
 
 ---
 
-##  License
+## License
 
 GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 
 > [!IMPORTANT]
-> **Use at your own risk.** This project uses Vibe Coding and modern AI-assisted coding techniques. This project is unaffiliated with Plex, Inc., Emby LLC, or Jellyfin.
+> **Use at your own risk.** This project leans on Vibe Coding practices - AI pair-programming, automated refactors, and rapid iteration. Treat releases as starting points - test, monitor, and adapt to your stack. AuthPortal remains an independent effort with no endorsement from Plex, Emby, or Jellyfin.
 
 ---
 
-## Upgrade Guide (v2.0.2)
+## Upgrade Guide (from < v2.0.2)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.2` so you pick up Go 1.25.3 plus the patched OpenSSL 3.3.5 / BusyBox layers.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.3` so you pick up Go 1.25.3 plus the patched OpenSSL 3.3.5 / BusyBox layers.
 2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
 3) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.

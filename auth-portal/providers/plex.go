@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -382,21 +381,18 @@ func (PlexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
 	redirect := "/home"
 	message := "Signed in - you can close this window."
 	if requiresMFA {
 		redirect = "/mfa/challenge"
 		message = "Continue in the main window to finish multi-factor authentication."
 	}
-	payload := fmt.Sprintf(`<!doctype html><meta charset="utf-8"><title>Signed in - AuthPortal</title>`+
-		`<body style="font-family:system-ui;padding:2rem"><h1>%s</h1>`+
-		`<script>try{if(window.opener&&!window.opener.closed){window.opener.postMessage({ok:true,type:"plex-auth",redirect:"%s",mfa:%t},window.location.origin)}}catch(e){};setTimeout(()=>{try{window.close()}catch(e){}},600);</script>`+
-		`</body>`, template.HTMLEscapeString(message), redirect, requiresMFA)
-	_, _ = w.Write([]byte(payload))
+	WriteAuthCompletePage(w, AuthCompletePageOptions{
+		Message:     message,
+		Provider:    "plex-auth",
+		Redirect:    redirect,
+		RequiresMFA: requiresMFA,
+	})
 }
 
 // PlexPoll provides a JSON polling endpoint to complete the PIN flow when

@@ -23,7 +23,9 @@
       <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
         <span class="badge warn">{{.ProviderName}} Not Authorized</span>
         <!-- Optional: a CTA to request access -->
+        {{- if .RequestEmail }}
         <a class="btn" href="mailto:{{.RequestEmail}}?subject={{.RequestSubjectQP}}">Request Access</a>
+        {{- end }}
       </div>
 
       <form action="/logout" method="post" style="margin-top:16px;text-align:center">
