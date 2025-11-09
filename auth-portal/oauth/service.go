@@ -469,10 +469,14 @@ func (s Service) CreateRefreshToken(ctx context.Context, accessTokenID string, c
 	return s.insertRefreshToken(ctx, s.DB, accessTokenID, clientID, userID, scopes)
 }
 
-func (s Service) UseRefreshToken(ctx context.Context, tokenID string) (AccessToken, string, time.Time, error) {
+func (s Service) UseRefreshToken(ctx context.Context, tokenID, expectedClientID string) (AccessToken, string, time.Time, error) {
 	tokenID = strings.TrimSpace(tokenID)
 	if tokenID == "" {
 		return AccessToken{}, "", time.Time{}, ErrTokenNotFound
+	}
+	expectedClientID = strings.TrimSpace(expectedClientID)
+	if expectedClientID == "" {
+		return AccessToken{}, "", time.Time{}, errors.New("oauth: client id required")
 	}
 	digest, err := hashTokenIdentifier(tokenID)
 	if err != nil {
@@ -513,6 +517,9 @@ SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoke
 			return AccessToken{}, "", time.Time{}, ErrTokenNotFound
 		}
 		return AccessToken{}, "", time.Time{}, err
+	}
+	if clientID != expectedClientID {
+		return AccessToken{}, "", time.Time{}, ErrTokenNotFound
 	}
 
 	now := time.Now().UTC()
