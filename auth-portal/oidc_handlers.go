@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -567,9 +568,14 @@ func writeOIDCError(w http.ResponseWriter, status int, code, description string)
 }
 
 func writeOIDCRedirectError(w http.ResponseWriter, r *http.Request, redirectURI, state, code, description string) {
+	redirectURI = normalizeRedirectValue(redirectURI)
 	u, err := url.Parse(redirectURI)
 	if err != nil {
 		writeOIDCError(w, http.StatusBadRequest, code, description)
+		return
+	}
+	if host := strings.TrimSpace(u.Hostname()); host != "" {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "unsafe redirect_uri: must be a relative URL")
 		return
 	}
 	q := u.Query()
@@ -584,8 +590,66 @@ func writeOIDCRedirectError(w http.ResponseWriter, r *http.Request, redirectURI,
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
+var trustedRedirectHosts = parseTrustedRedirectHosts(os.Getenv("TRUSTED_REDIRECT_HOSTS"))
+
+func parseTrustedRedirectHosts(raw string) map[string]struct{} {
+	hosts := make(map[string]struct{})
+	if raw != "" {
+		for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
+			return r == ',' || r == ';'
+		}) {
+			host := strings.ToLower(strings.TrimSpace(part))
+			if host == "" {
+				continue
+			}
+			hosts[host] = struct{}{}
+		}
+	}
+	if len(hosts) == 0 {
+		return nil
+	}
+	return hosts
+}
+
+func normalizeRedirectValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.ReplaceAll(trimmed, "\\", "/")
+}
+
+func extractHostFromURI(raw string) string {
+	normalized := normalizeRedirectValue(raw)
+	if normalized == "" {
+		return ""
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname())
+}
+
+func isTrustedRedirectHost(host string, client oauth.Client) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	if len(trustedRedirectHosts) > 0 {
+		_, ok := trustedRedirectHosts[host]
+		return ok
+	}
+	for _, reg := range client.RedirectURIs {
+		if h := extractHostFromURI(reg); h != "" && host == h {
+			return true
+		}
+	}
+	return false
+}
+
 func validateRegisteredRedirectURI(client oauth.Client, redirectURI string) (string, error) {
-	normalized := strings.TrimSpace(redirectURI)
+	normalized := normalizeRedirectValue(redirectURI)
 	if normalized == "" {
 		return "", errors.New("redirect_uri required")
 	}
@@ -600,9 +664,25 @@ func validateRegisteredRedirectURI(client oauth.Client, redirectURI string) (str
 	if parsed.Fragment != "" {
 		return "", errors.New("redirect_uri must not include a fragment component")
 	}
+	if parsed.IsAbs() {
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "https" && scheme != "http" {
+			return "", errors.New("redirect_uri must use http or https scheme")
+		}
+		if parsed.Hostname() == "" {
+			return "", errors.New("redirect_uri must include a hostname")
+		}
+		if !isTrustedRedirectHost(parsed.Hostname(), client) {
+			return "", errors.New("redirect_uri hostname is not trusted")
+		}
+	} else {
+		if !strings.HasPrefix(normalized, "/") {
+			return "", errors.New("redirect_uri must be absolute or start with /")
+		}
+	}
 
 	for _, reg := range client.RedirectURIs {
-		if strings.TrimSpace(reg) == normalized {
+		if normalizeRedirectValue(reg) == normalized {
 			return normalized, nil
 		}
 	}
