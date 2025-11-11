@@ -52,6 +52,28 @@ AuthPortal authenticates users directly against their connected media server acc
   - Authorization-code + PKCE, optional `offline_access` refresh rotation, RS256-signed ID tokens
   - Discovery, JWKS, token, and userinfo endpoints ready for downstream apps and identity brokers
 
+### UI Preview
+
+Unified login flow with Plex, Jellyfin, and Emby buttons:
+<a href="screenshots/auth-portal-login-flow.png">
+  <img src="screenshots/auth-portal-login-flow-thumb.png" alt="Unified login flow with Plex, Jellyfin, and Emby buttons" width="600">
+</a>
+
+MFA enrollment and recovery code management:
+<a href="screenshots/auth-portal-mfa-pages.png">
+  <img src="screenshots/auth-portal-mfa-pages-thumb.png" alt="MFA enrollment and recovery code management" width="600">
+</a>
+
+Admin console showing provider, security, and MFA configuration tabs:
+<a href="screenshots/auth-portal-admin-pages-1.png">
+  <img src="screenshots/auth-portal-admin-pages-1-thumb.png" alt="Admin console showing provider, security, and MFA configuration tabs" width="600">
+</a>
+
+Admin console showing OAuth clients and backups tab with scheduled runs and retention controls
+<a href="screenshots/auth-portal-admin-pages-2.png">
+  <img src="screenshots/auth-portal-admin-pages-2-thumb.png" alt="Admin console showing OAuth clients and backups tab with scheduled runs and retention controls" width="600">
+</a>
+
 ---
 
 ## Table of Contents
