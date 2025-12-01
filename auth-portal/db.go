@@ -13,8 +13,8 @@ import (
 // ---------- Schema ----------
 
 func createSchema() error {
-	// Create users table (provider-agnostic columns)
-	if _, err := db.Exec(`
+	statements := []string{
+		`
 CREATE TABLE IF NOT EXISTS users (
   id            BIGSERIAL PRIMARY KEY,
   username      TEXT UNIQUE NOT NULL,
@@ -24,12 +24,8 @@ CREATE TABLE IF NOT EXISTS users (
   media_access  BOOLEAN NOT NULL DEFAULT FALSE,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-)`); err != nil {
-		return err
-	}
-
-	// One-time migration: rename old plex_* columns to media_* if they exist
-	if _, err := db.Exec(`
+)`,
+		`
 DO $$
 BEGIN
   BEGIN
@@ -44,56 +40,32 @@ BEGIN
     ALTER TABLE users RENAME COLUMN plex_access TO media_access;
   EXCEPTION WHEN undefined_column THEN NULL;
   END;
-END $$;`); err != nil {
-		return err
-	}
-
-	// Add any missing columns (no-ops if already present)
-	if _, err := db.Exec(`
+END $$;`,
+		`
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS media_access  BOOLEAN    NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-`); err != nil {
-		return err
-	}
-
-	// Admin flags
-	if _, err := db.Exec(`
+`,
+		`
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS is_admin         BOOLEAN     NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS admin_granted_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS admin_granted_by TEXT,
   ADD COLUMN IF NOT EXISTS session_version  BIGINT      NOT NULL DEFAULT 0
-`); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`
-CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users (is_admin);
-`); err != nil {
-		return err
-	}
-
-	// Helpful indexes
-	if _, err := db.Exec(`
+`,
+		`CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users (is_admin);`,
+		`
 CREATE INDEX IF NOT EXISTS idx_users_username    ON users (username);
 CREATE INDEX IF NOT EXISTS idx_users_media_uuid  ON users (media_uuid);
-`); err != nil {
-		return err
-	}
-
-	// MFA columns on users for quick checks
-	if _, err := db.Exec(`
+`,
+		`
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS mfa_enrolled_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS mfa_recovery_last_rotated TIMESTAMPTZ
-`); err != nil {
-		return err
-	}
-
-	// Per-user MFA secret metadata
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS user_mfa (
   user_id        BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   secret_enc     TEXT,
@@ -109,12 +81,8 @@ CREATE TABLE IF NOT EXISTS user_mfa (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_user_mfa_verified ON user_mfa (is_verified);
-`); err != nil {
-		return err
-	}
-
-	// Recovery codes (hashed) per user
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS user_mfa_recovery_codes (
   id         BIGSERIAL PRIMARY KEY,
   user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -125,12 +93,8 @@ CREATE TABLE IF NOT EXISTS user_mfa_recovery_codes (
 );
 CREATE INDEX IF NOT EXISTS idx_mfa_recovery_user ON user_mfa_recovery_codes (user_id);
 CREATE INDEX IF NOT EXISTS idx_mfa_recovery_used ON user_mfa_recovery_codes (user_id, used_at);
-`); err != nil {
-		return err
-	}
-
-	// Identities table to support multi-provider identities
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS identities (
   id            BIGSERIAL PRIMARY KEY,
   user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -145,12 +109,8 @@ CREATE TABLE IF NOT EXISTS identities (
 );
 CREATE INDEX IF NOT EXISTS idx_ident_provider_uuid ON identities (provider, media_uuid);
 CREATE INDEX IF NOT EXISTS idx_ident_user_provider ON identities (user_id, provider);
-`); err != nil {
-		return err
-	}
-
-	// Backfill identities from legacy users columns when present
-	if _, err := db.Exec(`
+`,
+		`
 INSERT INTO identities (user_id, provider, media_uuid, media_token, media_access)
 SELECT u.id,
        CASE
@@ -168,22 +128,14 @@ ON CONFLICT (provider, media_uuid) DO UPDATE
    SET media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), identities.media_token),
        media_access = EXCLUDED.media_access,
        updated_at   = now();
-`); err != nil {
-		return err
-	}
-
-	// Pins table (unchanged)
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS pins (
   code       TEXT PRIMARY KEY,
   pin_id     INTEGER NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-)`); err != nil {
-		return err
-	}
-
-	// Runtime configuration store
-	if _, err := db.Exec(`
+)`,
+		`
 CREATE TABLE IF NOT EXISTS app_config (
   namespace   TEXT   NOT NULL,
   key         TEXT   NOT NULL,
@@ -194,11 +146,8 @@ CREATE TABLE IF NOT EXISTS app_config (
   PRIMARY KEY (namespace, key)
 );
 CREATE INDEX IF NOT EXISTS idx_app_config_namespace ON app_config (namespace);
-`); err != nil {
-		return err
-	}
-
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS app_config_history (
   id            BIGSERIAL PRIMARY KEY,
   namespace     TEXT   NOT NULL,
@@ -210,12 +159,8 @@ CREATE TABLE IF NOT EXISTS app_config_history (
   change_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_app_config_history_lookup ON app_config_history (namespace, key, version);
-`); err != nil {
-		return err
-	}
-
-	// OAuth/OIDC clients and tokens
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS oauth_clients (
   client_id      TEXT PRIMARY KEY,
   client_secret  TEXT,
@@ -228,11 +173,8 @@ CREATE TABLE IF NOT EXISTS oauth_clients (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_clients_name ON oauth_clients (name);
-`); err != nil {
-		return err
-	}
-
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS oauth_auth_codes (
   code            TEXT PRIMARY KEY,
   client_id       TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
@@ -248,17 +190,12 @@ CREATE TABLE IF NOT EXISTS oauth_auth_codes (
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_client ON oauth_auth_codes (client_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_user ON oauth_auth_codes (user_id);
-`); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`
+`,
+		`
 ALTER TABLE oauth_auth_codes
   ADD COLUMN IF NOT EXISTS nonce TEXT;
-`); err != nil {
-		return err
-	}
-
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS oauth_access_tokens (
   token_id        TEXT PRIMARY KEY,
   client_id       TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
@@ -270,11 +207,8 @@ CREATE TABLE IF NOT EXISTS oauth_access_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_client ON oauth_access_tokens (client_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_user ON oauth_access_tokens (user_id);
-`); err != nil {
-		return err
-	}
-
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
   token_id        TEXT PRIMARY KEY,
   access_token_id TEXT NOT NULL REFERENCES oauth_access_tokens(token_id) ON DELETE CASCADE,
@@ -288,11 +222,8 @@ CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_client ON oauth_refresh_tokens (client_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_user ON oauth_refresh_tokens (user_id);
-`); err != nil {
-		return err
-	}
-
-	if _, err := db.Exec(`
+`,
+		`
 CREATE TABLE IF NOT EXISTS oauth_consents (
   user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   client_id  TEXT   NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
@@ -302,10 +233,18 @@ CREATE TABLE IF NOT EXISTS oauth_consents (
   PRIMARY KEY (user_id, client_id)
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_consents_client ON oauth_consents (client_id);
-`); err != nil {
-		return err
+`,
 	}
 
+	return execStatements(statements)
+}
+
+func execStatements(statements []string) error {
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

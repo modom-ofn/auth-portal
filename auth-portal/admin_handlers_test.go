@@ -71,7 +71,7 @@ func TestValidateAppSettingsConfig(t *testing.T) {
 		UnauthRequestEmail: "not-an-email",
 	}
 	normalizeAppSettingsConfig(&invalid)
-	if err := validateAppSettingsConfig(invalid); err == nil {
+	if validateAppSettingsConfig(invalid) == nil {
 		t.Fatalf("expected validation error for invalid config")
 	}
 }
