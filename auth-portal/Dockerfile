@@ -4,7 +4,7 @@ WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
 RUN apk upgrade --no-cache busybox && \
-    apk add --no-cache git ca-certificates openssl=3.3.5-r0 && update-ca-certificates
+    apk add --no-cache ca-certificates git openssl=3.3.5-r0 && update-ca-certificates
 
 # 1) Prime module cache (copies go.mod/go.sum if present)
 COPY go.* ./
@@ -26,7 +26,7 @@ FROM alpine:3.21
 WORKDIR /app
 
 RUN apk upgrade --no-cache busybox && \
-    apk add --no-cache ca-certificates tzdata openssl=3.3.5-r0 && \
+    apk add --no-cache ca-certificates openssl=3.3.5-r0 tzdata && \
     apk --no-cache upgrade musl && update-ca-certificates
 
 COPY --from=build /out/auth-portal /app/auth-portal

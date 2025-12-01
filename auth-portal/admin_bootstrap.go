@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -35,72 +36,8 @@ func bootstrapAdminUsers() error {
 		return nil
 	}
 
-	var (
-		granted []string
-		joined  error
-	)
-
-	for _, entry := range users {
-		username := strings.TrimSpace(entry.Username)
-		email := strings.TrimSpace(entry.Email)
-		if username == "" {
-			continue
-		}
-
-		existing, err := getUserByUsername(username)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				_, upsertErr := upsertUser(User{
-					Username: username,
-					Email:    nullStringFrom(email),
-				})
-				if upsertErr != nil {
-					log.Printf("Admin bootstrap: failed to create user %q: %v", username, upsertErr)
-					joined = errors.Join(joined, upsertErr)
-					continue
-				}
-			} else {
-				log.Printf("Admin bootstrap: lookup failed for %q: %v", username, err)
-				joined = errors.Join(joined, err)
-				continue
-			}
-		} else {
-			if email != "" {
-				existingEmail := ""
-				if existing.Email.Valid {
-					existingEmail = strings.TrimSpace(existing.Email.String)
-				}
-				if existingEmail != email {
-					if _, upsertErr := upsertUser(User{
-						Username: username,
-						Email:    nullStringFrom(email),
-					}); upsertErr != nil {
-						log.Printf("Admin bootstrap: failed to update email for %q: %v", username, upsertErr)
-						joined = errors.Join(joined, upsertErr)
-						continue
-					}
-				}
-			}
-
-			if existing.IsAdmin {
-				continue
-			}
-		}
-
-		if err := setUserAdminByUsername(username, true, grantor); err != nil {
-			log.Printf("Admin bootstrap: grant admin failed for %q: %v", username, err)
-			joined = errors.Join(joined, err)
-			continue
-		}
-		granted = append(granted, username)
-	}
-
-	if len(granted) > 0 {
-		log.Printf("Admin bootstrap: granted admin to %d user(s): %s", len(granted), strings.Join(granted, ", "))
-	} else {
-		log.Println("Admin bootstrap: no new admin grants applied")
-	}
-
+	granted, joined := applyBootstrapUsers(users, grantor)
+	logBootstrapOutcome(granted)
 	return joined
 }
 
@@ -131,4 +68,93 @@ func parseBootstrapUsers(raw string) []bootstrapUser {
 		})
 	}
 	return out
+}
+
+func applyBootstrapUsers(users []bootstrapUser, grantor string) ([]string, error) {
+	var (
+		granted []string
+		joined  error
+	)
+
+	for _, entry := range users {
+		username := strings.TrimSpace(entry.Username)
+		email := strings.TrimSpace(entry.Email)
+		if username == "" {
+			continue
+		}
+
+		grantedUser, err := processBootstrapUser(username, email, grantor)
+		if err != nil {
+			log.Printf("Admin bootstrap: %v", err)
+			joined = errors.Join(joined, err)
+			continue
+		}
+		if grantedUser {
+			granted = append(granted, username)
+		}
+	}
+
+	return granted, joined
+}
+
+func processBootstrapUser(username, email, grantor string) (bool, error) {
+	isAdmin, err := ensureBootstrapUser(username, email)
+	if err != nil {
+		return false, err
+	}
+	if isAdmin {
+		return false, nil
+	}
+
+	if err := setUserAdminByUsername(username, true, grantor); err != nil {
+		return false, fmt.Errorf("grant admin failed for %q: %w", username, err)
+	}
+	return true, nil
+}
+
+func ensureBootstrapUser(username, email string) (bool, error) {
+	existing, err := getUserByUsername(username)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("lookup failed for %q: %w", username, err)
+		}
+		if _, upsertErr := upsertUser(User{
+			Username: username,
+			Email:    nullStringFrom(email),
+		}); upsertErr != nil {
+			return false, fmt.Errorf("failed to create user %q: %w", username, upsertErr)
+		}
+		return false, nil
+	}
+
+	if shouldUpdateEmail(existing.Email, email) {
+		if _, upsertErr := upsertUser(User{
+			Username: username,
+			Email:    nullStringFrom(email),
+		}); upsertErr != nil {
+			return existing.IsAdmin, fmt.Errorf("failed to update email for %q: %w", username, upsertErr)
+		}
+	}
+
+	return existing.IsAdmin, nil
+}
+
+func shouldUpdateEmail(existing sql.NullString, newEmail string) bool {
+	newEmail = strings.TrimSpace(newEmail)
+	if newEmail == "" {
+		return false
+	}
+	current := ""
+	if existing.Valid {
+		current = strings.TrimSpace(existing.String)
+	}
+	return current != newEmail
+}
+
+func logBootstrapOutcome(granted []string) {
+	if len(granted) == 0 {
+		log.Println("Admin bootstrap: no new admin grants applied")
+		return
+	}
+	log.Printf("Admin bootstrap: granted admin to %d user(s): %s", len(granted), strings.Join(granted, ", "))
 }
