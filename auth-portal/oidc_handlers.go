@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -19,7 +20,22 @@ import (
 	"auth-portal/oauth"
 )
 
-func oidcDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
+const (
+	oidcContentTypeJSON = "application/json"
+	oidcHeaderContent   = "Content-Type"
+	oidcHeaderCache     = "Cache-Control"
+	oidcHeaderPragma    = "Pragma"
+	oidcHeaderWWWAuth   = "WWW-Authenticate"
+	oidcCacheNoStore    = "no-store"
+	oidcCacheNoPragma   = "no-cache"
+
+	errUserNotFound          = "user not found"
+	errCodeVerifierMismatch  = "code_verifier mismatch"
+	errTokenIssuanceFailed   = "token issuance failed"
+	errRedirectNotRegistered = "redirect_uri is not registered for this client"
+)
+
+func oidcDiscoveryHandler(w http.ResponseWriter, _ *http.Request) {
 	issuer := oidcIssuer()
 	base := strings.TrimRight(issuer, "/")
 
@@ -74,95 +90,39 @@ func oidcDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
 		ClaimTypesSupported: []string{"normal"},
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(oidcHeaderContent, oidcContentTypeJSON)
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func oidcJWKSHandler(w http.ResponseWriter, r *http.Request) {
+func oidcJWKSHandler(w http.ResponseWriter, _ *http.Request) {
 	data := oidcJWKS()
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(data)
+	w.Header().Set(oidcHeaderContent, oidcContentTypeJSON)
+	if _, err := w.Write(data); err != nil {
+		log.Printf("oidc jwks: write failed: %v", err)
+	}
 }
 
 func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, errMethodNotAllowed, http.StatusMethodNotAllowed)
 		return
 	}
 
-	query := r.URL.Query()
-	responseType := strings.TrimSpace(query.Get("response_type"))
-	if responseType != "code" {
-		writeOIDCError(w, http.StatusBadRequest, "unsupported_response_type", "only response_type=code is supported")
-		return
-	}
-
-	clientID := strings.TrimSpace(query.Get("client_id"))
-	if clientID == "" {
-		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "client_id required")
-		return
-	}
-
-	redirectURI := strings.TrimSpace(query.Get("redirect_uri"))
-	if redirectURI == "" {
-		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "redirect_uri required")
-		return
-	}
-
-	state := query.Get("state")
-	nonce := strings.TrimSpace(query.Get("nonce"))
-	promptRaw := strings.TrimSpace(query.Get("prompt"))
-	promptValues := strings.Fields(promptRaw)
-	promptNone := false
-	promptConsent := false
-	for _, value := range promptValues {
-		switch strings.ToLower(value) {
-		case "none":
-			promptNone = true
-		case "consent":
-			promptConsent = true
-		}
-	}
-
-	scopeRaw := strings.TrimSpace(query.Get("scope"))
-	if scopeRaw == "" {
-		scopeRaw = "openid"
-	}
-	scopes := strings.Fields(scopeRaw)
-	if !containsScope(scopes, "openid") {
-		scopes = append(scopes, "openid")
-	}
-
-	client, err := oauthService.Client(r.Context(), clientID)
-	if err != nil {
-		writeOIDCError(w, http.StatusBadRequest, "unauthorized_client", "client not registered")
-		return
-	}
-	redirectURI, err = validateRegisteredRedirectURI(client, redirectURI)
+	reqCtx, err := parseAuthorizeRequest(r)
 	if err != nil {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
-	scopes, err = enforceClientScopePolicy(scopes, client)
+	client, redirectURI, scopes, err := prepareAuthorizeClient(r.Context(), reqCtx)
 	if err != nil {
-		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_scope", err.Error())
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
-	codeChallenge := strings.TrimSpace(query.Get("code_challenge"))
-	codeMethod := strings.TrimSpace(query.Get("code_challenge_method"))
-	if codeChallenge != "" {
-		if codeMethod == "" {
-			codeMethod = "plain"
-		}
-		switch strings.ToUpper(codeMethod) {
-		case "PLAIN", "S256":
-			// ok
-		default:
-			writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "unsupported code_challenge_method")
-			return
-		}
+	if err := validateCodeChallengeMethod(reqCtx.CodeChallenge, &reqCtx.CodeMethod); err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, reqCtx.State, "invalid_request", err.Error())
+		return
 	}
 
 	uuid := uuidFrom(r.Context())
@@ -173,48 +133,164 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 
 	user, err := getUserByUUIDPreferred(uuid)
 	if err != nil {
-		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user not found")
+		writeOIDCRedirectError(w, r, redirectURI, reqCtx.State, "access_denied", errUserNotFound)
 		return
 	}
 
-	requireConsent := promptConsent
-	if !requireConsent {
-		hasConsent, err := oauthService.HasConsent(r.Context(), int64(user.ID), client.ClientID, scopes)
-		if err != nil {
-			log.Printf("oidc authorize: consent check failed for %s/%s: %v", user.Username, client.ClientID, err)
-			writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
-			return
-		}
-		requireConsent = !hasConsent
-	}
+	requireConsent := shouldRequireConsent(r.Context(), user, client, scopes, reqCtx.PromptConsent)
 
 	if requireConsent {
-		if promptNone {
-			writeOIDCRedirectError(w, r, redirectURI, state, "consent_required", "user interaction required")
+		if reqCtx.PromptNone {
+			writeOIDCRedirectError(w, r, redirectURI, reqCtx.State, "consent_required", "user interaction required")
 			return
 		}
 		renderConsentPage(w, consentTemplateData{
 			ClientDisplay:       clientDisplayName(client),
 			ClientID:            client.ClientID,
 			RedirectURI:         redirectURI,
-			State:               state,
+			State:               reqCtx.State,
 			Scope:               strings.Join(scopes, " "),
 			Scopes:              scopeDisplayList(scopes),
 			IncludeOffline:      containsScope(scopes, "offline_access"),
-			CodeChallenge:       codeChallenge,
-			CodeChallengeMethod: codeMethod,
-			Prompt:              promptRaw,
-			Nonce:               nonce,
+			CodeChallenge:       reqCtx.CodeChallenge,
+			CodeChallengeMethod: reqCtx.CodeMethod,
+			Prompt:              reqCtx.PromptRaw,
+			Nonce:               reqCtx.Nonce,
 		})
 		return
 	}
 
-	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod, nonce)
+	finishAuthorizeFlow(w, r, authorizeFlowInput{
+		User:          user,
+		Client:        client,
+		RedirectURI:   redirectURI,
+		State:         reqCtx.State,
+		Scopes:        scopes,
+		CodeChallenge: reqCtx.CodeChallenge,
+		CodeMethod:    reqCtx.CodeMethod,
+		Nonce:         reqCtx.Nonce,
+	})
+}
+
+type authorizeRequest struct {
+	ResponseType  string
+	ClientID      string
+	RedirectURI   string
+	State         string
+	Nonce         string
+	CodeChallenge string
+	CodeMethod    string
+	Scopes        []string
+	PromptRaw     string
+	PromptNone    bool
+	PromptConsent bool
+}
+
+func parseAuthorizeRequest(r *http.Request) (authorizeRequest, error) {
+	query := r.URL.Query()
+	respType := strings.TrimSpace(query.Get("response_type"))
+	if respType != "code" {
+		return authorizeRequest{}, errors.New("only response_type=code is supported")
+	}
+	clientID := strings.TrimSpace(query.Get("client_id"))
+	if clientID == "" {
+		return authorizeRequest{}, errors.New("client_id required")
+	}
+	redirectURI := strings.TrimSpace(query.Get("redirect_uri"))
+	if redirectURI == "" {
+		return authorizeRequest{}, errors.New("redirect_uri required")
+	}
+
+	promptRaw := strings.TrimSpace(query.Get("prompt"))
+	promptNone, promptConsent := parsePrompt(promptRaw)
+
+	scopes := parseScopes(query.Get("scope"))
+
+	return authorizeRequest{
+		ResponseType:  respType,
+		ClientID:      clientID,
+		RedirectURI:   redirectURI,
+		State:         query.Get("state"),
+		Nonce:         strings.TrimSpace(query.Get("nonce")),
+		CodeChallenge: strings.TrimSpace(query.Get("code_challenge")),
+		CodeMethod:    strings.TrimSpace(query.Get("code_challenge_method")),
+		Scopes:        scopes,
+		PromptRaw:     promptRaw,
+		PromptNone:    promptNone,
+		PromptConsent: promptConsent,
+	}, nil
+}
+
+func parsePrompt(promptRaw string) (promptNone, promptConsent bool) {
+	for _, value := range strings.Fields(promptRaw) {
+		switch strings.ToLower(value) {
+		case "none":
+			promptNone = true
+		case "consent":
+			promptConsent = true
+		}
+	}
+	return
+}
+
+func parseScopes(scopeRaw string) []string {
+	scopeRaw = strings.TrimSpace(scopeRaw)
+	if scopeRaw == "" {
+		scopeRaw = "openid"
+	}
+	scopes := strings.Fields(scopeRaw)
+	if !containsScope(scopes, "openid") {
+		scopes = append(scopes, "openid")
+	}
+	return scopes
+}
+
+func prepareAuthorizeClient(ctx context.Context, req authorizeRequest) (oauth.Client, string, []string, error) {
+	client, err := oauthService.Client(ctx, req.ClientID)
+	if err != nil {
+		return oauth.Client{}, "", nil, errors.New("client not registered")
+	}
+	redirectURI, err := validateRegisteredRedirectURI(client, req.RedirectURI)
+	if err != nil {
+		return oauth.Client{}, "", nil, err
+	}
+	scopes, err := enforceClientScopePolicy(req.Scopes, client)
+	if err != nil {
+		return oauth.Client{}, "", nil, err
+	}
+	return client, redirectURI, scopes, nil
+}
+
+func validateCodeChallengeMethod(codeChallenge string, codeMethod *string) error {
+	if strings.TrimSpace(codeChallenge) == "" {
+		return nil
+	}
+	if strings.TrimSpace(*codeMethod) == "" {
+		*codeMethod = "plain"
+	}
+	switch strings.ToUpper(strings.TrimSpace(*codeMethod)) {
+	case "PLAIN", "S256":
+		return nil
+	default:
+		return errors.New("unsupported code_challenge_method")
+	}
+}
+
+func shouldRequireConsent(ctx context.Context, user User, client oauth.Client, scopes []string, promptConsent bool) bool {
+	if promptConsent {
+		return true
+	}
+	hasConsent, err := oauthService.HasConsent(ctx, int64(user.ID), client.ClientID, scopes)
+	if err != nil {
+		log.Printf("oidc authorize: consent check failed for %s/%s: %v", user.Username, client.ClientID, err)
+		return true
+	}
+	return !hasConsent
 }
 
 func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, errMethodNotAllowed, http.StatusMethodNotAllowed)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -226,27 +302,13 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 	clientID := strings.TrimSpace(r.PostFormValue("client_id"))
 	redirectURI := strings.TrimSpace(r.PostFormValue("redirect_uri"))
 	state := r.PostFormValue("state")
-	scopeRaw := strings.TrimSpace(r.PostFormValue("scope"))
-	if scopeRaw == "" {
-		scopeRaw = "openid"
-	}
-	scopes := strings.Fields(scopeRaw)
-	if !containsScope(scopes, "openid") {
-		scopes = append(scopes, "openid")
-	}
+	scopes := parseScopes(r.PostFormValue("scope"))
 	codeChallenge := strings.TrimSpace(r.PostFormValue("code_challenge"))
 	codeMethod := strings.TrimSpace(r.PostFormValue("code_challenge_method"))
 	nonce := strings.TrimSpace(r.PostFormValue("nonce"))
-	if codeChallenge != "" {
-		if codeMethod == "" {
-			codeMethod = "plain"
-		}
-		switch strings.ToUpper(codeMethod) {
-		case "PLAIN", "S256":
-		default:
-			http.Error(w, "unsupported code method", http.StatusBadRequest)
-			return
-		}
+	if err := validateCodeChallengeMethod(codeChallenge, &codeMethod); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	if decision != "allow" && decision != "deny" {
@@ -277,7 +339,7 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 
 	user, err := getUserByUUIDPreferred(uuid)
 	if err != nil {
-		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", "user not found")
+		writeOIDCRedirectError(w, r, redirectURI, state, "access_denied", errUserNotFound)
 		return
 	}
 
@@ -292,12 +354,21 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	finishAuthorizeFlow(w, r, user, client, redirectURI, state, scopes, codeChallenge, codeMethod, nonce)
+	finishAuthorizeFlow(w, r, authorizeFlowInput{
+		User:          user,
+		Client:        client,
+		RedirectURI:   redirectURI,
+		State:         state,
+		Scopes:        scopes,
+		CodeChallenge: codeChallenge,
+		CodeMethod:    codeMethod,
+		Nonce:         nonce,
+	})
 }
 
 func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeOIDCError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
+		writeOIDCError(w, http.StatusMethodNotAllowed, "invalid_request", errMethodNotAllowed)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -376,35 +447,22 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier required")
 			return
 		}
-		switch strings.ToUpper(authCode.CodeMethod.String) {
-		case "S256":
-			hash := sha256.Sum256([]byte(codeVerifier))
-			expected := base64.RawURLEncoding.EncodeToString(hash[:])
-			if subtleConstantTimeCompare(expected, authCode.CodeChallenge.String) != 1 {
-				writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier mismatch")
-				return
-			}
-		case "PLAIN", "":
-			if subtleConstantTimeCompare(codeVerifier, authCode.CodeChallenge.String) != 1 {
-				writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier mismatch")
-				return
-			}
-		default:
-			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier mismatch")
+		if !verifyCodeChallenge(authCode.CodeMethod.String, authCode.CodeChallenge.String, codeVerifier) {
+			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errCodeVerifierMismatch)
 			return
 		}
 	}
 
 	user, err := getUserByID(int(authCode.UserID))
 	if err != nil {
-		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "user not found")
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errUserNotFound)
 		return
 	}
 
 	access, err := oauthService.CreateAccessToken(r.Context(), client.ClientID, authCode.UserID, authCode.Scopes)
 	if err != nil {
 		log.Printf("oidc token: access token create failed: %v", err)
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
 		return
 	}
 
@@ -417,7 +475,7 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 		refresh, refreshExpiry, err = oauthService.CreateRefreshToken(r.Context(), access.TokenID, client.ClientID, authCode.UserID, authCode.Scopes)
 		if err != nil {
 			log.Printf("oidc token: refresh token create failed: %v", err)
-			writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+			writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
 			return
 		}
 	}
@@ -425,7 +483,7 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt, authCode.Nonce.String)
 	if err != nil {
 		log.Printf("oidc token: id token mint failed: %v", err)
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
 		return
 	}
 
@@ -451,9 +509,9 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 		response["refresh_expires_in"] = refreshIn
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set(oidcHeaderContent, oidcContentTypeJSON)
+	w.Header().Set(oidcHeaderCache, oidcCacheNoStore)
+	w.Header().Set(oidcHeaderPragma, oidcCacheNoPragma)
 	_ = json.NewEncoder(w).Encode(response)
 }
 func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oauth.Client) {
@@ -470,7 +528,7 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oaut
 			return
 		}
 		log.Printf("oidc token: refresh flow failed: %v", err)
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
 		return
 	}
 
@@ -481,14 +539,14 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oaut
 
 	user, err := getUserByID(int(access.UserID))
 	if err != nil {
-		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "user not found")
+		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errUserNotFound)
 		return
 	}
 
 	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt, "")
 	if err != nil {
 		log.Printf("oidc token: id token mint failed: %v", err)
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", "token issuance failed")
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
 		return
 	}
 
@@ -514,9 +572,9 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oaut
 		response["refresh_expires_in"] = refreshIn
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set(oidcHeaderContent, oidcContentTypeJSON)
+	w.Header().Set(oidcHeaderCache, oidcCacheNoStore)
+	w.Header().Set(oidcHeaderPragma, oidcCacheNoPragma)
 	_ = json.NewEncoder(w).Encode(response)
 }
 
@@ -530,14 +588,14 @@ func oidcUserinfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	access, err := oauthService.AccessToken(r.Context(), token)
 	if err != nil {
-		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="token invalid or expired"`)
+		w.Header().Set(oidcHeaderWWWAuth, `Bearer error="invalid_token", error_description="token invalid or expired"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	user, err := getUserByID(int(access.UserID))
 	if err != nil {
-		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="user not found"`)
+		w.Header().Set(oidcHeaderWWWAuth, `Bearer error="invalid_token", error_description="user not found"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -552,14 +610,27 @@ func oidcUserinfoHandler(w http.ResponseWriter, r *http.Request) {
 		payload["email"] = strings.TrimSpace(user.Email.String)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(oidcHeaderContent, oidcContentTypeJSON)
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+func verifyCodeChallenge(method, storedChallenge, verifier string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "S256":
+		hash := sha256.Sum256([]byte(verifier))
+		expected := base64.RawURLEncoding.EncodeToString(hash[:])
+		return subtleConstantTimeCompare(expected, storedChallenge) == 1
+	case "PLAIN", "":
+		return subtleConstantTimeCompare(verifier, storedChallenge) == 1
+	default:
+		return false
+	}
+}
+
 func writeOIDCError(w http.ResponseWriter, status int, code, description string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set(oidcHeaderContent, oidcContentTypeJSON)
+	w.Header().Set(oidcHeaderCache, oidcCacheNoStore)
+	w.Header().Set(oidcHeaderPragma, oidcCacheNoPragma)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":             code,
@@ -654,7 +725,7 @@ func validateRegisteredRedirectURI(client oauth.Client, redirectURI string) (str
 		return "", errors.New("redirect_uri required")
 	}
 	if len(client.RedirectURIs) == 0 {
-		return "", errors.New("redirect_uri is not registered for this client")
+		return "", errors.New(errRedirectNotRegistered)
 	}
 
 	parsed, err := url.Parse(normalized)
@@ -664,21 +735,8 @@ func validateRegisteredRedirectURI(client oauth.Client, redirectURI string) (str
 	if parsed.Fragment != "" {
 		return "", errors.New("redirect_uri must not include a fragment component")
 	}
-	if parsed.IsAbs() {
-		scheme := strings.ToLower(parsed.Scheme)
-		if scheme != "https" && scheme != "http" {
-			return "", errors.New("redirect_uri must use http or https scheme")
-		}
-		if parsed.Hostname() == "" {
-			return "", errors.New("redirect_uri must include a hostname")
-		}
-		if !isTrustedRedirectHost(parsed.Hostname(), client) {
-			return "", errors.New("redirect_uri hostname is not trusted")
-		}
-	} else {
-		if !strings.HasPrefix(normalized, "/") {
-			return "", errors.New("redirect_uri must be absolute or start with /")
-		}
+	if err := validateRedirectHost(parsed, normalized, client); err != nil {
+		return "", err
 	}
 
 	for _, reg := range client.RedirectURIs {
@@ -687,7 +745,27 @@ func validateRegisteredRedirectURI(client oauth.Client, redirectURI string) (str
 		}
 	}
 
-	return "", errors.New("redirect_uri is not registered for this client")
+	return "", errors.New(errRedirectNotRegistered)
+}
+
+func validateRedirectHost(parsed *url.URL, normalized string, client oauth.Client) error {
+	if parsed.IsAbs() {
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "https" && scheme != "http" {
+			return errors.New("redirect_uri must use http or https scheme")
+		}
+		if parsed.Hostname() == "" {
+			return errors.New("redirect_uri must include a hostname")
+		}
+		if !isTrustedRedirectHost(parsed.Hostname(), client) {
+			return errors.New("redirect_uri hostname is not trusted")
+		}
+		return nil
+	}
+	if !strings.HasPrefix(normalized, "/") {
+		return errors.New("redirect_uri must be absolute or start with /")
+	}
+	return nil
 }
 
 func clientAllowsRedirect(client oauth.Client, redirect string) bool {
@@ -776,41 +854,55 @@ func scopeDescription(scope string) string {
 	}
 }
 
-func finishAuthorizeFlow(w http.ResponseWriter, r *http.Request, user User, client oauth.Client, redirectURI, state string, scopes []string, codeChallenge, codeMethod, nonce string) {
+type authorizeFlowInput struct {
+	User          User
+	Client        oauth.Client
+	RedirectURI   string
+	State         string
+	Scopes        []string
+	CodeChallenge string
+	CodeMethod    string
+	Nonce         string
+}
+
+func finishAuthorizeFlow(w http.ResponseWriter, r *http.Request, input authorizeFlowInput) {
+	user := input.User
+	client := input.Client
+	redirectURI := input.RedirectURI
 	validatedRedirect, err := validateRegisteredRedirectURI(client, redirectURI)
 	if err != nil {
 		log.Printf("oidc authorize: refusing redirect for %s to %s: %v", client.ClientID, redirectURI, err)
-		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "redirect_uri is not registered for this client")
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", errRedirectNotRegistered)
 		return
 	}
 	redirectURI = validatedRedirect
 
-	if err := oauthService.RecordConsent(r.Context(), int64(user.ID), client.ClientID, scopes); err != nil {
+	if err := oauthService.RecordConsent(r.Context(), int64(user.ID), client.ClientID, input.Scopes); err != nil {
 		log.Printf("oidc authorize: record consent failed for %s/%s: %v", user.Username, client.ClientID, err)
 	}
 
 	authCode, err := oauthService.CreateAuthCode(r.Context(), client.ClientID, int64(user.ID), oauth.AuthCodeOptions{
 		RedirectURI:   redirectURI,
-		Scopes:        scopes,
-		CodeChallenge: codeChallenge,
-		CodeMethod:    codeMethod,
-		Nonce:         nonce,
+		Scopes:        input.Scopes,
+		CodeChallenge: input.CodeChallenge,
+		CodeMethod:    input.CodeMethod,
+		Nonce:         input.Nonce,
 	})
 	if err != nil {
 		log.Printf("oidc authorize: create code failed: %v", err)
-		writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
+		writeOIDCRedirectError(w, r, redirectURI, input.State, "server_error", "authorization failed")
 		return
 	}
 
 	redirect, err := url.Parse(redirectURI)
 	if err != nil {
-		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_request", "invalid redirect_uri")
+		writeOIDCRedirectError(w, r, redirectURI, input.State, "invalid_request", "invalid redirect_uri")
 		return
 	}
 	params := redirect.Query()
 	params.Set("code", authCode.Code)
-	if state != "" {
-		params.Set("state", state)
+	if input.State != "" {
+		params.Set("state", input.State)
 	}
 	redirect.RawQuery = params.Encode()
 	http.Redirect(w, r, redirect.String(), http.StatusFound)
