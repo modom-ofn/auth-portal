@@ -27,63 +27,23 @@ func initOIDCSigningKey() error {
 		return nil
 	}
 
-	var (
-		priv *rsa.PrivateKey
-		err  error
-	)
-
-	if oidcSigningKeyPEM != "" {
-		priv, err = parseRSAPrivateKeyFromPEM([]byte(oidcSigningKeyPEM))
-		if err != nil {
-			return fmt.Errorf("oidc signing key from OIDC_SIGNING_KEY invalid: %w", err)
-		}
-	} else if oidcSigningKeyPath != "" {
-		raw, readErr := os.ReadFile(oidcSigningKeyPath)
-		if readErr != nil {
-			return fmt.Errorf("oidc signing key read error: %w", readErr)
-		}
-		priv, err = parseRSAPrivateKeyFromPEM(raw)
-		if err != nil {
-			return fmt.Errorf("oidc signing key at %s invalid: %w", oidcSigningKeyPath, err)
-		}
-	} else {
-		priv, err = rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return fmt.Errorf("oidc signing key generation failed: %w", err)
-		}
-		oidcKeyGenerated = true
-	}
-
-	if err := priv.Validate(); err != nil {
-		return fmt.Errorf("oidc signing key validation failed: %w", err)
-	}
-
-	keyID, err := computeKeyID(priv.Public().(*rsa.PublicKey))
+	priv, generated, err := loadSigningKey()
 	if err != nil {
-		return fmt.Errorf("oidc signing keyid: %w", err)
+		return err
 	}
-
-	jwks, err := buildJWKS(priv.Public().(*rsa.PublicKey), keyID)
-	if err != nil {
-		return fmt.Errorf("oidc jwks build: %w", err)
-	}
-
-	oidcSigningKey = priv
-	oidcSigningKeyID = keyID
-	oidcJWKSCache = jwks
-
-	if oidcKeyGenerated {
-		log.Printf("OIDC: generated ephemeral RSA signing key (kid=%s)", oidcSigningKeyID)
-	} else {
-		log.Printf("OIDC: loaded signing key (kid=%s)", oidcSigningKeyID)
+	if err := finalizeSigningKey(priv, generated); err != nil {
+		return err
 	}
 	return nil
 }
 
 func parseRSAPrivateKeyFromPEM(raw []byte) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode(raw)
+	block, rest := pem.Decode(raw)
 	if block == nil {
 		return nil, errors.New("no PEM block found")
+	}
+	if len(rest) > 0 {
+		log.Printf("oidc signing key: extra data following PEM block ignored")
 	}
 	switch block.Type {
 	case "RSA PRIVATE KEY":
@@ -168,4 +128,58 @@ func oidcIssuer() string {
 		return strings.TrimRight(v, "/")
 	}
 	return strings.TrimRight(appBaseURL, "/")
+}
+
+func loadSigningKey() (*rsa.PrivateKey, bool, error) {
+	if strings.TrimSpace(oidcSigningKeyPEM) != "" {
+		priv, err := parseRSAPrivateKeyFromPEM([]byte(oidcSigningKeyPEM))
+		if err != nil {
+			return nil, false, fmt.Errorf("oidc signing key from OIDC_SIGNING_KEY invalid: %w", err)
+		}
+		return priv, false, nil
+	}
+	if strings.TrimSpace(oidcSigningKeyPath) != "" {
+		raw, readErr := os.ReadFile(oidcSigningKeyPath)
+		if readErr != nil {
+			return nil, false, fmt.Errorf("oidc signing key read error: %w", readErr)
+		}
+		priv, err := parseRSAPrivateKeyFromPEM(raw)
+		if err != nil {
+			return nil, false, fmt.Errorf("oidc signing key at %s invalid: %w", oidcSigningKeyPath, err)
+		}
+		return priv, false, nil
+	}
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, false, fmt.Errorf("oidc signing key generation failed: %w", err)
+	}
+	return priv, true, nil
+}
+
+func finalizeSigningKey(priv *rsa.PrivateKey, generated bool) error {
+	if err := priv.Validate(); err != nil {
+		return fmt.Errorf("oidc signing key validation failed: %w", err)
+	}
+
+	keyID, err := computeKeyID(priv.Public().(*rsa.PublicKey))
+	if err != nil {
+		return fmt.Errorf("oidc signing keyid: %w", err)
+	}
+
+	jwks, err := buildJWKS(priv.Public().(*rsa.PublicKey), keyID)
+	if err != nil {
+		return fmt.Errorf("oidc jwks build: %w", err)
+	}
+
+	oidcSigningKey = priv
+	oidcSigningKeyID = keyID
+	oidcJWKSCache = jwks
+	oidcKeyGenerated = generated
+
+	if generated {
+		log.Printf("OIDC: generated ephemeral RSA signing key (kid=%s)", oidcSigningKeyID)
+	} else {
+		log.Printf("OIDC: loaded signing key (kid=%s)", oidcSigningKeyID)
+	}
+	return nil
 }
