@@ -133,7 +133,7 @@ func oidcAuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		scopes = append(scopes, "openid")
 	}
 
-	client, err := oauthService.GetClient(r.Context(), clientID)
+	client, err := oauthService.Client(r.Context(), clientID)
 	if err != nil {
 		writeOIDCError(w, http.StatusBadRequest, "unauthorized_client", "client not registered")
 		return
@@ -258,7 +258,7 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := oauthService.GetClient(r.Context(), clientID)
+	client, err := oauthService.Client(r.Context(), clientID)
 	if err != nil {
 		http.Error(w, "client not registered", http.StatusBadRequest)
 		return
@@ -528,7 +528,7 @@ func oidcUserinfoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	access, err := oauthService.GetAccessToken(r.Context(), token)
+	access, err := oauthService.AccessToken(r.Context(), token)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="token invalid or expired"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -789,7 +789,13 @@ func finishAuthorizeFlow(w http.ResponseWriter, r *http.Request, user User, clie
 		log.Printf("oidc authorize: record consent failed for %s/%s: %v", user.Username, client.ClientID, err)
 	}
 
-	authCode, err := oauthService.CreateAuthCode(r.Context(), client.ClientID, int64(user.ID), redirectURI, scopes, codeChallenge, codeMethod, nonce)
+	authCode, err := oauthService.CreateAuthCode(r.Context(), client.ClientID, int64(user.ID), oauth.AuthCodeOptions{
+		RedirectURI:   redirectURI,
+		Scopes:        scopes,
+		CodeChallenge: codeChallenge,
+		CodeMethod:    codeMethod,
+		Nonce:         nonce,
+	})
 	if err != nil {
 		log.Printf("oidc authorize: create code failed: %v", err)
 		writeOIDCRedirectError(w, r, redirectURI, state, "server_error", "authorization failed")
