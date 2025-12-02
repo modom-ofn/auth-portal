@@ -12,6 +12,13 @@ import (
 	"time"
 )
 
+const (
+	errMFAMethodNotAllowed = "method not allowed"
+	errMFASessionRequired  = "session required"
+	errMFAUserNotFound     = "user not found"
+	errMFALookupFailed     = "lookup failed"
+)
+
 type mfaStartResponse struct {
 	OK                bool   `json:"ok"`
 	Secret            string `json:"secret"`
@@ -47,7 +54,7 @@ type mfaChallengeVerifyResponse struct {
 
 func mfaEnrollmentStartHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMFAMethodNotAllowed})
 		return
 	}
 
@@ -58,18 +65,18 @@ func mfaEnrollmentStartHandler(w http.ResponseWriter, r *http.Request) {
 
 	uuid := uuidFrom(r.Context())
 	if uuid == "" {
-		respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "session required"})
+		respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": errMFASessionRequired})
 		return
 	}
 
 	user, err := getUserByUUIDPreferred(uuid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "user not found"})
+			respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": errMFAUserNotFound})
 			return
 		}
 		log.Printf("mfa enroll: user lookup failed: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errMFALookupFailed})
 		return
 	}
 
@@ -130,13 +137,13 @@ func mfaEnrollmentStartHandler(w http.ResponseWriter, r *http.Request) {
 
 func mfaEnrollmentVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMFAMethodNotAllowed})
 		return
 	}
 
 	uuid := uuidFrom(r.Context())
 	if uuid == "" {
-		respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "session required"})
+		respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": errMFASessionRequired})
 		return
 	}
 
@@ -154,11 +161,11 @@ func mfaEnrollmentVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	user, err := getUserByUUIDPreferred(uuid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "user not found"})
+			respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": errMFAUserNotFound})
 			return
 		}
 		log.Printf("mfa verify: user lookup failed: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errMFALookupFailed})
 		return
 	}
 
@@ -169,7 +176,7 @@ func mfaEnrollmentVerifyHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("mfa verify: load record failed: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errMFALookupFailed})
 		return
 	}
 	if !rec.SecretEnc.Valid || strings.TrimSpace(rec.SecretEnc.String) == "" {
@@ -247,7 +254,7 @@ func mfaEnrollmentVerifyHandler(w http.ResponseWriter, r *http.Request) {
 
 func mfaChallengeVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMFAMethodNotAllowed})
 		return
 	}
 
@@ -272,11 +279,11 @@ func mfaChallengeVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	user, err := getUserByUUIDPreferred(claims.UUID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "user not found"})
+			respondJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": errMFAUserNotFound})
 			return
 		}
 		log.Printf("mfa challenge: user lookup failed for %s (%s): %v", claims.Username, claims.UUID, err)
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errMFALookupFailed})
 		return
 	}
 
@@ -287,7 +294,7 @@ func mfaChallengeVerifyHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("mfa challenge: load record failed for %s (%s): %v", claims.Username, claims.UUID, err)
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errMFALookupFailed})
 		return
 	}
 	if !rec.IsVerified {
