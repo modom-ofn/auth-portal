@@ -34,21 +34,59 @@ type plexResource struct {
 	ClientIdentifier string `json:"clientIdentifier"`
 }
 
+func plexSetStandardHeaders(req *http.Request, token, clientID string) {
+	req.Header.Set("Accept", plexHeaderAcceptJSON)
+	if token != "" {
+		req.Header.Set(plexHeaderPlexToken, token)
+	}
+	req.Header.Set(plexHeaderPlexProduct, plexProductName)
+	req.Header.Set(plexHeaderPlexVersion, plexProductVersion)
+	if clientID != "" {
+		req.Header.Set(plexHeaderPlexClientID, clientID)
+	}
+}
+
+func plexReadBody(resp *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read plex response body: %w", err)
+	}
+	return body, nil
+}
+
+const (
+	plexHeaderAcceptJSON       = "application/json"
+	plexHeaderContentType      = "Content-Type"
+	plexHeaderPlexToken        = "X-Plex-Token"
+	plexHeaderPlexProduct      = "X-Plex-Product"
+	plexHeaderPlexVersion      = "X-Plex-Version"
+	plexHeaderPlexClientID     = "X-Plex-Client-Identifier"
+	plexPlexUserFallback       = "plex-user"
+	plexMediaUUIDFormat        = "plex-%d"
+	plexProductName            = "AuthPortal"
+	plexProductVersion         = "2.0.0"
+	plexClientIDDefault        = "auth-portal"
+	plexClientIDUserInfo       = "authportal-userinfo"
+	plexClientIDResourcesCheck = "authportal-check"
+)
+
 // GET JSON with standard Plex headers
 func plexGetJSON(u, token string, out any) error {
-	req, _ := http.NewRequest(http.MethodGet, u, nil)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", token)
-	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "2.0.0")
-	req.Header.Set("X-Plex-Client-Identifier", "auth-portal")
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return fmt.Errorf("build plex request: %w", err)
+	}
+	plexSetStandardHeaders(req, token, plexClientIDDefault)
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := plexReadBody(resp)
+	if err != nil {
+		return err
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		s := strings.TrimSpace(string(body))
 		if len(s) > 200 {
@@ -76,13 +114,13 @@ func plexCreatePin(clientID string) (plexPin, error) {
 
 	req, err := http.NewRequest(http.MethodPost, "https://plex.tv/api/v2/pins", bytes.NewBufferString(form.Encode()))
 	if err != nil {
-		return plexPin{}, err
+		return plexPin{}, fmt.Errorf("build plex pin request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "2.0.0")
-	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set(plexHeaderContentType, "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", plexHeaderAcceptJSON)
+	req.Header.Set(plexHeaderPlexProduct, plexProductName)
+	req.Header.Set(plexHeaderPlexVersion, plexProductVersion)
+	req.Header.Set(plexHeaderPlexClientID, clientID)
 	req.Header.Set("X-Plex-Device", "Web")
 	req.Header.Set("X-Plex-Platform", "Web")
 
@@ -91,13 +129,19 @@ func plexCreatePin(clientID string) (plexPin, error) {
 		return plexPin{}, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := plexReadBody(resp)
+	if err != nil {
+		return plexPin{}, err
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return plexPin{}, fmt.Errorf("plex pins non-2xx: %d %s", resp.StatusCode, string(body))
 	}
 	var pin plexPin
-	if err := json.Unmarshal(body, &pin); err != nil || pin.Code == "" {
-		return plexPin{}, fmt.Errorf("invalid plex pin response")
+	if err := json.Unmarshal(body, &pin); err != nil {
+		return plexPin{}, fmt.Errorf("invalid plex pin response: %w", err)
+	}
+	if strings.TrimSpace(pin.Code) == "" {
+		return plexPin{}, fmt.Errorf("invalid plex pin response: empty code")
 	}
 	return pin, nil
 }
@@ -105,55 +149,78 @@ func plexCreatePin(clientID string) (plexPin, error) {
 func plexPollPin(clientID string, id int, timeout time.Duration) (token string, err error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("https://plex.tv/api/v2/pins/%d", id), nil)
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Plex-Product", "AuthPortal")
-		req.Header.Set("X-Plex-Version", "2.0.0")
-		req.Header.Set("X-Plex-Client-Identifier", clientID)
-		req.Header.Set("X-Plex-Device", "Web")
-		req.Header.Set("X-Plex-Platform", "Web")
-
-		resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-		if err == nil && resp != nil {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				var p plexPin
-				if json.Unmarshal(body, &p) == nil {
-					if p.AuthToken != "" {
-						return p.AuthToken, nil
-					}
-					if p.AuthToken2 != "" {
-						return p.AuthToken2, nil
-					}
-				}
-			}
+		token, ready, pollErr := plexPollPinOnce(clientID, id)
+		if pollErr != nil && Debugf != nil {
+			Debugf("plex pin poll error: %v", pollErr)
+		}
+		if ready && token != "" {
+			return token, nil
 		}
 		time.Sleep(1 * time.Second)
 	}
 	return "", fmt.Errorf("timeout waiting for plex pin")
 }
 
+func plexPollPinOnce(clientID string, id int) (string, bool, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://plex.tv/api/v2/pins/%d", id), nil)
+	if err != nil {
+		return "", false, fmt.Errorf("build plex pin poll request: %w", err)
+	}
+	plexSetStandardHeaders(req, "", clientID)
+	req.Header.Set("X-Plex-Device", "Web")
+	req.Header.Set("X-Plex-Platform", "Web")
+
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	body, err := plexReadBody(resp)
+	if err != nil {
+		return "", false, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false, fmt.Errorf("plex pin poll non-2xx: %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var p plexPin
+	if err := json.Unmarshal(body, &p); err != nil {
+		return "", false, fmt.Errorf("decode plex pin: %w", err)
+	}
+	if p.AuthToken != "" {
+		return p.AuthToken, true, nil
+	}
+	if p.AuthToken2 != "" {
+		return p.AuthToken2, true, nil
+	}
+	return "", false, nil
+}
+
 func plexFetchUser(token string) (plexUser, error) {
-	req, _ := http.NewRequest(http.MethodGet, "https://plex.tv/api/v2/user", nil)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", token)
-	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "2.0.0")
-	req.Header.Set("X-Plex-Client-Identifier", "authportal-userinfo")
+	req, err := http.NewRequest(http.MethodGet, "https://plex.tv/api/v2/user", nil)
+	if err != nil {
+		return plexUser{}, fmt.Errorf("build plex user request: %w", err)
+	}
+	plexSetStandardHeaders(req, token, plexClientIDUserInfo)
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return plexUser{}, err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
+	b, err := plexReadBody(resp)
+	if err != nil {
+		return plexUser{}, err
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return plexUser{}, fmt.Errorf("plex user non-2xx: %d %s", resp.StatusCode, string(b))
 	}
 	var u plexUser
 	if err := json.Unmarshal(b, &u); err != nil {
-		return plexUser{ID: 0, Username: "plex-user"}, nil
+		if Warnf != nil {
+			Warnf("plex user decode failed: %v", err)
+		}
+		return plexUser{ID: 0, Username: plexPlexUserFallback}, nil
 	}
 	return u, nil
 }
@@ -163,19 +230,21 @@ func plexUserHasServer(userToken string) (bool, error) {
 	if userToken == "" {
 		return false, nil
 	}
-	req, _ := http.NewRequest(http.MethodGet, "https://plex.tv/api/v2/resources?includeHttps=1", nil)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", userToken)
-	req.Header.Set("X-Plex-Product", "AuthPortal")
-	req.Header.Set("X-Plex-Version", "2.0.0")
-	req.Header.Set("X-Plex-Client-Identifier", "authportal-check")
+	req, err := http.NewRequest(http.MethodGet, "https://plex.tv/api/v2/resources?includeHttps=1", nil)
+	if err != nil {
+		return false, fmt.Errorf("build plex resources request: %w", err)
+	}
+	plexSetStandardHeaders(req, userToken, plexClientIDResourcesCheck)
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return false, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := plexReadBody(resp)
+	if err != nil {
+		return false, err
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return false, fmt.Errorf("resources non-2xx: %d %s", resp.StatusCode, string(body))
 	}
@@ -206,64 +275,194 @@ func (PlexProvider) Name() string { return "plex" }
 // Optional health check: nothing to validate strictly; return nil.
 func (PlexProvider) Health() error { return nil }
 
-// CompleteOutcome provides a structured result (no cookie writes).
-func (PlexProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOutcome, *HTTPResult, error) {
-	// Expect a pin cookie and poll; if not ready, show waiting page
-	pc, _ := r.Cookie("plex_pin")
-	if pc == nil {
-		return AuthOutcome{}, nil, fmt.Errorf("missing plex pin cookie")
+type plexPinCookie struct {
+	id       int
+	clientID string
+}
+
+type plexAuthData struct {
+	username    string
+	email       string
+	mediaUUID   string
+	sealedToken string
+	authorized  bool
+}
+
+var errPlexPinNotReady = errors.New("plex pin not ready")
+
+func plexParsePinCookie(r *http.Request) (plexPinCookie, error) {
+	pc, err := r.Cookie("plex_pin")
+	if err != nil {
+		return plexPinCookie{}, fmt.Errorf("missing plex pin cookie: %w", err)
 	}
 	parts := strings.SplitN(pc.Value, ":", 3)
 	if len(parts) < 2 {
-		return AuthOutcome{}, nil, fmt.Errorf("invalid plex pin cookie")
+		return plexPinCookie{}, fmt.Errorf("invalid plex pin cookie")
 	}
-	pinID, _ := strconv.Atoi(parts[0])
-	clientID := randClientID()
-	if len(parts) >= 3 && strings.TrimSpace(parts[2]) != "" {
-		clientID = parts[2]
+	pinID, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return plexPinCookie{}, fmt.Errorf("invalid plex pin id: %w", err)
 	}
-	token, err := plexPollPin(clientID, pinID, 60*time.Second)
-	if err != nil || token == "" {
-		hdr := http.Header{}
-		hdr.Set("Content-Type", "text/html; charset=utf-8")
-		body := []byte(`<!doctype html><title>Plex: Waiting…</title><body style="font-family:system-ui;padding:2rem"><h1>Waiting for Plex approval…</h1></body>`)
-		return AuthOutcome{}, &HTTPResult{Status: http.StatusOK, Header: hdr, Body: body}, nil
+	clientID := ""
+	if len(parts) >= 3 {
+		clientID = strings.TrimSpace(parts[2])
 	}
+	if clientID == "" {
+		clientID = randClientID()
+	}
+	return plexPinCookie{id: pinID, clientID: clientID}, nil
+}
 
-	user, _ := plexFetchUser(token)
-	username := user.Username
+func plexAuthDataFromToken(token string) (plexAuthData, error) {
+	user, err := plexFetchUser(token)
+	if err != nil {
+		return plexAuthData{}, err
+	}
+	username := strings.TrimSpace(user.Username)
 	if username == "" {
-		username = "plex-user"
+		username = plexPlexUserFallback
 	}
-	mediaUUID := fmt.Sprintf("plex-%d", user.ID)
-	email := user.Email
+	email := strings.TrimSpace(user.Email)
 
-	sealedToken, serr := SealToken(token)
-	if serr != nil {
-		log.Printf("WARN: token seal failed: %v (storing empty token)", serr)
-		sealedToken = ""
+	return plexAuthData{
+		username:    username,
+		email:       email,
+		mediaUUID:   fmt.Sprintf(plexMediaUUIDFormat, user.ID),
+		sealedToken: plexSealTokenForStorage(token),
+		authorized:  plexTokenAuthorized(token),
+	}, nil
+}
+
+func plexSealTokenForStorage(token string) string {
+	sealedToken, err := SealToken(token)
+	if err != nil {
+		log.Printf("WARN: token seal failed: %v (storing empty token)", err)
+		return ""
 	}
+	return sealedToken
+}
 
-	authorized := false
+func plexTokenAuthorized(token string) bool {
 	if strings.TrimSpace(PlexServerMachineID) != "" || strings.TrimSpace(PlexServerName) != "" {
-		if ok, _ := plexUserHasServer(token); ok {
-			authorized = true
-		}
-	} else if strings.TrimSpace(PlexOwnerToken) != "" {
-		if uid, e1 := plexAccountID(token); e1 == nil {
-			if oid, e2 := plexAccountID(PlexOwnerToken); e2 == nil && uid == oid {
-				authorized = true
+		ok, err := plexUserHasServer(token)
+		if err != nil {
+			if Warnf != nil {
+				Warnf("plex: server visibility check failed: %v", err)
 			}
+			return false
 		}
+		return ok
+	}
+
+	if strings.TrimSpace(PlexOwnerToken) == "" {
+		return false
+	}
+
+	usrID, userErr := plexAccountID(token)
+	ownID, ownerErr := plexAccountID(PlexOwnerToken)
+	if userErr == nil && ownerErr == nil && usrID != "" && usrID == ownID {
+		return true
+	}
+	if Warnf != nil {
+		if userErr != nil {
+			Warnf("plex owner check (user) failed: %v", userErr)
+		}
+		if ownerErr != nil {
+			Warnf("plex owner check (owner) failed: %v", ownerErr)
+		}
+	}
+	return false
+}
+
+func plexResolveAuthData(r *http.Request, timeout time.Duration) (plexAuthData, error) {
+	pin, err := plexParsePinCookie(r)
+	if err != nil {
+		return plexAuthData{}, err
+	}
+	token, err := plexPollPin(pin.clientID, pin.id, timeout)
+	if err != nil || token == "" {
+		if err == nil {
+			return plexAuthData{}, errPlexPinNotReady
+		}
+		return plexAuthData{}, err
+	}
+	return plexAuthDataFromToken(token)
+}
+
+func plexUpsertUserRecord(data plexAuthData) {
+	if UpsertUser == nil {
+		return
+	}
+	if err := UpsertUser(User{
+		Username:    data.username,
+		Email:       data.email,
+		MediaUUID:   data.mediaUUID,
+		MediaToken:  data.sealedToken,
+		MediaAccess: data.authorized,
+		Provider:    "plex",
+	}); err != nil && Warnf != nil {
+		Warnf("plex upsert user failed for %s: %v", data.username, err)
+	}
+}
+
+func plexSetUserMediaAccess(username string, access bool) {
+	if SetUserMediaAccessByUsername == nil {
+		return
+	}
+	if err := SetUserMediaAccessByUsername(username, access); err != nil && Warnf != nil {
+		Warnf("plex set media access failed for %s: %v", username, err)
+	}
+}
+
+func plexFinalizeSession(w http.ResponseWriter, mediaUUID, username string, authorized bool) (bool, error) {
+	if authorized {
+		return finalizeAuthorizedLogin(w, mediaUUID, username)
+	}
+	if SetTempSessionCookie != nil {
+		if err := SetTempSessionCookie(w, mediaUUID, username); err != nil && Warnf != nil {
+			Warnf("plex temp session cookie failed: %v", err)
+		}
+	}
+	return false, nil
+}
+
+const plexWaitingPageHTML = `<!doctype html><title>Plex: Waiting…</title><body style="font-family:system-ui;padding:2rem"><h1>Waiting for Plex approval…</h1></body>`
+
+func plexWaitingPage() *HTTPResult {
+	hdr := http.Header{}
+	hdr.Set(plexHeaderContentType, "text/html; charset=utf-8")
+	return &HTTPResult{
+		Status: http.StatusOK,
+		Header: hdr,
+		Body:   []byte(plexWaitingPageHTML),
+	}
+}
+
+func plexRenderWaitingPage(w http.ResponseWriter) {
+	w.Header().Set(plexHeaderContentType, "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte(plexWaitingPageHTML)); err != nil {
+		log.Printf("WARN: plex waiting page write failed: %v", err)
+	}
+}
+
+// CompleteOutcome provides a structured result (no cookie writes).
+func (PlexProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOutcome, *HTTPResult, error) {
+	data, err := plexResolveAuthData(r, 60*time.Second)
+	if err != nil {
+		if errors.Is(err, errPlexPinNotReady) {
+			return AuthOutcome{}, plexWaitingPage(), nil
+		}
+		return AuthOutcome{}, nil, err
 	}
 
 	return AuthOutcome{
 		Provider:    "plex",
-		Username:    username,
-		Email:       email,
-		MediaUUID:   mediaUUID,
-		SealedToken: sealedToken,
-		Authorized:  authorized,
+		Username:    data.username,
+		Email:       data.email,
+		MediaUUID:   data.mediaUUID,
+		SealedToken: data.sealedToken,
+		Authorized:  data.authorized,
 	}, nil, nil
 }
 
@@ -307,78 +506,22 @@ func (PlexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 }
 
 func (PlexProvider) Forward(w http.ResponseWriter, r *http.Request) {
-	pc, _ := r.Cookie("plex_pin")
-	if pc == nil {
-		http.Error(w, "missing plex pin cookie", http.StatusBadRequest)
-		return
-	}
-	parts := strings.SplitN(pc.Value, ":", 3)
-	if len(parts) < 2 {
-		http.Error(w, "invalid plex pin cookie", http.StatusBadRequest)
-		return
-	}
-	pinID, _ := strconv.Atoi(parts[0])
-	clientID := randClientID()
-	if len(parts) >= 3 && strings.TrimSpace(parts[2]) != "" {
-		clientID = parts[2]
-	}
-	token, err := plexPollPin(clientID, pinID, 60*time.Second)
-	if err != nil || token == "" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<!doctype html><title>Plex: Waiting…</title><body style="font-family:system-ui;padding:2rem"><h1>Waiting for Plex approval…</h1></body>`))
-		return
-	}
-
-	user, _ := plexFetchUser(token)
-	username := user.Username
-	if username == "" {
-		username = "plex-user"
-	}
-	mediaUUID := fmt.Sprintf("plex-%d", user.ID)
-	email := user.Email
-
-	sealedToken, err := SealToken(token)
+	data, err := plexResolveAuthData(r, 60*time.Second)
 	if err != nil {
-		log.Printf("WARN: token seal failed: %v (storing empty token)", err)
-		sealedToken = ""
-	}
-
-	authorized := false
-	if strings.TrimSpace(PlexServerMachineID) != "" || strings.TrimSpace(PlexServerName) != "" {
-		if ok, _ := plexUserHasServer(token); ok {
-			authorized = true
-		}
-	} else if strings.TrimSpace(PlexOwnerToken) != "" {
-		if uid, e1 := plexAccountID(token); e1 == nil {
-			if oid, e2 := plexAccountID(PlexOwnerToken); e2 == nil && uid == oid {
-				authorized = true
-			}
-		}
-	}
-
-	if UpsertUser != nil {
-		_ = UpsertUser(User{
-			Username:    username,
-			Email:       email,
-			MediaUUID:   mediaUUID,
-			MediaToken:  sealedToken,
-			MediaAccess: authorized,
-			Provider:    "plex"})
-	}
-
-	requiresMFA := false
-	if authorized {
-		var err error
-		requiresMFA, err = finalizeAuthorizedLogin(w, mediaUUID, username)
-		if err != nil {
-			http.Error(w, "Login finalization failed", http.StatusInternalServerError)
+		if errors.Is(err, errPlexPinNotReady) {
+			plexRenderWaitingPage(w)
 			return
 		}
-	} else {
-		if SetTempSessionCookie != nil {
-			_ = SetTempSessionCookie(w, mediaUUID, username)
-		}
+		http.Error(w, "plex authentication failed", http.StatusBadGateway)
+		return
+	}
+
+	plexUpsertUserRecord(data)
+
+	requiresMFA, err := plexFinalizeSession(w, data.mediaUUID, data.username, data.authorized)
+	if err != nil {
+		http.Error(w, "Login finalization failed", http.StatusInternalServerError)
+		return
 	}
 
 	redirect := "/home"
@@ -399,76 +542,27 @@ func (PlexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 // the Plex app does not navigate to forwardUrl reliably.
 // It mirrors Forward but returns JSON instead of HTML and uses a short poll.
 func PlexPoll(w http.ResponseWriter, r *http.Request) {
-	pc, _ := r.Cookie("plex_pin")
-	if pc == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "waiting": true, "error": "missing plex pin"})
-		return
-	}
-	parts := strings.SplitN(pc.Value, ":", 3)
-	if len(parts) < 2 {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "waiting": true, "error": "invalid plex pin"})
-		return
-	}
-	pinID, _ := strconv.Atoi(parts[0])
-	clientID := randClientID()
-	if len(parts) >= 3 && strings.TrimSpace(parts[2]) != "" {
-		clientID = parts[2]
-	}
-	// Short poll; UI will call repeatedly.
-	token, err := plexPollPin(clientID, pinID, 2*time.Second)
-	if err != nil || token == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "waiting": true})
-		return
-	}
-
-	user, _ := plexFetchUser(token)
-	username := user.Username
-	if username == "" {
-		username = "plex-user"
-	}
-	mediaUUID := fmt.Sprintf("plex-%d", user.ID)
-	email := user.Email
-
-	sealedToken, err := SealToken(token)
+	data, err := plexResolveAuthData(r, 2*time.Second)
 	if err != nil {
-		if Warnf != nil {
-			Warnf("token seal failed: %v", err)
-		}
-		sealedToken = ""
-	}
-
-	authorized := false
-	if strings.TrimSpace(PlexServerMachineID) != "" || strings.TrimSpace(PlexServerName) != "" {
-		if ok, _ := plexUserHasServer(token); ok {
-			authorized = true
-		}
-	} else if strings.TrimSpace(PlexOwnerToken) != "" {
-		if uid, e1 := plexAccountID(token); e1 == nil {
-			if oid, e2 := plexAccountID(PlexOwnerToken); e2 == nil && uid == oid {
-				authorized = true
-			}
-		}
-	}
-
-	if UpsertUser != nil {
-		_ = UpsertUser(User{Username: username, Email: email, MediaUUID: mediaUUID, MediaToken: sealedToken, MediaAccess: authorized, Provider: "plex"})
-	}
-	requiresMFA := false
-	if authorized {
-		var err error
-		requiresMFA, err = finalizeAuthorizedLogin(w, mediaUUID, username)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "login finalization failed"})
+		waitingResp := map[string]any{"ok": false, "waiting": true}
+		if errors.Is(err, errPlexPinNotReady) {
+			writeJSON(w, http.StatusOK, waitingResp)
 			return
 		}
-	} else {
-		if SetTempSessionCookie != nil {
-			_ = SetTempSessionCookie(w, mediaUUID, username)
-		}
+		waitingResp["error"] = err.Error()
+		writeJSON(w, http.StatusOK, waitingResp)
+		return
+	}
+
+	plexUpsertUserRecord(data)
+	requiresMFA, err := plexFinalizeSession(w, data.mediaUUID, data.username, data.authorized)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "login finalization failed"})
+		return
 	}
 
 	if Debugf != nil {
-		Debugf("plex poll success: pin=%d user=%s authorized=%t", pinID, username, authorized)
+		Debugf("plex poll success: user=%s authorized=%t", data.username, data.authorized)
 	}
 	redirect := "/home"
 	if requiresMFA {
@@ -477,7 +571,7 @@ func PlexPoll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "redirect": redirect, "mfa": requiresMFA})
 }
 
-func (PlexProvider) IsAuthorized(uuid, _username string) (bool, error) {
+func (PlexProvider) IsAuthorized(uuid, _ string) (bool, error) {
 	if GetUserByUUID == nil {
 		return false, errors.New("GetUserByUUID not configured")
 	}
@@ -488,36 +582,16 @@ func (PlexProvider) IsAuthorized(uuid, _username string) (bool, error) {
 	if u.MediaAccess {
 		return true, nil
 	}
-	if strings.TrimSpace(u.MediaToken) == "" {
+
+	userToken := strings.TrimSpace(u.MediaToken)
+	if userToken == "" {
 		return false, nil
 	}
-	userToken := strings.TrimSpace(u.MediaToken)
 
-	if strings.TrimSpace(PlexServerMachineID) != "" || strings.TrimSpace(PlexServerName) != "" {
-		ok, err := plexUserHasServer(userToken)
-		if err == nil {
-			if ok {
-				if SetUserMediaAccessByUsername != nil {
-					_ = SetUserMediaAccessByUsername(u.Username, true)
-				}
-			}
-			return ok, nil
-		}
-		if Debugf != nil {
-			Debugf("plex: server visibility check failed: %v", err)
-		}
+	authorized := plexTokenAuthorized(userToken)
+	if authorized {
+		plexSetUserMediaAccess(u.Username, true)
+		return true, nil
 	}
-
-	if strings.TrimSpace(PlexOwnerToken) != "" {
-		usrID, e1 := plexAccountID(userToken)
-		ownID, e2 := plexAccountID(PlexOwnerToken)
-		if e1 == nil && e2 == nil && usrID != "" && usrID == ownID {
-			if SetUserMediaAccessByUsername != nil {
-				_ = SetUserMediaAccessByUsername(u.Username, true)
-			}
-			return true, nil
-		}
-	}
-
 	return false, nil
 }
