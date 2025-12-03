@@ -33,7 +33,14 @@ func scanUser(rs rowScanner) (User, error) {
 
 // ---------- Getters ----------
 
-func getUserByID(id int) (User, error) {
+// Backward-compatible wrappers for legacy call sites.
+func getUserByID(id int) (User, error)        { return userByID(id) }
+func getUserByUUID(uuid string) (User, error) { return userByUUID(uuid) }
+func getUserByUsername(username string) (User, error) {
+	return userByUsername(username)
+}
+
+func userByID(id int) (User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 	return scanUser(db.QueryRowContext(ctx, `
@@ -42,7 +49,7 @@ FROM users
 WHERE id = $1`, id))
 }
 
-func getUserByUUID(uuid string) (User, error) {
+func userByUUID(uuid string) (User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
@@ -80,7 +87,7 @@ func getUserByUUID(uuid string) (User, error) {
 	return row, nil
 }
 
-func getUserByUsername(username string) (User, error) {
+func userByUsername(username string) (User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
@@ -225,7 +232,7 @@ func getUserByUUIDPreferred(uuid string) (User, error) {
 		return User{}, err
 	}
 	// Fallback to legacy users table
-	return getUserByUUID(uuid)
+	return userByUUID(uuid)
 }
 
 // Identity describes a provider-bound identity for a user.
@@ -555,7 +562,7 @@ func userSessionState(uuid, username string) (bool, int64, error) {
 	}
 	username = strings.TrimSpace(username)
 	if username != "" {
-		if u, err := getUserByUsername(username); err == nil {
+		if u, err := userByUsername(username); err == nil {
 			return u.IsAdmin, u.SessionVersion, nil
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return false, 0, err

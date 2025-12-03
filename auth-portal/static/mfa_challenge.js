@@ -45,11 +45,11 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ code }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data && data.ok) {
-        window.location.assign(data.redirect || '/home');
+      if (res.ok && data?.ok) {
+        globalThis.location.assign(data.redirect || '/home');
         return;
       }
-      const message = (data && data.error) || 'Verification failed. Check your code and try again.';
+      const message = data?.error || 'Verification failed. Check your code and try again.';
       showError(message);
       codeInput?.focus();
       codeInput?.select();

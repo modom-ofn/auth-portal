@@ -530,13 +530,15 @@ func validateSessionClaims(claims *sessionClaims) (bool, bool) {
 
 func cookieSettings() (http.SameSite, bool) {
 	sameSite := sessionSameSite
-	secure := forceSecureCookie || strings.HasPrefix(strings.ToLower(appBaseURL), "https://")
-	if sameSite == http.SameSiteNoneMode && !secure {
-		if !sessionSameSiteWarningLogged {
-			log.Println("SESSION_SAMESITE=none requires Secure cookies; falling back to SameSite=Lax until HTTPS or FORCE_SECURE_COOKIE=1")
-			sessionSameSiteWarningLogged = true
-		}
-		sameSite = http.SameSiteLaxMode
+	secure := true
+	if !strings.HasPrefix(strings.ToLower(appBaseURL), "https://") && !forceSecureCookie && !sessionSameSiteWarningLogged {
+		log.Println("Warning: forcing Secure cookies; set APP_BASE_URL to https:// or enable FORCE_SECURE_COOKIE=1 to avoid cookie drop in HTTP-only setups")
+		sessionSameSiteWarningLogged = true
+	}
+	// SameSite=None requires Secure; we already force Secure above.
+	if sameSite == http.SameSiteNoneMode && !secure && !sessionSameSiteWarningLogged {
+		log.Println("SESSION_SAMESITE=none requires Secure cookies; forcing Secure flag")
+		sessionSameSiteWarningLogged = true
 	}
 	return sameSite, secure
 }

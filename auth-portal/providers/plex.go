@@ -482,6 +482,8 @@ func (PlexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 		Path:     "/auth",
 		Expires:  time.Now().Add(5 * time.Minute),
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	})
 	// Determine external scheme/host correctly (supports reverse proxies)
 	proto := r.Header.Get("X-Forwarded-Proto")
