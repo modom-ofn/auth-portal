@@ -267,7 +267,8 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	grantTypes := pq.StringArray{"authorization_code"}
 	responseTypes := pq.StringArray{"code"}
 	now := time.Now().UTC()
-	hashed, hashErr := bcrypt.GenerateFromPassword([]byte("super-secret"), bcrypt.DefaultCost)
+	const testClientSecret = "example-client-secret-not-used-in-prod"
+	hashed, hashErr := bcrypt.GenerateFromPassword([]byte(testClientSecret), bcrypt.DefaultCost)
 	if hashErr != nil {
 		t.Fatalf("hash password: %v", hashErr)
 	}
@@ -279,7 +280,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	)
 	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(testClientID).WillReturnRows(row)
 
-	client, err := svc.AuthenticateClient(context.Background(), testClientID, "super-secret")
+	client, err := svc.AuthenticateClient(context.Background(), testClientID, testClientSecret)
 	if err != nil {
 		t.Fatalf("AuthenticateClient: %v", err)
 	}

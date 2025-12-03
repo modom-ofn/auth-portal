@@ -68,7 +68,9 @@ func TestMediaAuthAttemptRetryOn5xx(t *testing.T) {
 func TestMediaAuthAttemptBadJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headerContentType, contentTypeJSON)
-		_, _ = w.Write([]byte("not-json"))
+		if _, err := w.Write([]byte("not-json")); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
 	}))
 	defer ts.Close()
 

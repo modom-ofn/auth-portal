@@ -230,42 +230,52 @@ func plexUserHasServer(userToken string) (bool, error) {
 	if userToken == "" {
 		return false, nil
 	}
+	rs, err := plexFetchResources(userToken)
+	if err != nil {
+		return false, err
+	}
+	return plexResourceMatchesConfiguredServer(rs, strings.TrimSpace(PlexServerMachineID), strings.TrimSpace(PlexServerName)), nil
+}
+
+func plexFetchResources(userToken string) ([]plexResource, error) {
 	req, err := http.NewRequest(http.MethodGet, "https://plex.tv/api/v2/resources?includeHttps=1", nil)
 	if err != nil {
-		return false, fmt.Errorf("build plex resources request: %w", err)
+		return nil, fmt.Errorf("build plex resources request: %w", err)
 	}
 	plexSetStandardHeaders(req, userToken, plexClientIDResourcesCheck)
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, err := plexReadBody(resp)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false, fmt.Errorf("resources non-2xx: %d %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("resources non-2xx: %d %s", resp.StatusCode, string(body))
 	}
 	var rs []plexResource
 	if err := json.Unmarshal(body, &rs); err != nil {
-		return false, err
+		return nil, err
 	}
-	wantMID := strings.TrimSpace(PlexServerMachineID)
-	wantName := strings.TrimSpace(PlexServerName)
-	for _, r := range rs {
+	return rs, nil
+}
+
+func plexResourceMatchesConfiguredServer(resources []plexResource, wantMID, wantName string) bool {
+	for _, r := range resources {
 		if !strings.Contains(r.Provides, "server") {
 			continue
 		}
 		if wantMID != "" && r.ClientIdentifier == wantMID {
-			return true, nil
+			return true
 		}
 		if wantName != "" && r.Name == wantName {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 type PlexProvider struct{}

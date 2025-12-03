@@ -15,9 +15,14 @@
 
   function finalizeNavigation(redirect, needsMFA) {
     const safeRedirect = (path) => {
-      const url = String(path || "").trim();
-      if (!url || url.startsWith("http:") || url.startsWith("https:")) return null;
-      return url.startsWith("/") ? url : `/${url}`;
+      try {
+        const dest = new URL(String(path || ""), globalThis.location.origin);
+        if (dest.origin !== globalThis.location.origin) return null;
+        if (dest.protocol !== "http:" && dest.protocol !== "https:") return null;
+        return dest.pathname + dest.search + dest.hash;
+      } catch {
+        return null;
+      }
     };
     const target = safeRedirect(redirect) || (needsMFA ? "/mfa/challenge" : "/home");
     lastAuthRedirect = target;
@@ -129,10 +134,17 @@
     // Open placeholder popup synchronously (prevents popup blockers)
     let popup = openPopup("about:blank");
     try {
-      popup?.document?.open();
-      popup?.document?.write(`<!doctype html><meta charset="utf-8"><title>Starting sign-in…</title>
-          <body style="font-family:system-ui;padding:1rem">Starting sign-in…</body>`);
-      popup?.document?.close();
+      const doc = popup?.document;
+      if (doc) {
+        doc.title = "Starting sign-in…";
+        const body = doc.body || doc.createElement("body");
+        body.style.fontFamily = "system-ui";
+        body.style.padding = "1rem";
+        body.textContent = "Starting sign-in…";
+        if (!doc.body) {
+          doc.appendChild(body);
+        }
+      }
     } catch {}
 
     btn.disabled = true;

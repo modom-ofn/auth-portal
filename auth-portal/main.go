@@ -854,7 +854,8 @@ func hasValidSession(r *http.Request) bool {
 		return false
 	}
 	if claims, ok := token.Claims.(*sessionClaims); ok {
-		valid, _ := validateSessionClaims(claims) // admin flag not needed for validity check
+		valid, adminFlag := validateSessionClaims(claims)
+		_ = adminFlag // admin flag is not used for validity here
 		return valid
 	}
 	return false

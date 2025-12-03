@@ -135,7 +135,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := getUserByUUID(claims.UUID); err != nil {
+	if _, err := userByUUID(claims.UUID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			clearSessionCookie(w)
 			render(w, loginTemplate, map[string]any{

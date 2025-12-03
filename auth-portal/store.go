@@ -33,13 +33,6 @@ func scanUser(rs rowScanner) (User, error) {
 
 // ---------- Getters ----------
 
-// Backward-compatible wrappers for legacy call sites.
-func getUserByID(id int) (User, error)        { return userByID(id) }
-func getUserByUUID(uuid string) (User, error) { return userByUUID(uuid) }
-func getUserByUsername(username string) (User, error) {
-	return userByUsername(username)
-}
-
 func userByID(id int) (User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()

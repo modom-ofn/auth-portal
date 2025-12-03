@@ -453,7 +453,7 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 		}
 	}
 
-	user, err := getUserByID(int(authCode.UserID))
+	user, err := userByID(int(authCode.UserID))
 	if err != nil {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errUserNotFound)
 		return
@@ -537,7 +537,7 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oaut
 		return
 	}
 
-	user, err := getUserByID(int(access.UserID))
+	user, err := userByID(int(access.UserID))
 	if err != nil {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errUserNotFound)
 		return
@@ -593,7 +593,7 @@ func oidcUserinfoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := getUserByID(int(access.UserID))
+	user, err := userByID(int(access.UserID))
 	if err != nil {
 		w.Header().Set(oidcHeaderWWWAuth, `Bearer error="invalid_token", error_description="user not found"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)

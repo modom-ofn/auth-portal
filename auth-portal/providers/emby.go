@@ -111,7 +111,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusSeeOther, Header: hdr}, nil
 	}
 
-	auth, detail, authorized, err := processEmbyLogin(username, password)
+	auth, _, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
@@ -122,7 +122,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
-	return finalizeEmbyOutcome(auth, detail, authorized), nil, nil
+	return finalizeEmbyOutcome(auth, authorized), nil, nil
 }
 
 // StartWeb: tell the client to open our own login form popup (/auth/forward?emby=1)
@@ -155,7 +155,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, detail, authorized, err := processEmbyLogin(username, password)
+	auth, _, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
@@ -177,7 +177,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, mediaUUID := saveEmbyUser(auth, detail, authorized)
+	_, mediaUUID := saveEmbyUser(auth, authorized)
 
 	if authorized {
 		if SetSessionCookie != nil {
@@ -196,7 +196,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (EmbyProvider) IsAuthorized(uuid, username string) (bool, error) {
+func (EmbyProvider) IsAuthorized(uuid, _ string) (bool, error) {
 	if GetUserByUUID == nil {
 		return false, fmt.Errorf("GetUserByUUID not configured")
 	}
@@ -259,7 +259,7 @@ func isEmbyAuthorized(username, userID string, detail embyUserDetail) bool {
 	return false
 }
 
-func saveEmbyUser(auth mediaAuthResp, detail embyUserDetail, authorized bool) (sealedToken string, mediaUUID string) {
+func saveEmbyUser(auth mediaAuthResp, authorized bool) (sealedToken string, mediaUUID string) {
 	sealedToken, serr := SealToken(auth.AccessToken)
 	if serr != nil {
 		log.Printf("WARN: emby token seal failed: %v", serr)
@@ -282,8 +282,8 @@ func saveEmbyUser(auth mediaAuthResp, detail embyUserDetail, authorized bool) (s
 	return sealedToken, mediaUUID
 }
 
-func finalizeEmbyOutcome(auth mediaAuthResp, detail embyUserDetail, authorized bool) AuthOutcome {
-	sealedToken, mediaUUID := saveEmbyUser(auth, detail, authorized)
+func finalizeEmbyOutcome(auth mediaAuthResp, authorized bool) AuthOutcome {
+	sealedToken, mediaUUID := saveEmbyUser(auth, authorized)
 	return AuthOutcome{
 		Provider:    "emby",
 		Username:    auth.User.Name,

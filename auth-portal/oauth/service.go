@@ -498,63 +498,23 @@ func (s Service) UseRefreshToken(ctx context.Context, tokenID, expectedClientID 
 	}
 	defer tx.Rollback()
 
-	var (
-		refreshTokenID string
-		accessTokenID  string
-		clientID       string
-		userID         int64
-		scopes         pq.StringArray
-		expiresAt      time.Time
-		revokedAt      sql.NullTime
-	)
-	err = tx.QueryRowContext(ctx, `
-SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoked_at
-  FROM oauth_refresh_tokens
- WHERE token_id = $1
- FOR UPDATE
-`, digest).Scan(
-		&refreshTokenID,
-		&accessTokenID,
-		&clientID,
-		&userID,
-		&scopes,
-		&expiresAt,
-		&revokedAt,
-	)
+	rt, err := fetchRefreshTokenForUpdate(ctx, tx, digest)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return AccessToken{}, "", time.Time{}, ErrTokenNotFound
-		}
 		return AccessToken{}, "", time.Time{}, err
 	}
-	if clientID != expectedClientID {
+	if rt.clientID != expectedClientID {
 		return AccessToken{}, "", time.Time{}, ErrTokenNotFound
 	}
 
-	now := time.Now().UTC()
-	if revokedAt.Valid {
-		return AccessToken{}, "", time.Time{}, ErrTokenRevoked
-	}
-	if now.After(expiresAt) {
-		if _, revokeErr := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest); revokeErr != nil {
-			return AccessToken{}, "", time.Time{}, revokeErr
-		}
-		return AccessToken{}, "", time.Time{}, ErrTokenExpired
-	}
-
-	// Revoke previous tokens
-	if _, err := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest); err != nil {
-		return AccessToken{}, "", time.Time{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE oauth_access_tokens SET revoked_at = now() WHERE token_id = $1`, accessTokenID); err != nil {
+	if err := validateRefreshTokenFreshness(ctx, tx, digest, rt.expiresAt, rt.revokedAt); err != nil {
 		return AccessToken{}, "", time.Time{}, err
 	}
 
-	newAccess, err := s.insertAccessToken(ctx, tx, clientID, userID, scopes)
-	if err != nil {
+	if err := revokeRefreshAndAccess(ctx, tx, digest, rt.accessTokenID); err != nil {
 		return AccessToken{}, "", time.Time{}, err
 	}
-	newRefresh, refreshExpires, err := s.insertRefreshToken(ctx, tx, newAccess.TokenID, clientID, userID, scopes)
+
+	newAccess, newRefresh, refreshExpires, err := s.issueTokensFromRefresh(ctx, tx, rt.clientID, rt.userID, rt.scopes)
 	if err != nil {
 		return AccessToken{}, "", time.Time{}, err
 	}
@@ -563,6 +523,77 @@ SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoke
 		return AccessToken{}, "", time.Time{}, err
 	}
 
+	return newAccess, newRefresh, refreshExpires, nil
+}
+
+type refreshTokenRecord struct {
+	refreshTokenID string
+	accessTokenID  string
+	clientID       string
+	userID         int64
+	scopes         pq.StringArray
+	expiresAt      time.Time
+	revokedAt      sql.NullTime
+}
+
+func fetchRefreshTokenForUpdate(ctx context.Context, tx *sql.Tx, digest string) (refreshTokenRecord, error) {
+	var rt refreshTokenRecord
+	err := tx.QueryRowContext(ctx, `
+SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoked_at
+  FROM oauth_refresh_tokens
+ WHERE token_id = $1
+ FOR UPDATE
+`, digest).Scan(
+		&rt.refreshTokenID,
+		&rt.accessTokenID,
+		&rt.clientID,
+		&rt.userID,
+		&rt.scopes,
+		&rt.expiresAt,
+		&rt.revokedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return refreshTokenRecord{}, ErrTokenNotFound
+		}
+		return refreshTokenRecord{}, err
+	}
+	return rt, nil
+}
+
+func validateRefreshTokenFreshness(ctx context.Context, tx *sql.Tx, digest string, expiresAt time.Time, revokedAt sql.NullTime) error {
+	if revokedAt.Valid {
+		return ErrTokenRevoked
+	}
+	now := time.Now().UTC()
+	if now.After(expiresAt) {
+		if _, revokeErr := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest); revokeErr != nil {
+			return revokeErr
+		}
+		return ErrTokenExpired
+	}
+	return nil
+}
+
+func revokeRefreshAndAccess(ctx context.Context, tx *sql.Tx, refreshDigest string, accessTokenID string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, refreshDigest); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE oauth_access_tokens SET revoked_at = now() WHERE token_id = $1`, accessTokenID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s Service) issueTokensFromRefresh(ctx context.Context, tx *sql.Tx, clientID string, userID int64, scopes pq.StringArray) (AccessToken, string, time.Time, error) {
+	newAccess, err := s.insertAccessToken(ctx, tx, clientID, userID, scopes)
+	if err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+	newRefresh, refreshExpires, err := s.insertRefreshToken(ctx, tx, newAccess.TokenID, clientID, userID, scopes)
+	if err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
 	return newAccess, newRefresh, refreshExpires, nil
 }
 

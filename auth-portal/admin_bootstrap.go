@@ -113,7 +113,7 @@ func processBootstrapUser(username, email, grantor string) (bool, error) {
 }
 
 func ensureBootstrapUser(username, email string) (bool, error) {
-	existing, err := getUserByUsername(username)
+	existing, err := userByUsername(username)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return false, fmt.Errorf("lookup failed for %q: %w", username, err)
