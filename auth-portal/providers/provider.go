@@ -55,7 +55,9 @@ func WriteHTTPResult(w http.ResponseWriter, res HTTPResult) {
 	}
 	w.WriteHeader(res.Status)
 	if len(res.Body) > 0 {
-		_, _ = w.Write(res.Body)
+		if _, err := w.Write(res.Body); err != nil && Warnf != nil {
+			Warnf("write HTTP result failed: %v", err)
+		}
 	}
 }
 
@@ -290,5 +292,7 @@ func WriteAuthCompletePage(w http.ResponseWriter, opts AuthCompletePageOptions) 
 		mfaFlag,
 		template.HTMLEscapeString(message),
 	)
-	_, _ = w.Write([]byte(payload))
+	if _, err := w.Write([]byte(payload)); err != nil && Warnf != nil {
+		Warnf("write auth complete page failed: %v", err)
+	}
 }

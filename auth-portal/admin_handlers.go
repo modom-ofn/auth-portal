@@ -272,6 +272,12 @@ func adminConfigHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
+	if configStore == nil {
+		log.Printf("admin config history unavailable: config store not initialized")
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "config store unavailable"})
+		return
+	}
+
 	history, err := configStore.History(r.Context(), section, configstore.SectionDocumentKey, limit)
 	if err != nil {
 		log.Printf("admin config history failed (%s): %v", sectionKey, err)

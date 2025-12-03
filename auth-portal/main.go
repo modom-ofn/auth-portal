@@ -157,7 +157,8 @@ func main() {
 	appTimeZone, appLocation = resolveLocation(appTimeZone)
 
 	db = mustInitDB(os.Getenv("DATABASE_URL"))
-	configStore, runtimeCfg := mustInitConfigStore(db)
+	var runtimeCfg RuntimeConfig
+	configStore, runtimeCfg = mustInitConfigStore(db)
 	applyRuntimeConfig(runtimeCfg)
 
 	backupSvc = mustInitBackupService(configStore)
