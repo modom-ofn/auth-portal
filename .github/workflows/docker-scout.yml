@@ -39,9 +39,10 @@ jobs:
       - name: Run Docker Scout CVE scan
         run: |
           docker run --rm \
+            -e DOCKER_HOST=unix:///var/run/docker.sock \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$HOME/.docker":/root/.docker \
-            "$SCOUT_CLI" cves "$IMAGE:$TAG" --json > scout.json
+            "$SCOUT_CLI" cves "$IMAGE:$TAG" --json --exit-code 0 | tee scout.json
 
       - name: Extract critical count
         id: parse
