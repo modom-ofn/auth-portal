@@ -11,7 +11,8 @@ jobs:
     permissions:
       contents: write
     env:
-      IMAGE: modomofn/auth-portal:main
+      IMAGE: modomofn/auth-portal
+      TAG: ${{ github.sha }}
 
     steps:
       - name: Checkout repo
@@ -26,11 +27,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Pull image
-        run: docker pull $IMAGE
+      - name: Pull image (or build if missing)
+        run: |
+          set -euo pipefail
+          if ! docker pull "$IMAGE:$TAG"; then
+            echo "Remote image not found, building locally for scan..."
+            docker build -t "$IMAGE:$TAG" auth-portal
+          fi
 
       - name: Run Docker Scout CVE scan
-        run: docker scout cves $IMAGE --format json > scout.json
+        run: docker scout cves $IMAGE:$TAG --format json > scout.json
 
       - name: Extract critical count
         id: parse
