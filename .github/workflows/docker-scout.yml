@@ -42,12 +42,13 @@ jobs:
             -e DOCKER_HOST=unix:///var/run/docker.sock \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$HOME/.docker":/root/.docker \
-            "$SCOUT_CLI" cves "$IMAGE:$TAG" --json --exit-code 0 | tee scout.json
+            "$SCOUT_CLI" cves "$IMAGE:$TAG" --exit-code 0 | tee scout.txt
 
       - name: Extract critical count
         id: parse
         run: |
-          crit=$(jq '.vulnerabilities | map(select(.severity=="critical")) | length' scout.json)
+          crit=$(awk 'BEGIN{c=0} {for (i=1;i<=NF;i++) if (toupper($i)=="CRITICAL" && (i+1)<=NF && $0 !~ /summary/i){c=$(i+1); exit}} END{print c}' scout.txt)
+          if [[ -z "$crit" ]]; then crit=0; fi
           echo "critical=$crit" >> $GITHUB_OUTPUT
 
       - name: Create badge
