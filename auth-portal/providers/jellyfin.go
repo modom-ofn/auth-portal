@@ -29,6 +29,11 @@ type jellyfinCredentials struct {
 	password string
 }
 
+type jellyfinAuthData struct {
+	authorized bool
+	admin      bool
+}
+
 func jellyfinLoginPageHTML(prefill, errorMsg string) []byte {
 	escaped := html.EscapeString(strings.TrimSpace(prefill))
 
@@ -140,14 +145,13 @@ func (JellyfinProvider) CompleteOutcome(_ context.Context, r *http.Request) (Aut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
-	md, detailErr := mediaGetUserDetail("jellyfin", JellyfinServerURL, auth.AccessToken, auth.User.ID)
+	md, detailErr := jellyfinUserDetailForAuth(auth)
 	if detailErr != nil && Warnf != nil {
 		Warnf("jellyfin/auth user detail lookup failed: %v", detailErr)
 	}
-	authorized := false
-	if JellyfinAPIKey != "" && md.ID != "" && !md.Policy.IsDisabled {
-		authorized = true
-	}
+	authorized := md.ID != "" && !md.Policy.IsDisabled
+	admin := authorized && (md.Policy.IsAdministrator || md.Policy.IsAdmin)
+	jellyfinSyncAdminAccess(auth.User.Name, admin)
 
 	sealedToken, serr := SealToken(auth.AccessToken)
 	if serr != nil {
@@ -204,12 +208,20 @@ func (JellyfinProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	authorized := jellyfinAuthorizedUser(auth, creds.username)
+	md, detailErr := jellyfinUserDetailForAuth(auth)
+	if detailErr != nil && Warnf != nil {
+		Warnf("jellyfin detail fetch failed for %s: %v", creds.username, detailErr)
+	}
+	authz := jellyfinAuthData{
+		authorized: md.ID != "" && !md.Policy.IsDisabled,
+		admin:      md.ID != "" && !md.Policy.IsDisabled && (md.Policy.IsAdministrator || md.Policy.IsAdmin),
+	}
 	sealedToken := jellyfinSealedToken(auth.AccessToken)
 	mediaUUID := jellyfinMediaPrefix + auth.User.ID
 
-	jellyfinPersistUser(mediaUUID, auth.User.Name, sealedToken, authorized)
-	jellyfinSetSession(w, mediaUUID, auth.User.Name, authorized)
+	jellyfinPersistUser(mediaUUID, auth.User.Name, sealedToken, authz.authorized)
+	jellyfinSyncAdminAccess(auth.User.Name, authz.admin)
+	jellyfinSetSession(w, mediaUUID, auth.User.Name, authz.authorized)
 
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
 		Message:  "Signed in - you can close this window.",
@@ -272,18 +284,12 @@ func logJellyfinPwFailure(err error) {
 	log.Printf("WARN: "+jellyfinPwFailedFormat, err)
 }
 
-func jellyfinAuthorizedUser(auth mediaAuthResp, username string) bool {
-	if JellyfinAPIKey == "" {
-		return false
+func jellyfinUserDetailForAuth(auth mediaAuthResp) (jellyfinUserDetail, error) {
+	token := strings.TrimSpace(JellyfinAPIKey)
+	if token == "" {
+		token = strings.TrimSpace(auth.AccessToken)
 	}
-	detail, err := jellyfinGetUserDetail(JellyfinServerURL, JellyfinAPIKey, auth.User.ID)
-	if err != nil {
-		if Warnf != nil {
-			Warnf("jellyfin owner check failed for %s: %v", username, err)
-		}
-		return false
-	}
-	return detail.ID != "" && !detail.Policy.IsDisabled
+	return jellyfinGetUserDetail(JellyfinServerURL, token, auth.User.ID)
 }
 
 func jellyfinSealedToken(token string) string {
@@ -308,6 +314,15 @@ func jellyfinPersistUser(mediaUUID, username, sealedToken string, authorized boo
 		Provider:    "jellyfin",
 	}); err != nil && Warnf != nil {
 		Warnf("jellyfin upsert user failed for %s: %v", username, err)
+	}
+}
+
+func jellyfinSyncAdminAccess(username string, admin bool) {
+	if SetUserAdminByUsername == nil {
+		return
+	}
+	if err := SetUserAdminByUsername(username, admin); err != nil && Warnf != nil {
+		Warnf("jellyfin admin sync failed for %s: %v", username, err)
 	}
 }
 

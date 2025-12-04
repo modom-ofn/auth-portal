@@ -161,6 +161,7 @@ var (
 	UpsertUser                   func(u User) error
 	GetUserByUUID                func(uuid string) (User, error)
 	SetUserMediaAccessByUsername func(username string, access bool) error
+	SetUserAdminByUsername       func(username string, admin bool) error
 	FinalizeLogin                func(http.ResponseWriter, string, string) (bool, error)
 	SetSessionCookie             func(http.ResponseWriter, string, string) error
 	SetTempSessionCookie         func(http.ResponseWriter, string, string) error
@@ -223,6 +224,7 @@ type ProviderDeps struct {
 	UpsertUser                   func(u User) error
 	GetUserByUUID                func(uuid string) (User, error)
 	SetUserMediaAccessByUsername func(username string, access bool) error
+	SetUserAdminByUsername       func(username string, admin bool) error
 	FinalizeLogin                func(http.ResponseWriter, string, string) (bool, error)
 	SetSessionCookie             func(http.ResponseWriter, string, string) error
 	SetTempSessionCookie         func(http.ResponseWriter, string, string) error
@@ -253,6 +255,7 @@ func Init(d ProviderDeps) {
 	UpsertUser = d.UpsertUser
 	GetUserByUUID = d.GetUserByUUID
 	SetUserMediaAccessByUsername = d.SetUserMediaAccessByUsername
+	SetUserAdminByUsername = d.SetUserAdminByUsername
 	FinalizeLogin = d.FinalizeLogin
 	SetSessionCookie = d.SetSessionCookie
 	SetTempSessionCookie = d.SetTempSessionCookie

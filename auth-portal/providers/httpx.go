@@ -100,7 +100,9 @@ type mediaUserDetail struct {
 	ID     string `json:"Id"`
 	Name   string `json:"Name"`
 	Policy struct {
-		IsDisabled bool `json:"IsDisabled"`
+		IsDisabled      bool `json:"IsDisabled"`
+		IsAdministrator bool `json:"IsAdministrator"`
+		IsAdmin         bool `json:"IsAdmin"`
 	} `json:"Policy"`
 }
 

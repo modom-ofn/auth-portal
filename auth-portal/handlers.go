@@ -24,8 +24,14 @@ const (
 // providerUI returns the provider key used by code ("plex"/"emby")
 // and the display name shown in templates.
 func providerUI() (key, display string) {
-	key = mediaProviderKey
-	display = mediaProviderDisplay
+	rc := currentRuntimeConfig()
+	key, display = resolveProviderSelection(rc.Providers.Active)
+	if key == "" {
+		key = mediaProviderKey
+	}
+	if display == "" {
+		display = mediaProviderDisplay
+	}
 	if key == "" && currentProvider != nil {
 		key = currentProvider.Name()
 	}

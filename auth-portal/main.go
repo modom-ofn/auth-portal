@@ -301,6 +301,9 @@ func initProviderDeps() {
 			}, nil
 		},
 		SetUserMediaAccessByUsername: setUserMediaAccessByUsername,
+		SetUserAdminByUsername: func(username string, admin bool) error {
+			return setUserAdminByUsername(username, admin, "jellyfin")
+		},
 		FinalizeLogin:                finalizeLoginSession,
 		SetSessionCookie:             setSessionCookie,
 		SetTempSessionCookie:         setTempSessionCookie,
