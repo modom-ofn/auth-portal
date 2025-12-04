@@ -30,7 +30,7 @@ jobs:
           docker version
 
           echo "=== Installing Docker Scout Plugin ==="
-          docker plugin install docker/scout || echo "Plugin install failed or not supported"
+          docker plugin install docker/scout --grant-all-permissions || echo "Plugin install failed or not supported"
 
       - name: Login to Docker Hub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
