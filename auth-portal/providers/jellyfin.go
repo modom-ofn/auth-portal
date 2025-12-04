@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"log"
@@ -12,6 +13,26 @@ import (
 // Jellyfin uses the same MediaBrowser header schema as Emby.
 
 type JellyfinProvider struct{}
+
+const (
+	jellyfinForwardPath       = "/auth/forward?jellyfin=1"
+	jellyfinHeaderContentType = "Content-Type"
+	jellyfinContentTypeHTML   = "text/html; charset=utf-8"
+	jellyfinPwFailedFormat    = "jellyfin/auth Pw failed: %v"
+	jellyfinMediaPrefix       = "jellyfin-"
+)
+
+var errJellyfinMissingCredentials = errors.New("missing credentials")
+
+type jellyfinCredentials struct {
+	username string
+	password string
+}
+
+type jellyfinAuthData struct {
+	authorized bool
+	admin      bool
+}
 
 func jellyfinLoginPageHTML(prefill, errorMsg string) []byte {
 	escaped := html.EscapeString(strings.TrimSpace(prefill))
@@ -24,8 +45,8 @@ func jellyfinLoginPageHTML(prefill, errorMsg string) []byte {
 
 	resetSnippet := ""
 	if errSnippet != "" {
-		resetSnippet = `
-        <a href="/auth/forward?jellyfin=1" class="muted" style="display:inline-block; margin-top:0.75rem;">Reset</a>`
+		resetSnippet = fmt.Sprintf(`
+        <a href="%s" class="muted" style="display:inline-block; margin-top:0.75rem;">Reset</a>`, jellyfinForwardPath)
 	}
 
 	serverSnippet := ""
@@ -69,7 +90,7 @@ func jellyfinLoginPageHTML(prefill, errorMsg string) []byte {
           <p class="muted" style="margin: 0;">Use your Jellyfin credentials to continue.</p>
         </div>
       </div>%s
-      <form method="post" action="/auth/forward?jellyfin=1" class="modal-form">
+      <form method="post" action="%s" class="modal-form">
         <label>Username<br><input name="username" value="%s" autocomplete="username" required></label>
         <label>Password<br><input type="password" name="password" autocomplete="current-password" required></label>
         <button type="submit" class="btn primary">Sign In</button>%s%s
@@ -77,7 +98,7 @@ func jellyfinLoginPageHTML(prefill, errorMsg string) []byte {
     </section>
   </main>
 </body>
-</html>`, errSnippet, escaped, resetSnippet, serverSnippet))
+</html>`, errSnippet, jellyfinForwardPath, escaped, resetSnippet, serverSnippet))
 }
 
 func (JellyfinProvider) Name() string { return "jellyfin" }
@@ -95,19 +116,19 @@ func (JellyfinProvider) CompleteOutcome(_ context.Context, r *http.Request) (Aut
 	// Serve login form on GET
 	if r.Method == http.MethodGet {
 		hdr := http.Header{}
-		hdr.Set("Content-Type", "text/html; charset=utf-8")
+		hdr.Set(jellyfinHeaderContentType, jellyfinContentTypeHTML)
 		body := jellyfinLoginPageHTML("", "")
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusOK, Header: hdr, Body: body}, nil
 	}
 
 	if err := r.ParseForm(); err != nil {
-		return AuthOutcome{}, nil, fmt.Errorf("invalid form")
+		return AuthOutcome{}, nil, fmt.Errorf("invalid form: %w", err)
 	}
 	username := strings.TrimSpace(r.Form.Get("username"))
 	password := r.Form.Get("password")
 	if username == "" || password == "" {
 		hdr := http.Header{}
-		hdr.Set("Location", "/auth/forward?jellyfin=1")
+		hdr.Set("Location", jellyfinForwardPath)
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusSeeOther, Header: hdr}, nil
 	}
 
@@ -115,27 +136,29 @@ func (JellyfinProvider) CompleteOutcome(_ context.Context, r *http.Request) (Aut
 	auth, err := jellyfinAuthenticate(JellyfinServerURL, clientID, username, password)
 	if err != nil {
 		if Warnf != nil {
-			Warnf("jellyfin/auth Pw failed: %v", err)
+			Warnf(jellyfinPwFailedFormat, err)
 		}
 		// Inline retry page
 		hdr := http.Header{}
-		hdr.Set("Content-Type", "text/html; charset=utf-8")
+		hdr.Set(jellyfinHeaderContentType, jellyfinContentTypeHTML)
 		body := jellyfinLoginPageHTML(username, "Login failed; please try again.")
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
-	md, _ := mediaGetUserDetail("jellyfin", JellyfinServerURL, auth.AccessToken, auth.User.ID)
-	authorized := false
-	if JellyfinAPIKey != "" && md.ID != "" && !md.Policy.IsDisabled {
-		authorized = true
+	md, detailErr := jellyfinUserDetailForAuth(auth)
+	if detailErr != nil && Warnf != nil {
+		Warnf("jellyfin/auth user detail lookup failed: %v", detailErr)
 	}
+	authorized := md.ID != "" && !md.Policy.IsDisabled
+	admin := authorized && (md.Policy.IsAdministrator || md.Policy.IsAdmin)
+	jellyfinSyncAdminAccess(auth.User.Name, admin)
 
 	sealedToken, serr := SealToken(auth.AccessToken)
 	if serr != nil {
 		log.Printf("WARN: jellyfin token seal failed: %v", serr)
 		sealedToken = ""
 	}
-	mediaUUID := "jellyfin-" + auth.User.ID
+	mediaUUID := jellyfinMediaPrefix + auth.User.ID
 
 	return AuthOutcome{
 		Provider:    "jellyfin",
@@ -148,42 +171,31 @@ func (JellyfinProvider) CompleteOutcome(_ context.Context, r *http.Request) (Aut
 }
 
 // StartWeb: open our popup-hosted login page
-func (JellyfinProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
+func (JellyfinProvider) StartWeb(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":       true,
 		"provider": "jellyfin",
-		"authUrl":  "/auth/forward?jellyfin=1",
+		"authUrl":  jellyfinForwardPath,
 	})
 }
 
 func (JellyfinProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(jellyfinLoginPageHTML("", ""))
+		renderJellyfinLogin(w, http.StatusOK, "", "")
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
-	}
-	username := strings.TrimSpace(r.Form.Get("username"))
-	password := r.Form.Get("password")
-	if username == "" || password == "" {
-		http.Redirect(w, r, "/auth/forward?jellyfin=1", http.StatusSeeOther)
+	creds, err := jellyfinParseCredentials(r)
+	if err != nil {
+		handleJellyfinCredentialError(w, r, err)
 		return
 	}
 
 	clientID := randClientID()
-	auth, err := jellyfinAuthenticate(JellyfinServerURL, clientID, username, password)
+	auth, err := jellyfinAuthenticate(JellyfinServerURL, clientID, creds.username, creds.password)
 	if err != nil {
-		if Warnf != nil {
-			Warnf("jellyfin/auth Pw failed: %v", err)
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write(jellyfinLoginPageHTML(username, "Login failed; please try again."))
+		logJellyfinPwFailure(err)
+		renderJellyfinLogin(w, http.StatusUnauthorized, creds.username, "Login failed; please try again.")
 		return
 	}
 
@@ -192,52 +204,24 @@ func (JellyfinProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	}
 	if ok, terr := jellyfinTokenStillValid(JellyfinServerURL, auth.AccessToken); terr == nil && ok {
 		if Debugf != nil {
-			Debugf("jellyfin/auth token valid for %s", username)
+			Debugf("jellyfin/auth token valid for %s", creds.username)
 		}
 	}
 
-	var detail jellyfinUserDetail
-	if JellyfinAPIKey != "" {
-		d, derr := jellyfinGetUserDetail(JellyfinServerURL, JellyfinAPIKey, auth.User.ID)
-		if derr == nil {
-			detail = d
-		} else if Warnf != nil {
-			Warnf("jellyfin owner check failed for %s: %v", username, derr)
-		}
+	md, detailErr := jellyfinUserDetailForAuth(auth)
+	if detailErr != nil && Warnf != nil {
+		Warnf("jellyfin detail fetch failed for %s: %v", creds.username, detailErr)
 	}
+	authz := jellyfinAuthData{
+		authorized: md.ID != "" && !md.Policy.IsDisabled,
+		admin:      md.ID != "" && !md.Policy.IsDisabled && (md.Policy.IsAdministrator || md.Policy.IsAdmin),
+	}
+	sealedToken := jellyfinSealedToken(auth.AccessToken)
+	mediaUUID := jellyfinMediaPrefix + auth.User.ID
 
-	authorized := false
-	if JellyfinAPIKey != "" && detail.ID != "" && !detail.Policy.IsDisabled {
-		authorized = true
-	}
-
-	sealedToken, serr := SealToken(auth.AccessToken)
-	if serr != nil {
-		log.Printf("WARN: jellyfin token seal failed: %v", serr)
-		sealedToken = ""
-	}
-	mediaUUID := "jellyfin-" + auth.User.ID
-
-	if UpsertUser != nil {
-		_ = UpsertUser(User{
-			Username:    auth.User.Name,
-			Email:       "",
-			MediaUUID:   mediaUUID,
-			MediaToken:  sealedToken,
-			MediaAccess: authorized,
-			Provider:    "jellyfin",
-		})
-	}
-
-	if authorized {
-		if SetSessionCookie != nil {
-			_ = SetSessionCookie(w, mediaUUID, auth.User.Name)
-		}
-	} else {
-		if SetTempSessionCookie != nil {
-			_ = SetTempSessionCookie(w, mediaUUID, auth.User.Name)
-		}
-	}
+	jellyfinPersistUser(mediaUUID, auth.User.Name, sealedToken, authz.authorized)
+	jellyfinSyncAdminAccess(auth.User.Name, authz.admin)
+	jellyfinSetSession(w, mediaUUID, auth.User.Name, authz.authorized)
 
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
 		Message:  "Signed in - you can close this window.",
@@ -246,7 +230,7 @@ func (JellyfinProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (JellyfinProvider) IsAuthorized(uuid, _username string) (bool, error) {
+func (JellyfinProvider) IsAuthorized(uuid, _ string) (bool, error) {
 	if GetUserByUUID == nil {
 		return false, fmt.Errorf("GetUserByUUID not configured")
 	}
@@ -258,16 +242,112 @@ func (JellyfinProvider) IsAuthorized(uuid, _username string) (bool, error) {
 		return true, nil
 	}
 	if JellyfinAPIKey != "" && u.MediaUUID != "" {
-		id := strings.TrimPrefix(u.MediaUUID, "jellyfin-")
+		id := strings.TrimPrefix(u.MediaUUID, jellyfinMediaPrefix)
 		if detail, derr := jellyfinGetUserDetail(JellyfinServerURL, JellyfinAPIKey, id); derr == nil {
 			ok := !detail.Policy.IsDisabled
 			if SetUserMediaAccessByUsername != nil {
-				_ = SetUserMediaAccessByUsername(u.Username, ok)
+				if setErr := SetUserMediaAccessByUsername(u.Username, ok); setErr != nil && Warnf != nil {
+					Warnf("jellyfin set media access failed for %s: %v", u.Username, setErr)
+				}
 			}
 			return ok, nil
 		}
 	}
 	return false, nil
+}
+
+func jellyfinParseCredentials(r *http.Request) (jellyfinCredentials, error) {
+	if err := r.ParseForm(); err != nil {
+		return jellyfinCredentials{}, fmt.Errorf("parse form: %w", err)
+	}
+	username := strings.TrimSpace(r.Form.Get("username"))
+	password := r.Form.Get("password")
+	if username == "" || password == "" {
+		return jellyfinCredentials{}, errJellyfinMissingCredentials
+	}
+	return jellyfinCredentials{username: username, password: password}, nil
+}
+
+func handleJellyfinCredentialError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errJellyfinMissingCredentials) {
+		http.Redirect(w, r, jellyfinForwardPath, http.StatusSeeOther)
+		return
+	}
+	http.Error(w, "invalid form", http.StatusBadRequest)
+}
+
+func logJellyfinPwFailure(err error) {
+	if Warnf != nil {
+		Warnf(jellyfinPwFailedFormat, err)
+		return
+	}
+	log.Printf("WARN: "+jellyfinPwFailedFormat, err)
+}
+
+func jellyfinUserDetailForAuth(auth mediaAuthResp) (jellyfinUserDetail, error) {
+	token := strings.TrimSpace(JellyfinAPIKey)
+	if token == "" {
+		token = strings.TrimSpace(auth.AccessToken)
+	}
+	return jellyfinGetUserDetail(JellyfinServerURL, token, auth.User.ID)
+}
+
+func jellyfinSealedToken(token string) string {
+	sealedToken, err := SealToken(token)
+	if err != nil {
+		log.Printf("WARN: jellyfin token seal failed: %v", err)
+		return ""
+	}
+	return sealedToken
+}
+
+func jellyfinPersistUser(mediaUUID, username, sealedToken string, authorized bool) {
+	if UpsertUser == nil {
+		return
+	}
+	if err := UpsertUser(User{
+		Username:    username,
+		Email:       "",
+		MediaUUID:   mediaUUID,
+		MediaToken:  sealedToken,
+		MediaAccess: authorized,
+		Provider:    "jellyfin",
+	}); err != nil && Warnf != nil {
+		Warnf("jellyfin upsert user failed for %s: %v", username, err)
+	}
+}
+
+func jellyfinSyncAdminAccess(username string, admin bool) {
+	if SetUserAdminByUsername == nil {
+		return
+	}
+	if err := SetUserAdminByUsername(username, admin); err != nil && Warnf != nil {
+		Warnf("jellyfin admin sync failed for %s: %v", username, err)
+	}
+}
+
+func jellyfinSetSession(w http.ResponseWriter, mediaUUID, username string, authorized bool) {
+	if authorized {
+		if SetSessionCookie != nil {
+			if err := SetSessionCookie(w, mediaUUID, username); err != nil && Warnf != nil {
+				Warnf("jellyfin session cookie set failed: %v", err)
+			}
+		}
+		return
+	}
+	if SetTempSessionCookie != nil {
+		if err := SetTempSessionCookie(w, mediaUUID, username); err != nil && Warnf != nil {
+			Warnf("jellyfin temp session cookie set failed: %v", err)
+		}
+	}
+}
+
+func renderJellyfinLogin(w http.ResponseWriter, status int, prefill, message string) {
+	w.Header().Set(jellyfinHeaderContentType, jellyfinContentTypeHTML)
+	w.WriteHeader(status)
+	if _, err := w.Write(jellyfinLoginPageHTML(prefill, message)); err != nil {
+		log.Printf("WARN: jellyfin login page write failed: %v", err)
+	}
 }
 
 func jellyfinAuthenticate(serverURL, clientID, username, password string) (mediaAuthResp, error) {
@@ -286,7 +366,7 @@ func jellyfinAuthenticate(serverURL, clientID, username, password string) (media
 		return out, nil
 	}
 	if Warnf != nil {
-		Warnf("jellyfin/auth Pw failed: %v", err)
+		Warnf(jellyfinPwFailedFormat, err)
 	}
 	out2, err2 := mediaAuthAttempt("jellyfin", base, JellyfinAppName, JellyfinAppVersion, clientID, map[string]string{
 		"pw":       password,

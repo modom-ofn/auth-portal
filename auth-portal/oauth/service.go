@@ -26,6 +26,7 @@ var (
 	ErrTokenRevoked     = errors.New("oauth: token revoked")
 	ErrConsentRequired  = errors.New("oauth: consent required")
 	ErrClientAuthFailed = errors.New("oauth: client authentication failed")
+	ErrClientIDRequired = errors.New("oauth: client id required")
 )
 
 const (
@@ -79,23 +80,23 @@ type AccessToken struct {
 	CreatedAt time.Time
 }
 
-func (s Service) GetClient(ctx context.Context, id string) (Client, error) {
-	client, _, err := s.getClientRow(ctx, id)
+func (s Service) Client(ctx context.Context, id string) (Client, error) {
+	client, _, err := s.clientRow(ctx, id)
 	return client, err
 }
 
 func (s Service) AuthenticateClient(ctx context.Context, id, providedSecret string) (Client, error) {
-	client, storedSecret, err := s.getClientRow(ctx, id)
+	client, storedSecret, err := s.clientRow(ctx, id)
 	if err != nil {
 		return Client{}, err
 	}
-	if err := verifyClientSecret(storedSecret, providedSecret); err != nil {
+	if verifyClientSecret(storedSecret, providedSecret) != nil {
 		return Client{}, ErrClientAuthFailed
 	}
 	return client, nil
 }
 
-func (s Service) getClientRow(ctx context.Context, id string) (Client, string, error) {
+func (s Service) clientRow(ctx context.Context, id string) (Client, string, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Client{}, "", ErrClientNotFound
@@ -390,18 +391,26 @@ func hashTokenIdentifier(raw string) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
 }
 
-func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int64, redirectURI string, scopes []string, codeChallenge, codeMethod, nonce string) (AuthCode, error) {
+type AuthCodeOptions struct {
+	RedirectURI   string
+	Scopes        []string
+	CodeChallenge string
+	CodeMethod    string
+	Nonce         string
+}
+
+func (s Service) CreateAuthCode(ctx context.Context, clientID string, userID int64, opts AuthCodeOptions) (AuthCode, error) {
 	code, err := generateOpaqueToken(32)
 	if err != nil {
 		return AuthCode{}, err
 	}
 	now := time.Now().UTC()
 	expires := now.Add(s.authCodeTTL())
-	normalizedScopes := normalizeScopes(scopes)
+	normalizedScopes := normalizeScopes(opts.Scopes)
 	_, err = s.DB.ExecContext(ctx, `
 INSERT INTO oauth_auth_codes (code, client_id, user_id, scopes, redirect_uri, expires_at, code_challenge, code_method, nonce, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10)
-`, code, clientID, userID, pq.StringArray(normalizedScopes), redirectURI, expires, strings.TrimSpace(codeChallenge), strings.TrimSpace(codeMethod), strings.TrimSpace(nonce), now)
+`, code, clientID, userID, pq.StringArray(normalizedScopes), opts.RedirectURI, expires, strings.TrimSpace(opts.CodeChallenge), strings.TrimSpace(opts.CodeMethod), strings.TrimSpace(opts.Nonce), now)
 	if err != nil {
 		return AuthCode{}, err
 	}
@@ -410,11 +419,11 @@ VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), 
 		ClientID:      clientID,
 		UserID:        userID,
 		Scopes:        normalizedScopes,
-		RedirectURI:   redirectURI,
+		RedirectURI:   opts.RedirectURI,
 		ExpiresAt:     expires,
-		CodeChallenge: sql.NullString{String: strings.TrimSpace(codeChallenge), Valid: strings.TrimSpace(codeChallenge) != ""},
-		CodeMethod:    sql.NullString{String: strings.TrimSpace(codeMethod), Valid: strings.TrimSpace(codeMethod) != ""},
-		Nonce:         sql.NullString{String: strings.TrimSpace(nonce), Valid: strings.TrimSpace(nonce) != ""},
+		CodeChallenge: sql.NullString{String: strings.TrimSpace(opts.CodeChallenge), Valid: strings.TrimSpace(opts.CodeChallenge) != ""},
+		CodeMethod:    sql.NullString{String: strings.TrimSpace(opts.CodeMethod), Valid: strings.TrimSpace(opts.CodeMethod) != ""},
+		Nonce:         sql.NullString{String: strings.TrimSpace(opts.Nonce), Valid: strings.TrimSpace(opts.Nonce) != ""},
 		CreatedAt:     now,
 	}, nil
 }
@@ -476,7 +485,7 @@ func (s Service) UseRefreshToken(ctx context.Context, tokenID, expectedClientID 
 	}
 	expectedClientID = strings.TrimSpace(expectedClientID)
 	if expectedClientID == "" {
-		return AccessToken{}, "", time.Time{}, errors.New("oauth: client id required")
+		return AccessToken{}, "", time.Time{}, ErrClientIDRequired
 	}
 	digest, err := hashTokenIdentifier(tokenID)
 	if err != nil {
@@ -489,61 +498,23 @@ func (s Service) UseRefreshToken(ctx context.Context, tokenID, expectedClientID 
 	}
 	defer tx.Rollback()
 
-	var (
-		refreshTokenID string
-		accessTokenID  string
-		clientID       string
-		userID         int64
-		scopes         pq.StringArray
-		expiresAt      time.Time
-		revokedAt      sql.NullTime
-	)
-	err = tx.QueryRowContext(ctx, `
-SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoked_at
-  FROM oauth_refresh_tokens
- WHERE token_id = $1
- FOR UPDATE
-`, digest).Scan(
-		&refreshTokenID,
-		&accessTokenID,
-		&clientID,
-		&userID,
-		&scopes,
-		&expiresAt,
-		&revokedAt,
-	)
+	rt, err := fetchRefreshTokenForUpdate(ctx, tx, digest)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return AccessToken{}, "", time.Time{}, ErrTokenNotFound
-		}
 		return AccessToken{}, "", time.Time{}, err
 	}
-	if clientID != expectedClientID {
+	if rt.clientID != expectedClientID {
 		return AccessToken{}, "", time.Time{}, ErrTokenNotFound
 	}
 
-	now := time.Now().UTC()
-	if revokedAt.Valid {
-		return AccessToken{}, "", time.Time{}, ErrTokenRevoked
-	}
-	if now.After(expiresAt) {
-		_, _ = tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest)
-		return AccessToken{}, "", time.Time{}, ErrTokenExpired
-	}
-
-	// Revoke previous tokens
-	if _, err := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest); err != nil {
-		return AccessToken{}, "", time.Time{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE oauth_access_tokens SET revoked_at = now() WHERE token_id = $1`, accessTokenID); err != nil {
+	if err := validateRefreshTokenFreshness(ctx, tx, digest, rt.expiresAt, rt.revokedAt); err != nil {
 		return AccessToken{}, "", time.Time{}, err
 	}
 
-	newAccess, err := s.insertAccessToken(ctx, tx, clientID, userID, scopes)
-	if err != nil {
+	if err := revokeRefreshAndAccess(ctx, tx, digest, rt.accessTokenID); err != nil {
 		return AccessToken{}, "", time.Time{}, err
 	}
-	newRefresh, refreshExpires, err := s.insertRefreshToken(ctx, tx, newAccess.TokenID, clientID, userID, scopes)
+
+	newAccess, newRefresh, refreshExpires, err := s.issueTokensFromRefresh(ctx, tx, rt.clientID, rt.userID, rt.scopes)
 	if err != nil {
 		return AccessToken{}, "", time.Time{}, err
 	}
@@ -555,7 +526,78 @@ SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoke
 	return newAccess, newRefresh, refreshExpires, nil
 }
 
-func (s Service) GetAccessToken(ctx context.Context, tokenID string) (AccessToken, error) {
+type refreshTokenRecord struct {
+	refreshTokenID string
+	accessTokenID  string
+	clientID       string
+	userID         int64
+	scopes         pq.StringArray
+	expiresAt      time.Time
+	revokedAt      sql.NullTime
+}
+
+func fetchRefreshTokenForUpdate(ctx context.Context, tx *sql.Tx, digest string) (refreshTokenRecord, error) {
+	var rt refreshTokenRecord
+	err := tx.QueryRowContext(ctx, `
+SELECT token_id, access_token_id, client_id, user_id, scopes, expires_at, revoked_at
+  FROM oauth_refresh_tokens
+ WHERE token_id = $1
+ FOR UPDATE
+`, digest).Scan(
+		&rt.refreshTokenID,
+		&rt.accessTokenID,
+		&rt.clientID,
+		&rt.userID,
+		&rt.scopes,
+		&rt.expiresAt,
+		&rt.revokedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return refreshTokenRecord{}, ErrTokenNotFound
+		}
+		return refreshTokenRecord{}, err
+	}
+	return rt, nil
+}
+
+func validateRefreshTokenFreshness(ctx context.Context, tx *sql.Tx, digest string, expiresAt time.Time, revokedAt sql.NullTime) error {
+	if revokedAt.Valid {
+		return ErrTokenRevoked
+	}
+	now := time.Now().UTC()
+	if now.After(expiresAt) {
+		if _, revokeErr := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, digest); revokeErr != nil {
+			return revokeErr
+		}
+		return ErrTokenExpired
+	}
+	return nil
+}
+
+func revokeRefreshAndAccess(ctx context.Context, tx *sql.Tx, refreshDigest string, accessTokenID string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE oauth_refresh_tokens SET revoked_at = now() WHERE token_id = $1`, refreshDigest); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE oauth_access_tokens SET revoked_at = now() WHERE token_id = $1`, accessTokenID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s Service) issueTokensFromRefresh(ctx context.Context, tx *sql.Tx, clientID string, userID int64, scopes pq.StringArray) (AccessToken, string, time.Time, error) {
+	newAccess, err := s.insertAccessToken(ctx, tx, clientID, userID, scopes)
+	if err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+	newRefresh, refreshExpires, err := s.insertRefreshToken(ctx, tx, newAccess.TokenID, clientID, userID, scopes)
+	if err != nil {
+		return AccessToken{}, "", time.Time{}, err
+	}
+	return newAccess, newRefresh, refreshExpires, nil
+}
+
+func (s Service) AccessToken(ctx context.Context, tokenID string) (AccessToken, error) {
 	tokenID = strings.TrimSpace(tokenID)
 	if tokenID == "" {
 		return AccessToken{}, ErrTokenNotFound
@@ -603,7 +645,7 @@ SELECT token_id, client_id, user_id, scopes, expires_at, revoked_at, created_at
 func (s Service) RecordConsent(ctx context.Context, userID int64, clientID string, scopes []string) error {
 	clientID = strings.TrimSpace(clientID)
 	if clientID == "" {
-		return errors.New("oauth: client id required")
+		return ErrClientIDRequired
 	}
 	normalized := normalizeScopes(scopes)
 	_, err := s.DB.ExecContext(ctx, `
@@ -619,7 +661,7 @@ ON CONFLICT (user_id, client_id) DO UPDATE
 func (s Service) HasConsent(ctx context.Context, userID int64, clientID string, scopes []string) (bool, error) {
 	clientID = strings.TrimSpace(clientID)
 	if clientID == "" {
-		return false, errors.New("oauth: client id required")
+		return false, ErrClientIDRequired
 	}
 	var existing pq.StringArray
 	err := s.DB.QueryRowContext(ctx, `

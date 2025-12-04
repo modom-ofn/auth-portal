@@ -1,0 +1,16 @@
+.git
+.github
+.gitignore
+*.md
+LICENSE
+README*
+CHANGELOG*
+SECURITY*
+VERSION
+auth-portal-full-stack-dev_docker-compose.yml
+auth-portal-full-stack-dev.env
+screenshots
+ldap-seed
+*.log
+*.tmp
+*.swp

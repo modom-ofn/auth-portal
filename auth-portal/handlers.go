@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,11 +15,23 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const (
+	loginTemplate     = "login.html"
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+)
+
 // providerUI returns the provider key used by code ("plex"/"emby")
 // and the display name shown in templates.
 func providerUI() (key, display string) {
-	key = mediaProviderKey
-	display = mediaProviderDisplay
+	rc := currentRuntimeConfig()
+	key, display = resolveProviderSelection(rc.Providers.Active)
+	if key == "" {
+		key = mediaProviderKey
+	}
+	if display == "" {
+		display = mediaProviderDisplay
+	}
 	if key == "" && currentProvider != nil {
 		key = currentProvider.Name()
 	}
@@ -32,7 +45,7 @@ func providerUI() (key, display string) {
 }
 
 // live getters read the current runtime configuration each request.
-func getExtraLink() (urlStr, text string) {
+func extraLink() (urlStr, text string) {
 	cfg := currentRuntimeConfig().AppSettings
 	return sanitizeDisplayURL(cfg.LoginExtraLinkURL), strings.TrimSpace(cfg.LoginExtraLinkText)
 }
@@ -84,12 +97,12 @@ func sanitizeMailAddress(raw string) string {
 
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	key, name := providerUI()
-	extraURL, extraText := getExtraLink()
+	extraURL, extraText := extraLink()
 
 	// If no session, show login page right away.
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
-		render(w, "login.html", map[string]any{
+		render(w, loginTemplate, map[string]any{
 			"BaseURL":       appBaseURL,
 			"ProviderKey":   key,
 			"ProviderName":  name, // exact casing
@@ -105,7 +118,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	}, jwt.WithValidMethods(allowedJWTAlgs))
 	if err != nil || !tok.Valid {
 		clearSessionCookie(w)
-		render(w, "login.html", map[string]any{
+		render(w, loginTemplate, map[string]any{
 			"BaseURL":       appBaseURL,
 			"ProviderKey":   key,
 			"ProviderName":  name,
@@ -118,7 +131,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := tok.Claims.(*sessionClaims)
 	if !ok || claims.UUID == "" {
 		clearSessionCookie(w)
-		render(w, "login.html", map[string]any{
+		render(w, loginTemplate, map[string]any{
 			"BaseURL":       appBaseURL,
 			"ProviderKey":   key,
 			"ProviderName":  name,
@@ -128,10 +141,10 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := getUserByUUID(claims.UUID); err != nil {
+	if _, err := userByUUID(claims.UUID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			clearSessionCookie(w)
-			render(w, "login.html", map[string]any{
+			render(w, loginTemplate, map[string]any{
 				"BaseURL":       appBaseURL,
 				"ProviderKey":   key,
 				"ProviderName":  name,
@@ -141,7 +154,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("login orphan check failed for %s: %v", claims.UUID, err)
-		render(w, "login.html", map[string]any{
+		render(w, loginTemplate, map[string]any{
 			"BaseURL":       appBaseURL,
 			"ProviderKey":   key,
 			"ProviderName":  name,
@@ -155,7 +168,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headerContentType, contentTypeJSON)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"username": usernameFrom(r.Context()),
 		"uuid":     uuidFrom(r.Context()),
@@ -186,75 +199,90 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 	key, display := providerUI()
 	out := resp{OK: true, Provider: key, ProviderDisplay: display, LoginPath: "/auth/start-web"}
 
-	// Try to extract identity from session cookie first
-	var uname, uid string
-	var admin bool
-	var issuedAtStr, expiryStr string
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-		if tok, err := jwt.ParseWithClaims(
-			c.Value,
-			&sessionClaims{},
-			func(t *jwt.Token) (interface{}, error) { return sessionSecret, nil },
-			jwt.WithValidMethods(allowedJWTAlgs),
-		); err == nil && tok.Valid {
-			if claims, ok := tok.Claims.(*sessionClaims); ok {
-				uname = claims.Username
-				uid = claims.UUID
-				admin = claims.Admin
-				if claims.IssuedAt != nil {
-					issuedAtStr = claims.IssuedAt.Time.Format(time.RFC3339)
-				}
-				if claims.ExpiresAt != nil {
-					expiryStr = claims.ExpiresAt.Time.Format(time.RFC3339)
-				}
-			}
-		}
-	}
-	// Fallback to context (if this handler is ever wrapped by authMiddleware)
-	if uname == "" && uid == "" {
-		uname = usernameFrom(r.Context())
-		uid = uuidFrom(r.Context())
-		if !admin {
-			admin = adminFrom(r.Context())
-		}
-	}
+	ident := extractSessionIdentity(r)
+	supplementIdentityFromContext(&ident, r.Context())
 
-	if uname == "" && uid == "" {
-		// No session; return provider info only
-		w.Header().Set("Content-Type", "application/json")
+	if ident.Username == "" && ident.UUID == "" {
+		w.Header().Set(headerContentType, contentTypeJSON)
 		_ = json.NewEncoder(w).Encode(out)
 		return
 	}
 
 	out.Authenticated = true
-	out.Username = uname
-	out.UUID = uid
-	out.IssuedAt = issuedAtStr
-	out.Expiry = expiryStr
-	if admin || adminFrom(r.Context()) {
-		admin = true
-	}
-	out.Admin = admin
+	out.Username = ident.Username
+	out.UUID = ident.UUID
+	out.IssuedAt = ident.IssuedAt
+	out.Expiry = ident.Expiry
+	out.Admin = ident.Admin || adminFrom(r.Context())
 
-	// Authorization check (provider-specific rules)
-	authorized, err := currentProvider.IsAuthorized(uid, uname)
-	if err != nil {
-		// Log but continue with best-effort
-		log.Printf("whoami authz check failed for %s (%s): %v", uname, uid, err)
+	if authorized, err := currentProvider.IsAuthorized(ident.UUID, ident.Username); err != nil {
+		log.Printf("whoami authz check failed for %s (%s): %v", ident.Username, ident.UUID, err)
+	} else {
+		out.MediaAccess = authorized
 	}
-	out.MediaAccess = authorized
 
-	// Try to populate email from DB if present
-	if uid != "" {
-		if u, err := getUserByUUIDPreferred(uid); err == nil {
+	if ident.UUID != "" {
+		if u, err := getUserByUUIDPreferred(ident.UUID); err == nil {
 			if u.Email.Valid {
 				out.Email = strings.TrimSpace(u.Email.String)
 			}
+		} else {
+			log.Printf("whoami: user lookup failed for %s: %v", ident.UUID, err)
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headerContentType, contentTypeJSON)
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+type sessionIdentity struct {
+	Username string
+	UUID     string
+	Admin    bool
+	IssuedAt string
+	Expiry   string
+}
+
+func extractSessionIdentity(r *http.Request) sessionIdentity {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return sessionIdentity{}
+	}
+	tok, err := jwt.ParseWithClaims(
+		c.Value,
+		&sessionClaims{},
+		func(t *jwt.Token) (interface{}, error) { return sessionSecret, nil },
+		jwt.WithValidMethods(allowedJWTAlgs),
+	)
+	if err != nil || !tok.Valid {
+		return sessionIdentity{}
+	}
+	claims, ok := tok.Claims.(*sessionClaims)
+	if !ok {
+		return sessionIdentity{}
+	}
+	ident := sessionIdentity{
+		Username: claims.Username,
+		UUID:     claims.UUID,
+		Admin:    claims.Admin,
+	}
+	if claims.IssuedAt != nil {
+		ident.IssuedAt = claims.IssuedAt.Time.Format(time.RFC3339)
+	}
+	if claims.ExpiresAt != nil {
+		ident.Expiry = claims.ExpiresAt.Time.Format(time.RFC3339)
+	}
+	return ident
+}
+
+func supplementIdentityFromContext(ident *sessionIdentity, ctx context.Context) {
+	if ident.Username == "" && ident.UUID == "" {
+		ident.Username = usernameFrom(ctx)
+		ident.UUID = uuidFrom(ctx)
+	}
+	if !ident.Admin {
+		ident.Admin = adminFrom(ctx)
+	}
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
@@ -274,16 +302,18 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Opportunistic upsert ONLY when authorized (keeps DB lean)
 	if authorized {
-		_, _ = upsertUser(User{
+		if _, err := upsertUser(User{
 			Username:    uname,
 			MediaUUID:   nullStringFrom(uid),
 			MediaAccess: true,
-		})
+		}); err != nil {
+			log.Printf("home: upsert user failed for %s (%s): %v", uname, uid, err)
+		}
 	}
 
 	// Use env-cased name for display
 	_, providerDisplay := providerUI()
-	extraURL, extraText := getExtraLink()
+	extraURL, extraText := extraLink()
 
 	if authorized {
 		render(w, "portal_authorized.html", map[string]any{

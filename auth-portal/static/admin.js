@@ -283,7 +283,7 @@
 
   const setActiveTab = () => {
     tabs.forEach((tab) => {
-      tab.classList.toggle('active', tab.getAttribute('data-section') === currentSection);
+      tab.classList.toggle('active', tab.dataset.section === currentSection);
     });
   };
 
@@ -404,7 +404,19 @@
     link.download = name;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
+  };
+
+  const setCheckboxValue = (el, value) => {
+    if (el) {
+      el.checked = Boolean(value);
+    }
+  };
+
+  const setInputValue = (el, value) => {
+    if (el) {
+      el.value = value;
+    }
   };
 
   const renderBackupSchedule = () => {
@@ -412,28 +424,16 @@
       return;
     }
     const schedule = backupState.schedule || {};
-    if (backupScheduleEnabled) {
-      backupScheduleEnabled.checked = Boolean(schedule.enabled);
-    }
-    if (backupFrequency) {
-      backupFrequency.value = String(schedule.frequency || 'daily');
-    }
-    if (backupTime) {
-      backupTime.value = schedule.timeOfDay || '02:00';
-    }
-    if (backupWeekday) {
-      backupWeekday.value = schedule.dayOfWeek || 'sunday';
-    }
-    if (backupMinute) {
-      const minuteValue = typeof schedule.minute === 'number' ? schedule.minute : 0;
-      backupMinute.value = minuteValue;
-    }
-    if (backupRetention) {
-      const retentionValue = typeof schedule.retention === 'number' ? schedule.retention : 30;
-      backupRetention.value = retentionValue;
-    }
-    const sections =
-      schedule.sections && schedule.sections.length ? schedule.sections : backupDefaultSections;
+    setCheckboxValue(backupScheduleEnabled, schedule.enabled);
+    setInputValue(backupFrequency, String(schedule.frequency || 'daily'));
+    setInputValue(backupTime, schedule.timeOfDay || '02:00');
+    setInputValue(backupWeekday, schedule.dayOfWeek || 'sunday');
+    const minuteValue = typeof schedule.minute === 'number' ? schedule.minute : 0;
+    setInputValue(backupMinute, minuteValue);
+    const retentionValue = typeof schedule.retention === 'number' ? schedule.retention : 30;
+    setInputValue(backupRetention, retentionValue);
+
+    const sections = schedule.sections?.length ? schedule.sections : backupDefaultSections;
     backupSectionCheckboxes.forEach((checkbox) => {
       checkbox.checked = sections.includes(checkbox.value);
     });
@@ -538,7 +538,7 @@
         throw new Error(`Backups fetch failed (${res.status})`);
       }
       const json = await res.json();
-      if (!json || !json.ok) {
+      if (!(json?.ok)) {
         throw new Error(json?.error || 'Backups fetch failed');
       }
       backupState.schedule = json.schedule || null;
@@ -572,7 +572,7 @@
         body: JSON.stringify(payload),
       });
       const json = await res.json();
-      if (!res.ok || !json || !json.ok) {
+      if (!res.ok || !(json?.ok)) {
         throw new Error(json?.error || `Backup failed (${res.status})`);
       }
       showStatus('Backup created.', 'success');
@@ -612,7 +612,7 @@
         body: JSON.stringify(payload),
       });
       const json = await res.json();
-      if (!res.ok || !json || !json.ok) {
+      if (!res.ok || !(json?.ok)) {
         throw new Error(json?.error || `Schedule update failed (${res.status})`);
       }
       backupState.schedule = json.schedule || payload;
@@ -630,7 +630,7 @@
     if (!name) {
       return;
     }
-    if (!window.confirm('Delete this backup? This cannot be undone.')) {
+    if (!globalThis.confirm('Delete this backup? This cannot be undone.')) {
       return;
     }
     backupState.loading = true;
@@ -643,7 +643,7 @@
         credentials: 'same-origin',
       });
       const json = await res.json();
-      if (!res.ok || !json || !json.ok) {
+      if (!res.ok || !(json?.ok)) {
         throw new Error(json?.error || `Delete failed (${res.status})`);
       }
       deleted = true;
@@ -664,7 +664,7 @@
       return;
     }
     if (
-      !window.confirm(
+      !globalThis.confirm(
         'Restore this backup? Current configuration will be overwritten immediately.',
       )
     ) {
@@ -680,7 +680,7 @@
         credentials: 'same-origin',
       });
       const json = await res.json();
-      if (!res.ok || !json || !json.ok) {
+      if (!res.ok || !(json?.ok)) {
         throw new Error(json?.error || `Restore failed (${res.status})`);
       }
       if (json.config) {
@@ -691,8 +691,8 @@
         updateLoadedAt();
         try {
           await Promise.all(configSections.map((section) => fetchHistory(section)));
-        } catch (historyErr) {
-          console.error('Backup restore history refresh failed', historyErr);
+        } catch (error_) {
+          console.error('Backup restore history refresh failed', error_);
         }
         if (isConfigSection(currentSection)) {
           renderConfigSection(currentSection);
@@ -719,14 +719,14 @@
     }
     let parsed;
     try {
-      const raw = configEditor.value && configEditor.value.trim() ? configEditor.value : '{}';
+      const raw = configEditor.value?.trim() ? configEditor.value : '{}';
       parsed = JSON.parse(raw);
     } catch (err) {
       showStatus(`Cannot export invalid JSON: ${err.message}`, 'error');
       return;
     }
     const pretty = JSON.stringify(parsed, null, 2);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
     const name = `authportal-${currentSection}-config-${timestamp}.json`;
     const blob = new Blob([pretty], { type: 'application/json' });
     const link = document.createElement('a');
@@ -734,7 +734,7 @@
     link.download = name;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
     setTimeout(() => {
       URL.revokeObjectURL(link.href);
     }, 0);
@@ -750,38 +750,30 @@
     importInput.click();
   };
 
-  const handleConfigImport = (event) => {
+  const handleConfigImport = async (event) => {
     if (!event) {
       return;
     }
     const input = event.target;
-    if (!input || !input.files || !input.files.length) {
+    const file = input?.files?.[0];
+    if (!file) {
       return;
     }
-    const file = input.files[0];
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      const text = await file.text();
       if (!isConfigSection(currentSection)) {
         showStatus('Select a configuration tab before importing.', 'info');
         importInput.value = '';
         return;
       }
-      const text = typeof reader.result === 'string' ? reader.result : '';
-      try {
-        const parsed = JSON.parse(text || '{}');
-        configEditor.value = JSON.stringify(parsed, null, 2);
-        showStatus('Configuration imported. Review and save to apply changes.', 'success');
-      } catch (err) {
-        showStatus(`Import failed: ${err.message}`, 'error');
-      } finally {
-        importInput.value = '';
-      }
-    };
-    reader.onerror = () => {
-      showStatus('Import failed: unable to read file.', 'error');
+      const parsed = JSON.parse(text || '{}');
+      configEditor.value = JSON.stringify(parsed, null, 2);
+      showStatus('Configuration imported. Review and save to apply changes.', 'success');
+    } catch (err) {
+      showStatus(`Import failed: ${err.message}`, 'error');
+    } finally {
       importInput.value = '';
-    };
-    reader.readAsText(file);
+    }
   };
 
   const renderConfigSection = (section) => {
@@ -821,7 +813,7 @@
       throw new Error(`Config fetch failed (${res.status})`);
     }
     const json = await res.json();
-    if (!json || !json.ok) {
+    if (!(json?.ok)) {
       throw new Error(json?.error || 'Config fetch failed');
     }
     state.data.providers = json.providers;
@@ -838,7 +830,7 @@
       throw new Error(`History fetch failed (${res.status})`);
     }
     const json = await res.json();
-    if (!json || !json.ok) {
+    if (!(json?.ok)) {
       throw new Error(json?.error || 'History fetch failed');
     }
     state.history[section] = json.entries || [];
@@ -852,8 +844,8 @@
       try {
         await fetchHistory(section);
         renderConfigHistory(section);
-      } catch (historyErr) {
-        console.error('History fetch failed', historyErr);
+      } catch (error_) {
+        console.error('History fetch failed', error_);
       }
     } catch (err) {
       showStatus(err.message || String(err), 'error');
@@ -978,7 +970,10 @@
       size /= 1024;
       unitIndex += 1;
     }
-    const precision = unitIndex === 0 ? 0 : size < 10 ? 1 : 0;
+    let precision = 0;
+    if (unitIndex !== 0 && size < 10) {
+      precision = 1;
+    }
     return `${size.toFixed(precision)} ${units[unitIndex]}`;
   };
 
@@ -1009,12 +1004,12 @@
       tr.appendChild(idTd);
 
       const redirectTd = document.createElement('td');
-      if (client.redirectUris && client.redirectUris.length) {
-        client.redirectUris.forEach((uri, index) => {
-          if (index > 0) {
-            redirectTd.appendChild(document.createElement('br'));
-          }
-          redirectTd.appendChild(document.createTextNode(uri));
+    if (client.redirectUris?.length) {
+      client.redirectUris.forEach((uri, index) => {
+        if (index > 0) {
+          redirectTd.appendChild(document.createElement('br'));
+        }
+        redirectTd.appendChild(document.createTextNode(uri));
         });
       } else {
         redirectTd.textContent = '-';
@@ -1068,7 +1063,7 @@
             credentials: 'same-origin',
           });
           const json = await res.json();
-          if (!res.ok || !json || !json.ok) {
+          if (!res.ok || !(json?.ok)) {
             throw new Error(json?.error || `Secret rotation failed (${res.status})`);
           }
           const displayName = client.name || client.clientId;
@@ -1091,7 +1086,7 @@
         if (!client.clientId) {
           return;
         }
-        const confirmDelete = window.confirm(
+        const confirmDelete = globalThis.confirm(
           `Delete OAuth client "${client.name || client.clientId}"? This action cannot be undone.`
         );
         if (!confirmDelete) {
@@ -1105,7 +1100,7 @@
             credentials: 'same-origin',
           });
           const json = await res.json();
-          if (!res.ok || !json || !json.ok) {
+          if (!res.ok || !(json?.ok)) {
             throw new Error(json?.error || `Delete failed (${res.status})`);
           }
           showStatus('Client deleted.', 'success');
@@ -1138,7 +1133,7 @@
         throw new Error(`Client fetch failed (${res.status})`);
       }
       const json = await res.json();
-      if (!json || !json.ok) {
+      if (!(json?.ok)) {
         throw new Error(json?.error || 'Client fetch failed');
       }
       oauthState.clients = Array.isArray(json.clients) ? json.clients : [];
@@ -1184,18 +1179,17 @@
     if (section === 'backups' && backupsPanel) {
       showBackupsPanel();
       clearSecretBanner();
-      if (!backupState.loaded) {
-        await loadBackups();
-      } else {
+      if (backupState.loaded) {
         renderBackups();
+        return;
       }
-      return;
+      await loadBackups();
     }
   };
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      const section = tab.getAttribute('data-section');
+      const section = tab.dataset.section;
       if (!section) {
         return;
       }
@@ -1236,7 +1230,7 @@
         body: JSON.stringify(payload),
       });
       const json = await res.json();
-      if (!res.ok || !json || !json.ok) {
+      if (!res.ok || !(json?.ok)) {
         throw new Error(json?.error || `Save failed (${res.status})`);
       }
       state.data.providers = json.providers;
@@ -1250,8 +1244,8 @@
       try {
         await fetchHistory(currentSection);
         renderConfigHistory(currentSection);
-      } catch (historyErr) {
-        console.error('History refresh failed', historyErr);
+      } catch (error_) {
+        console.error('History refresh failed', error_);
       }
     } catch (err) {
       showStatus(err.message || 'Save failed', 'error');
@@ -1300,7 +1294,7 @@
           body: JSON.stringify(payload),
         });
         const json = await res.json();
-        if (!res.ok || !json || !json.ok) {
+        if (!res.ok || !(json?.ok)) {
           throw new Error(json?.error || `Save failed (${res.status})`);
         }
         showStatus(clientId ? 'Client updated.' : 'Client created.', 'success');
@@ -1343,7 +1337,9 @@
 
   if (helpModal) {
     helpModal.addEventListener('click', (event) => {
-      if (event.target === helpModal || event.target.hasAttribute('data-help-close')) {
+      const target = event.target;
+      const isClose = target?.dataset?.helpClose !== undefined;
+      if (target === helpModal || isClose) {
         closeHelpModal();
       }
     });

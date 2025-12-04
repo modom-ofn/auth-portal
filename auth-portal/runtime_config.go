@@ -86,29 +86,29 @@ var runtimeConfigValue atomic.Value
 func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
 	defaults := make(map[configstore.Section]json.RawMessage, 4)
 
-	if raw, err := json.Marshal(defaultProvidersConfig()); err != nil {
+	rawProviders, err := json.Marshal(defaultProvidersConfig())
+	if err != nil {
 		return nil, err
-	} else {
-		defaults[configstore.SectionProviders] = raw
 	}
+	defaults[configstore.SectionProviders] = rawProviders
 
-	if raw, err := json.Marshal(defaultSecurityConfig()); err != nil {
+	rawSecurity, err := json.Marshal(defaultSecurityConfig())
+	if err != nil {
 		return nil, err
-	} else {
-		defaults[configstore.SectionSecurity] = raw
 	}
+	defaults[configstore.SectionSecurity] = rawSecurity
 
-	if raw, err := json.Marshal(defaultMFAConfig()); err != nil {
+	rawMFA, err := json.Marshal(defaultMFAConfig())
+	if err != nil {
 		return nil, err
-	} else {
-		defaults[configstore.SectionMFA] = raw
 	}
+	defaults[configstore.SectionMFA] = rawMFA
 
-	if raw, err := json.Marshal(defaultAppSettingsConfig()); err != nil {
+	rawAppSettings, err := json.Marshal(defaultAppSettingsConfig())
+	if err != nil {
 		return nil, err
-	} else {
-		defaults[configstore.SectionAppSettings] = raw
 	}
+	defaults[configstore.SectionAppSettings] = rawAppSettings
 
 	return defaults, nil
 }

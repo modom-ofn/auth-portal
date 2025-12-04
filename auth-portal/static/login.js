@@ -4,9 +4,9 @@
 
   function openPopup(url) {
     const w = 600, h = 700;
-    const y = (window.top?.outerHeight || 800) / 2 + (window.top?.screenY || 0) - h / 2;
-    const x = (window.top?.outerWidth || 1200) / 2 + (window.top?.screenX || 0) - w / 2;
-    return window.open(
+    const y = (globalThis.top?.outerHeight || 800) / 2 + (globalThis.top?.screenY || 0) - h / 2;
+    const x = (globalThis.top?.outerWidth || 1200) / 2 + (globalThis.top?.screenX || 0) - w / 2;
+    return globalThis.open(
       url,
       "mediaAuth",
       `width=${w},height=${h},left=${x},top=${y},resizable=yes,scrollbars=yes`
@@ -14,22 +14,32 @@
   }
 
   function finalizeNavigation(redirect, needsMFA) {
-    const target = redirect || (needsMFA ? "/mfa/challenge" : "/home");
+    const safeRedirect = (path) => {
+      try {
+        const dest = new URL(String(path || ""), globalThis.location.origin);
+        if (dest.origin !== globalThis.location.origin) return null;
+        if (dest.protocol !== "http:" && dest.protocol !== "https:") return null;
+        return dest.pathname + dest.search + dest.hash;
+      } catch {
+        return null;
+      }
+    };
+    const target = safeRedirect(redirect) || (needsMFA ? "/mfa/challenge" : "/home");
     lastAuthRedirect = target;
-    window.location.assign(target);
+    globalThis.location.assign(target);
   }
 
   function notifyOpener(payload) {
     try {
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(
+      if (globalThis.opener && !globalThis.opener.closed) {
+        globalThis.opener.postMessage(
           {
             ok: true,
             type: payload?.type || "auth-portal",
             redirect: payload?.redirect || "/home",
             mfa: !!payload?.mfa
           },
-          window.location.origin
+          globalThis.location.origin
         );
       }
     } catch (err) {
@@ -51,7 +61,7 @@
     });
     setTimeout(() => {
       try {
-        window.close();
+        globalThis.close();
       } catch (err) {
         console.warn("window.close failed", err);
       }
@@ -64,10 +74,10 @@
   }
 
   // Only accept messages from our own origin
-  window.addEventListener("message", (ev) => {
-    if (ev.origin !== window.location.origin) return;
+  globalThis.addEventListener("message", (ev) => {
+    if (ev.origin !== globalThis.location.origin) return;
     const d = ev.data || {};
-    if (d && d.ok && (d.type === "plex-auth" || d.type === "emby-auth" || d.type === "jellyfin-auth" || d.type === "auth-portal")) {
+    if (d?.ok && (d.type === "plex-auth" || d.type === "emby-auth" || d.type === "jellyfin-auth" || d.type === "auth-portal")) {
       finalizeNavigation(d.redirect, !!d.mfa);
     }
   });
@@ -75,14 +85,14 @@
   // --- Minimal addition: figure out current provider from the button ---
   function detectProvider(btn) {
     // 1) Prefer explicit data attribute if ever added
-    const dp = (btn?.getAttribute("data-provider") || "").toLowerCase();
+    const dp = (btn?.dataset?.provider || "").toLowerCase();
     if (dp) return dp;
 
     // 2) Infer from class name pattern "{{.ProviderKey}}-btn"
-    const cl = [...(btn?.classList || [])].map(c => c.toLowerCase());
-    if (cl.includes("plex-btn")) return "plex";
-    if (cl.includes("emby-btn")) return "emby";
-    if (cl.includes("jellyfin-btn")) return "jellyfin";
+    const cl = new Set([...(btn?.classList || [])].map((c) => c.toLowerCase()));
+    if (cl.has("plex-btn")) return "plex";
+    if (cl.has("emby-btn")) return "emby";
+    if (cl.has("jellyfin-btn")) return "jellyfin";
 
     // 3) Try the icon filename
     const img = btn?.querySelector("img");
@@ -100,45 +110,52 @@
     return "plex"; // default
   }
 
+  async function resolveAuthUrl(provider) {
+    try {
+      const res = await fetch("/auth/start-web", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" }
+      });
+      if (res.ok) {
+        const j = await res.json().catch(() => ({}));
+        const candidate = j.authUrl || j.url || j.location || null;
+        if (candidate) {
+          return candidate;
+        }
+      }
+    } catch {}
+    return provider === "jellyfin" ? "/auth/forward?jellyfin=1" : "/auth/forward?emby=1";
+  }
+
   async function startFlow(btn) {
     const provider = detectProvider(btn); // "plex" | "emby" | "jellyfin"
 
     // Open placeholder popup synchronously (prevents popup blockers)
     let popup = openPopup("about:blank");
     try {
-      if (popup?.document) {
-        popup.document.write(`<!doctype html><meta charset="utf-8"><title>Starting sign-in…</title>
-          <body style="font-family:system-ui;padding:1rem">Starting sign-in…</body>`);
-        popup.document.close();
+      const doc = popup?.document;
+      if (doc) {
+        doc.title = "Starting sign-in…";
+        const body = doc.body || doc.createElement("body");
+        body.style.fontFamily = "system-ui";
+        body.style.padding = "1rem";
+        body.textContent = "Starting sign-in…";
+        if (!doc.body) {
+          doc.appendChild(body);
+        }
       }
     } catch {}
 
     btn.disabled = true;
     try {
-      let authUrl = null;
-
-      // Ask backend for the correct URL for the active provider
-      try {
-        const res = await fetch("/auth/start-web", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Accept": "application/json" }
-        });
-        if (res.ok) {
-          const j = await res.json().catch(() => ({}));
-          authUrl = j.authUrl || j.url || j.location || null;
-        }
-      } catch {}
-      // Fallbacks by provider if backend didn't return a URL
-      if (!authUrl) {
-        authUrl = provider === "jellyfin" ? "/auth/forward?jellyfin=1" : "/auth/forward?emby=1";
-      }
+      const authUrl = await resolveAuthUrl(provider);
 
       if (popup && !popup.closed) {
         try { popup.location.replace(authUrl); } catch { popup.location.href = authUrl; }
       } else {
         // Popup blocked → full-page navigation
-        window.location.assign(authUrl);
+        globalThis.location.assign(authUrl);
         return;
       }
 
@@ -154,7 +171,7 @@
             });
             if (!r.ok) return;
             const j = await r.json().catch(() => ({}));
-            if (j && j.ok) {
+            if (j?.ok) {
               clearInterval(pollTimer);
               try { if (popup && !popup.closed) popup.close(); } catch {}
               finalizeNavigation(j.redirect, !!j.mfa);
@@ -168,7 +185,7 @@
         if (!popup || popup.closed) {
           clearInterval(iv);
           if (pollTimer) clearInterval(pollTimer);
-          window.location.assign(lastAuthRedirect);
+          globalThis.location.assign(lastAuthRedirect);
         }
       }, 1200);
 

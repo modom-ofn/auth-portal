@@ -55,7 +55,9 @@ func WriteHTTPResult(w http.ResponseWriter, res HTTPResult) {
 	}
 	w.WriteHeader(res.Status)
 	if len(res.Body) > 0 {
-		_, _ = w.Write(res.Body)
+		if _, err := w.Write(res.Body); err != nil && Warnf != nil {
+			Warnf("write HTTP result failed: %v", err)
+		}
 	}
 }
 
@@ -159,6 +161,7 @@ var (
 	UpsertUser                   func(u User) error
 	GetUserByUUID                func(uuid string) (User, error)
 	SetUserMediaAccessByUsername func(username string, access bool) error
+	SetUserAdminByUsername       func(username string, admin bool) error
 	FinalizeLogin                func(http.ResponseWriter, string, string) (bool, error)
 	SetSessionCookie             func(http.ResponseWriter, string, string) error
 	SetTempSessionCookie         func(http.ResponseWriter, string, string) error
@@ -221,6 +224,7 @@ type ProviderDeps struct {
 	UpsertUser                   func(u User) error
 	GetUserByUUID                func(uuid string) (User, error)
 	SetUserMediaAccessByUsername func(username string, access bool) error
+	SetUserAdminByUsername       func(username string, admin bool) error
 	FinalizeLogin                func(http.ResponseWriter, string, string) (bool, error)
 	SetSessionCookie             func(http.ResponseWriter, string, string) error
 	SetTempSessionCookie         func(http.ResponseWriter, string, string) error
@@ -251,6 +255,7 @@ func Init(d ProviderDeps) {
 	UpsertUser = d.UpsertUser
 	GetUserByUUID = d.GetUserByUUID
 	SetUserMediaAccessByUsername = d.SetUserMediaAccessByUsername
+	SetUserAdminByUsername = d.SetUserAdminByUsername
 	FinalizeLogin = d.FinalizeLogin
 	SetSessionCookie = d.SetSessionCookie
 	SetTempSessionCookie = d.SetTempSessionCookie
@@ -290,5 +295,7 @@ func WriteAuthCompletePage(w http.ResponseWriter, opts AuthCompletePageOptions) 
 		mfaFlag,
 		template.HTMLEscapeString(message),
 	)
-	_, _ = w.Write([]byte(payload))
+	if _, err := w.Write([]byte(payload)); err != nil && Warnf != nil {
+		Warnf("write auth complete page failed: %v", err)
+	}
 }

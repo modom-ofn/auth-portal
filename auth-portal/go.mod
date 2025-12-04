@@ -2,7 +2,7 @@ module auth-portal
 
 go 1.25
 
-toolchain go1.25.3
+toolchain go1.25.5
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2

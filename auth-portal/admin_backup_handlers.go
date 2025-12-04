@@ -14,6 +14,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
+const (
+	errMethodNotAllowed   = "method not allowed"
+	errBackupsUnavailable = "backups unavailable"
+	errInvalidRequest     = "invalid request"
+)
+
 type adminBackupScheduleResponse struct {
 	Enabled   bool       `json:"enabled"`
 	Frequency string     `json:"frequency"`
@@ -58,11 +64,11 @@ type adminBackupScheduleRequest struct {
 
 func adminBackupsListHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	if backupSvc == nil {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "backups unavailable"})
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": errBackupsUnavailable})
 		return
 	}
 
@@ -87,11 +93,11 @@ func adminBackupsListHandler(w http.ResponseWriter, r *http.Request) {
 
 func adminBackupsCreateHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	if backupSvc == nil {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "backups unavailable"})
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": errBackupsUnavailable})
 		return
 	}
 
@@ -100,7 +106,7 @@ func adminBackupsCreateHandler(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 		if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 			return
 		}
 	}
@@ -119,22 +125,22 @@ func adminBackupsCreateHandler(w http.ResponseWriter, r *http.Request) {
 
 func adminBackupsScheduleUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	if backupSvc == nil {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "backups unavailable"})
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": errBackupsUnavailable})
 		return
 	}
 
 	var req adminBackupScheduleRequest
 	if r.Body == nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	defer r.Body.Close()
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req) != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 
@@ -167,11 +173,11 @@ func adminBackupsScheduleUpdate(w http.ResponseWriter, r *http.Request) {
 
 func adminBackupsDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	if backupSvc == nil {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "backups unavailable"})
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": errBackupsUnavailable})
 		return
 	}
 	name := mux.Vars(r)["name"]
@@ -184,11 +190,11 @@ func adminBackupsDeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 func adminBackupsRestoreHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	if backupSvc == nil {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "backups unavailable"})
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": errBackupsUnavailable})
 		return
 	}
 
@@ -206,11 +212,11 @@ func adminBackupsRestoreHandler(w http.ResponseWriter, r *http.Request) {
 
 func adminBackupsDownloadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	if backupSvc == nil {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "backups unavailable"})
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": errBackupsUnavailable})
 		return
 	}
 

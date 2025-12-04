@@ -1,19 +1,25 @@
 # ---- builder ----
-FROM golang:1.25.3-alpine3.21 AS build
+FROM golang:1.25.5-alpine3.21 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
 RUN apk upgrade --no-cache busybox && \
-    apk add --no-cache git ca-certificates openssl=3.3.5-r0 && update-ca-certificates
+    apk add --no-cache ca-certificates git openssl=3.3.5-r0 && update-ca-certificates
 
 # 1) Prime module cache (copies go.mod/go.sum if present)
-COPY go.* ./
+COPY go.mod go.sum ./
 ENV GOPROXY=https://proxy.golang.org,direct \
     GOSUMDB=sum.golang.org
 RUN go mod download
 
-# 2) Copy sources and ensure sums are tidy
-COPY . .
+# 2) Copy sources and ensure sums are tidy (explicit paths avoid pulling unwanted files)
+COPY *.go ./
+COPY providers ./providers
+COPY oauth ./oauth
+COPY configstore ./configstore
+COPY health ./health
+COPY static ./static
+COPY templates ./templates
 RUN go mod tidy -compat=1.25
 
 # 3) Build static binary (verbose, no VCS scan)
@@ -26,7 +32,7 @@ FROM alpine:3.21
 WORKDIR /app
 
 RUN apk upgrade --no-cache busybox && \
-    apk add --no-cache ca-certificates tzdata openssl=3.3.5-r0 && \
+    apk add --no-cache ca-certificates openssl=3.3.5-r0 tzdata && \
     apk --no-cache upgrade musl && update-ca-certificates
 
 COPY --from=build /out/auth-portal /app/auth-portal

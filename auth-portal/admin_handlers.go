@@ -19,6 +19,11 @@ import (
 	"auth-portal/oauth"
 )
 
+const (
+	errClientIDRequired = "client id required"
+	errClientNotFound   = "client not found"
+)
+
 type adminConfigSectionProviders struct {
 	Version int64           `json:"version"`
 	Config  ProvidersConfig `json:"config"`
@@ -96,14 +101,14 @@ type adminOAuthClientRequest struct {
 	Scopes       []string `json:"scopes"`
 }
 
-func adminConfigGetHandler(w http.ResponseWriter, r *http.Request) {
+func adminConfigGetHandler(w http.ResponseWriter, _ *http.Request) {
 	cfg := currentRuntimeConfig()
 	respondJSON(w, http.StatusOK, buildAdminConfigResponse(cfg))
 }
 
 func adminConfigUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 
@@ -116,14 +121,15 @@ func adminConfigUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req adminConfigUpdateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request body"})
+	req, err := decodeAdminConfigUpdateRequest(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
 
-	if len(req.Config) == 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "config payload required"})
+	payload, err := buildConfigPayload(section, req.Config)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
 
@@ -132,76 +138,10 @@ func adminConfigUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		username = "admin"
 	}
 
-	var payload any
-	var normalized interface{}
-
-	switch section {
-	case configstore.SectionProviders:
-		var cfg ProvidersConfig
-		if err := json.Unmarshal(req.Config, &cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid providers config"})
-			return
-		}
-		normalizeProvidersConfig(&cfg)
-		if err := validateProvidersConfig(cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
-			return
-		}
-		payload = cfg
-		normalized = cfg
-	case configstore.SectionSecurity:
-		var cfg SecurityConfig
-		if err := json.Unmarshal(req.Config, &cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid security config"})
-			return
-		}
-		normalizeSecurityConfig(&cfg)
-		if err := validateSecurityConfig(cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
-			return
-		}
-		payload = cfg
-		normalized = cfg
-	case configstore.SectionMFA:
-		var cfg MFAConfig
-		if err := json.Unmarshal(req.Config, &cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid mfa config"})
-			return
-		}
-		normalizeMFAConfig(&cfg)
-		if err := validateMFAConfig(cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
-			return
-		}
-		payload = cfg
-		normalized = cfg
-	case configstore.SectionAppSettings:
-		var cfg AppSettingsConfig
-		if err := json.Unmarshal(req.Config, &cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid app settings config"})
-			return
-		}
-		normalizeAppSettingsConfig(&cfg)
-		if err := validateAppSettingsConfig(cfg); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
-			return
-		}
-		payload = cfg
-		normalized = cfg
-	default:
-		respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "unsupported section"})
-		return
-	}
-
-	sanitizedReason := strings.TrimSpace(req.Reason)
-	if len(sanitizedReason) > 200 {
-		sanitizedReason = sanitizedReason[:200]
-	}
-
 	snap, err := configStore.UpsertSection(r.Context(), section, payload, configstore.UpdateOptions{
 		ExpectVersion: req.Version,
 		UpdatedBy:     username,
-		Reason:        sanitizedReason,
+		Reason:        sanitizeAdminReason(req.Reason),
 	})
 	if err != nil {
 		if errors.Is(err, configstore.ErrVersionMismatch) {
@@ -224,16 +164,94 @@ func adminConfigUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	applyRuntimeConfig(runtimeCfg)
 
-	if normalized != nil {
-		respondJSON(w, http.StatusOK, buildAdminConfigResponse(runtimeCfg))
-		return
+	respondJSON(w, http.StatusOK, buildAdminConfigResponse(runtimeCfg))
+}
+
+func decodeAdminConfigUpdateRequest(r *http.Request) (adminConfigUpdateRequest, error) {
+	var req adminConfigUpdateRequest
+	if json.NewDecoder(r.Body).Decode(&req) != nil {
+		return req, errors.New("invalid request body")
 	}
-	adminConfigGetHandler(w, r)
+	if len(req.Config) == 0 {
+		return req, errors.New("config payload required")
+	}
+	return req, nil
+}
+
+func buildConfigPayload(section configstore.Section, raw json.RawMessage) (any, error) {
+	switch section {
+	case configstore.SectionProviders:
+		return parseProvidersPayload(raw)
+	case configstore.SectionSecurity:
+		return parseSecurityPayload(raw)
+	case configstore.SectionMFA:
+		return parseMFAPayload(raw)
+	case configstore.SectionAppSettings:
+		return parseAppSettingsPayload(raw)
+	default:
+		return nil, errors.New("unsupported section")
+	}
+}
+
+func parseProvidersPayload(raw json.RawMessage) (ProvidersConfig, error) {
+	var cfg ProvidersConfig
+	if json.Unmarshal(raw, &cfg) != nil {
+		return cfg, errors.New("invalid providers config")
+	}
+	normalizeProvidersConfig(&cfg)
+	if err := validateProvidersConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func parseSecurityPayload(raw json.RawMessage) (SecurityConfig, error) {
+	var cfg SecurityConfig
+	if json.Unmarshal(raw, &cfg) != nil {
+		return cfg, errors.New("invalid security config")
+	}
+	normalizeSecurityConfig(&cfg)
+	if err := validateSecurityConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func parseMFAPayload(raw json.RawMessage) (MFAConfig, error) {
+	var cfg MFAConfig
+	if json.Unmarshal(raw, &cfg) != nil {
+		return cfg, errors.New("invalid mfa config")
+	}
+	normalizeMFAConfig(&cfg)
+	if err := validateMFAConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func parseAppSettingsPayload(raw json.RawMessage) (AppSettingsConfig, error) {
+	var cfg AppSettingsConfig
+	if json.Unmarshal(raw, &cfg) != nil {
+		return cfg, errors.New("invalid app settings config")
+	}
+	normalizeAppSettingsConfig(&cfg)
+	if err := validateAppSettingsConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func sanitizeAdminReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if len(reason) > 200 {
+		return reason[:200]
+	}
+	return reason
 }
 
 func adminConfigHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	vars := mux.Vars(r)
@@ -252,6 +270,12 @@ func adminConfigHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if limit > 200 {
 		limit = 200
+	}
+
+	if configStore == nil {
+		log.Printf("admin config history unavailable: config store not initialized")
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "config store unavailable"})
+		return
 	}
 
 	history, err := configStore.History(r.Context(), section, configstore.SectionDocumentKey, limit)
@@ -298,11 +322,11 @@ func adminOAuthClientsList(w http.ResponseWriter, r *http.Request) {
 
 func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	var req adminOAuthClientRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if json.NewDecoder(r.Body).Decode(&req) != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
 		return
 	}
@@ -326,16 +350,16 @@ func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
 
 func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	clientID := strings.TrimSpace(mux.Vars(r)["id"])
 	if clientID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "client id required"})
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errClientIDRequired})
 		return
 	}
 	var req adminOAuthClientRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if json.NewDecoder(r.Body).Decode(&req) != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
 		return
 	}
@@ -347,7 +371,7 @@ func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 	client, err := oauthService.UpdateClient(r.Context(), clientID, payload.Name, payload.RedirectURIs, payload.Scopes)
 	if err != nil {
 		if errors.Is(err, oauth.ErrClientNotFound) {
-			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "client not found"})
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
 			return
 		}
 		log.Printf("admin oauth update: %v", err)
@@ -362,18 +386,18 @@ func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 
 func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	clientID := strings.TrimSpace(mux.Vars(r)["id"])
 	if clientID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "client id required"})
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errClientIDRequired})
 		return
 	}
 	secret, err := oauthService.RotateClientSecret(r.Context(), clientID)
 	if err != nil {
 		if errors.Is(err, oauth.ErrClientNotFound) {
-			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "client not found"})
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
 			return
 		}
 		log.Printf("admin oauth rotate: %v", err)
@@ -388,17 +412,17 @@ func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 
 func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	clientID := strings.TrimSpace(mux.Vars(r)["id"])
 	if clientID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "client id required"})
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errClientIDRequired})
 		return
 	}
 	if err := oauthService.DeleteClient(r.Context(), clientID); err != nil {
 		if errors.Is(err, oauth.ErrClientNotFound) {
-			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "client not found"})
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
 			return
 		}
 		log.Printf("admin oauth delete: %v", err)
@@ -408,7 +432,7 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func adminPageHandler(w http.ResponseWriter, r *http.Request) {
+func adminPageHandler(w http.ResponseWriter, _ *http.Request) {
 	cfg := currentRuntimeConfig()
 	render(w, "admin.html", map[string]any{
 		"ProviderDisplay": mediaProviderDisplay,

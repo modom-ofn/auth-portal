@@ -14,7 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // register postgres driver
 
 	// Adjust this import path to match your module name from go.mod
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
@@ -154,86 +154,114 @@ func dbChecker(db *sql.DB) health.Checker {
 }
 
 func main() {
-	tzName := strings.TrimSpace(appTimeZone)
-	if tzName == "" {
-		tzName = "UTC"
-	}
-	if loc, err := time.LoadLocation(tzName); err != nil {
-		log.Printf("Invalid APP_TIMEZONE %q; defaulting to UTC: %v", tzName, err)
-		appLocation = time.UTC
-		appTimeZone = "UTC"
-	} else {
-		appLocation = loc
-		appTimeZone = tzName
-	}
+	appTimeZone, appLocation = resolveLocation(appTimeZone)
 
-	// ---- DB ----
-	dsn := os.Getenv("DATABASE_URL")
-
-	if dsn == "" {
-		log.Fatal("DATABASE_URL is required")
-	}
-
-	var err error
-	db, err = sql.Open("postgres", dsn)
-
-	if err != nil {
-		log.Fatalf("DB open error: %v", err)
-	}
-
-	if err = db.Ping(); err != nil {
-		log.Fatalf("DB ping error: %v", err)
-	}
-
-	if err = createSchema(); err != nil {
-		log.Fatalf("Schema error: %v", err)
-	}
-
-	defaultSections, err := runtimeConfigDefaults()
-	if err != nil {
-		log.Fatalf("Config defaults error: %v", err)
-	}
-
-	configStore, err = configstore.New(db, configstore.Options{
-		Defaults: defaultSections,
-	})
-	if err != nil {
-		log.Fatalf("Config store init error: %v", err)
-	}
-
-	runtimeCfg, err := loadRuntimeConfig(configStore)
-	if err != nil {
-		log.Fatalf("Config load error: %v", err)
-	}
+	db = mustInitDB(os.Getenv("DATABASE_URL"))
+	var runtimeCfg RuntimeConfig
+	configStore, runtimeCfg = mustInitConfigStore(db)
 	applyRuntimeConfig(runtimeCfg)
 
-	backupDir := envOr("BACKUP_DIR", defaultBackupDirName)
-	backupSvc, err = newBackupService(configStore, backupDir)
-	if err != nil {
-		log.Fatalf("Backup service init error: %v", err)
-	}
-
-	oauthService = oauth.Service{
-		DB:              db,
-		AuthCodeTTL:     5 * time.Minute,
-		AccessTokenTTL:  sessionTTL,
-		RefreshTokenTTL: 30 * 24 * time.Hour,
-	}
+	backupSvc = mustInitBackupService(configStore)
+	oauthService = newOAuthService()
 
 	if err := bootstrapAdminUsers(); err != nil {
 		log.Printf("Admin bootstrap encountered issues: %v", err)
 	}
 
+	mustInitOIDCSigningKey()
+	logConfigSnapshot(configStore)
+
+	initProviderDeps()
+	currentProvider = pickProvider(mediaProviderKey)
+	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
+
+	router := buildRouter()
+	startServer(router)
+}
+
+func resolveLocation(tz string) (string, *time.Location) {
+	tzName := strings.TrimSpace(tz)
+	if tzName == "" {
+		tzName = "UTC"
+	}
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		log.Printf("Invalid APP_TIMEZONE %q; defaulting to UTC: %v", tzName, err)
+		return "UTC", time.UTC
+	}
+	return tzName, loc
+}
+
+func mustInitDB(dsn string) *sql.DB {
+	if dsn == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
+	dbConn, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("DB open error: %v", err)
+	}
+	if err := dbConn.Ping(); err != nil {
+		log.Fatalf("DB ping error: %v", err)
+	}
+	// Set global so schema helpers that use package-level db can run safely.
+	db = dbConn
+	if err := createSchema(); err != nil {
+		log.Fatalf("Schema error: %v", err)
+	}
+	return dbConn
+}
+
+func mustInitConfigStore(db *sql.DB) (*configstore.Store, RuntimeConfig) {
+	defaultSections, err := runtimeConfigDefaults()
+	if err != nil {
+		log.Fatalf("Config defaults error: %v", err)
+	}
+
+	store, err := configstore.New(db, configstore.Options{Defaults: defaultSections})
+	if err != nil {
+		log.Fatalf("Config store init error: %v", err)
+	}
+
+	runtimeCfg, err := loadRuntimeConfig(store)
+	if err != nil {
+		log.Fatalf("Config load error: %v", err)
+	}
+	return store, runtimeCfg
+}
+
+func mustInitBackupService(store *configstore.Store) *backupService {
+	backupDir := envOr("BACKUP_DIR", defaultBackupDirName)
+	svc, err := newBackupService(store, backupDir)
+	if err != nil {
+		log.Fatalf("Backup service init error: %v", err)
+	}
+	return svc
+}
+
+func newOAuthService() oauth.Service {
+	return oauth.Service{
+		DB:              db,
+		AuthCodeTTL:     5 * time.Minute,
+		AccessTokenTTL:  sessionTTL,
+		RefreshTokenTTL: 30 * 24 * time.Hour,
+	}
+}
+
+func mustInitOIDCSigningKey() {
 	if err := initOIDCSigningKey(); err != nil {
 		log.Fatalf("OIDC init error: %v", err)
 	}
+}
 
-	snap := configStore.Snapshot()
+func logConfigSnapshot(store *configstore.Store) {
+	if store == nil {
+		return
+	}
+	snap := store.Snapshot()
 	log.Printf("Config store loaded with %d items", snap.TotalItems())
+}
 
-	// ---- Templates ----
-
-	// ---- Provider configuration (DI init) ----
+func initProviderDeps() {
 	providers.Init(providers.ProviderDeps{
 		PlexOwnerToken:      plexOwnerToken,
 		PlexServerMachineID: plexServerMachineID,
@@ -273,6 +301,9 @@ func main() {
 			}, nil
 		},
 		SetUserMediaAccessByUsername: setUserMediaAccessByUsername,
+		SetUserAdminByUsername: func(username string, admin bool) error {
+			return setUserAdminByUsername(username, admin, "jellyfin")
+		},
 		FinalizeLogin:                finalizeLoginSession,
 		SetSessionCookie:             setSessionCookie,
 		SetTempSessionCookie:         setTempSessionCookie,
@@ -280,23 +311,17 @@ func main() {
 		Debugf:                       Debugf,
 		Warnf:                        Warnf,
 	})
+}
 
-	// ---- Provider ----
-	currentProvider = pickProvider(mediaProviderKey)
-	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
-
-	// ---- Router ----
+func buildRouter() *mux.Router {
 	r := mux.NewRouter()
 
-	// Rate limiters for auth-sensitive routes
 	loginLimiter := newIPRateLimiter(rate.Every(6*time.Second), 5, 15*time.Minute)
 	mfaLimiter := newIPRateLimiter(rate.Every(12*time.Second), 3, 15*time.Minute)
 	plexPollLimiter := newIPRateLimiter(rate.Every(1*time.Second), 6, 10*time.Minute)
 
-	// Static assets
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
-	// Public
 	r.HandleFunc("/", loginPageHandler).Methods("GET")
 	r.HandleFunc("/whoami", whoamiHandler).Methods("GET")
 	r.HandleFunc("/mfa/challenge", mfaChallengePage).Methods("GET")
@@ -307,7 +332,6 @@ func main() {
 	r.Handle("/mfa/enroll", enrollmentPageGuard(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
 	r.Handle("/mfa/enroll/status", enrollmentAPIGuard(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
 
-	// OIDC discovery & flow endpoints
 	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
 	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
 	r.Handle("/oidc/authorize", authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
@@ -315,15 +339,16 @@ func main() {
 	r.HandleFunc("/oidc/token", oidcTokenHandler).Methods("POST")
 	r.HandleFunc("/oidc/userinfo", oidcUserinfoHandler).Methods("GET")
 
-	// Provider routes (v2 adapter wraps legacy providers and returns responses we write).
 	v2 := providers.AdaptV2(currentProvider)
-
 	if err := v2.Health(); err != nil {
 		log.Printf("Provider health warning: %v", err)
 	}
 
 	startWebHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		res, _ := v2.Start(r.Context(), r)
+		res, err := v2.Start(r.Context(), r)
+		if err != nil {
+			log.Printf("provider start error: %v", err)
+		}
 		providers.WriteHTTPResult(w, res)
 	})
 	startWebLimited := rateLimitMiddleware(loginLimiter, startWebHandler)
@@ -388,28 +413,23 @@ func main() {
 			return
 		}
 
-		res, _ := v2.Complete(r.Context(), r)
+		res, err := v2.Complete(r.Context(), r)
+		if err != nil {
+			log.Printf("provider complete error: %v", err)
+		}
 		providers.WriteHTTPResult(w, res)
 	})
 	forwardLimited := rateLimitMiddleware(loginLimiter, forwardHandler)
 	r.Handle("/auth/forward", forwardLimited).Methods("GET")
 	r.Handle("/auth/forward", requireSameOrigin(forwardLimited)).Methods("POST")
 
-	// Plex fallback: JSON poll to complete auth if forwardUrl navigation fails
 	r.Handle("/auth/poll", rateLimitMiddleware(plexPollLimiter, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
-
-	// Logout (protect with a simple same-origin check)
 	r.Handle("/logout", requireSameOrigin(rateLimitMiddleware(loginLimiter, http.HandlerFunc(logoutHandler)))).Methods("POST")
 
-	// Protected
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
 	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
 	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
-
-	// OIDC discovery endpoints
-	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
-	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
 
 	adminProtected := func(h http.Handler) http.Handler {
 		return authMiddleware(requireAdmin(h))
@@ -431,7 +451,6 @@ func main() {
 	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
 	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
 
-	// --- Health endpoints ---
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
 
 	readyChecks := map[string]health.Checker{
@@ -440,8 +459,11 @@ func main() {
 	r.HandleFunc("/startupz", health.ReadinessHandler(readyChecks)).Methods("GET")
 	r.HandleFunc("/readyz", health.ReadinessHandler(readyChecks)).Methods("GET")
 
-	// Wrap with security headers and request logging
-	handler := withSecurityHeaders(WithRequestLogging(r))
+	return r
+}
+
+func startServer(router *mux.Router) {
+	handler := withSecurityHeaders(WithRequestLogging(router))
 	log.Printf("Log level: %s", strings.ToUpper(os.Getenv("LOG_LEVEL")))
 	log.Println("Starting AuthPortal on :8080")
 	if err := http.ListenAndServe(":8080", handler); err != nil {
@@ -511,13 +533,15 @@ func validateSessionClaims(claims *sessionClaims) (bool, bool) {
 
 func cookieSettings() (http.SameSite, bool) {
 	sameSite := sessionSameSite
-	secure := forceSecureCookie || strings.HasPrefix(strings.ToLower(appBaseURL), "https://")
-	if sameSite == http.SameSiteNoneMode && !secure {
-		if !sessionSameSiteWarningLogged {
-			log.Println("SESSION_SAMESITE=none requires Secure cookies; falling back to SameSite=Lax until HTTPS or FORCE_SECURE_COOKIE=1")
-			sessionSameSiteWarningLogged = true
-		}
-		sameSite = http.SameSiteLaxMode
+	secure := true
+	if !strings.HasPrefix(strings.ToLower(appBaseURL), "https://") && !forceSecureCookie && !sessionSameSiteWarningLogged {
+		log.Println("Warning: forcing Secure cookies; set APP_BASE_URL to https:// or enable FORCE_SECURE_COOKIE=1 to avoid cookie drop in HTTP-only setups")
+		sessionSameSiteWarningLogged = true
+	}
+	// SameSite=None requires Secure; we already force Secure above.
+	if sameSite == http.SameSiteNoneMode && !secure && !sessionSameSiteWarningLogged {
+		log.Println("SESSION_SAMESITE=none requires Secure cookies; forcing Secure flag")
+		sessionSameSiteWarningLogged = true
 	}
 	return sameSite, secure
 }
@@ -703,51 +727,12 @@ func clearSessionCookie(w http.ResponseWriter) {
 func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			isAdmin := adminFrom(r.Context())
-			var (
-				username          string
-				uuid              string
-				sessionAuthorized bool
-				pendingAllowed    bool
-			)
-
-			if c, err := r.Cookie(sessionCookie); err == nil && strings.TrimSpace(c.Value) != "" {
-				tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
-					return sessionSecret, nil
-				}, jwt.WithValidMethods(allowedJWTAlgs))
-				if err == nil && tok != nil && tok.Valid {
-					if claims, ok := tok.Claims.(*sessionClaims); ok {
-						if valid, adminFlag := validateSessionClaims(claims); valid {
-							username = strings.TrimSpace(claims.Username)
-							uuid = strings.TrimSpace(claims.UUID)
-							isAdmin = adminFlag
-							if adminFlag {
-								sessionAuthorized = true
-							} else if currentProvider != nil && uuid != "" {
-								if ok, err := currentProvider.IsAuthorized(uuid, username); err == nil {
-									sessionAuthorized = ok
-								} else {
-									log.Printf("requireSessionOrPending: authorization check failed for %s (%s): %v", username, uuid, err)
-								}
-							}
-						} else {
-							expireSessionCookieOnly(w)
-						}
-					}
-				} else {
-					expireSessionCookieOnly(w)
-				}
+			state := sessionStateFromRequest(w, r)
+			if !state.authorized {
+				state = pendingStateFromRequest(state, r)
 			}
 
-			if !sessionAuthorized {
-				if claims, err := pendingClaimsFromRequest(r); err == nil {
-					username = strings.TrimSpace(claims.Username)
-					uuid = strings.TrimSpace(claims.UUID)
-					pendingAllowed = true
-				}
-			}
-
-			if username == "" || uuid == "" || (!sessionAuthorized && !pendingAllowed) {
+			if state.username == "" || state.uuid == "" || (!state.authorized && !state.pending) {
 				if redirectOnFail {
 					http.Redirect(w, r, "/", http.StatusFound)
 				} else {
@@ -756,12 +741,73 @@ func requireSessionOrPending(redirectOnFail bool) func(http.Handler) http.Handle
 				return
 			}
 
-			ctx := withUsername(r.Context(), username)
-			ctx = withUUID(ctx, uuid)
-			ctx = withAdmin(ctx, isAdmin)
+			ctx := withUsername(r.Context(), state.username)
+			ctx = withUUID(ctx, state.uuid)
+			ctx = withAdmin(ctx, state.admin)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+type sessionState struct {
+	username   string
+	uuid       string
+	admin      bool
+	authorized bool
+	pending    bool
+}
+
+func sessionStateFromRequest(w http.ResponseWriter, r *http.Request) sessionState {
+	state := sessionState{admin: adminFrom(r.Context())}
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || strings.TrimSpace(c.Value) == "" {
+		return state
+	}
+
+	tok, err := jwt.ParseWithClaims(c.Value, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
+		return sessionSecret, nil
+	}, jwt.WithValidMethods(allowedJWTAlgs))
+	if err != nil || tok == nil || !tok.Valid {
+		expireSessionCookieOnly(w)
+		return state
+	}
+
+	claims, ok := tok.Claims.(*sessionClaims)
+	if !ok {
+		expireSessionCookieOnly(w)
+		return state
+	}
+
+	if valid, adminFlag := validateSessionClaims(claims); valid {
+		state.username = strings.TrimSpace(claims.Username)
+		state.uuid = strings.TrimSpace(claims.UUID)
+		state.admin = adminFlag
+		state.authorized = adminFlag
+		if !adminFlag && currentProvider != nil && state.uuid != "" {
+			if ok, authErr := currentProvider.IsAuthorized(state.uuid, state.username); authErr == nil {
+				state.authorized = ok
+			} else {
+				log.Printf("requireSessionOrPending: authorization check failed for %s (%s): %v", state.username, state.uuid, authErr)
+			}
+		}
+	} else {
+		expireSessionCookieOnly(w)
+	}
+	return state
+}
+
+func pendingStateFromRequest(state sessionState, r *http.Request) sessionState {
+	if state.authorized {
+		return state
+	}
+	claims, err := pendingClaimsFromRequest(r)
+	if err != nil {
+		return state
+	}
+	state.username = strings.TrimSpace(claims.Username)
+	state.uuid = strings.TrimSpace(claims.UUID)
+	state.pending = true
+	return state
 }
 
 func authMiddleware(next http.Handler) http.Handler {
@@ -811,7 +857,8 @@ func hasValidSession(r *http.Request) bool {
 		return false
 	}
 	if claims, ok := token.Claims.(*sessionClaims); ok {
-		valid, _ := validateSessionClaims(claims)
+		valid, adminFlag := validateSessionClaims(claims)
+		_ = adminFlag // admin flag is not used for validity here
 		return valid
 	}
 	return false
@@ -820,180 +867,166 @@ func hasValidSession(r *http.Request) bool {
 // ---------- CSRF-lite for state-changing routes ----------
 func requireSameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow safe methods
-		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+		if isSafeMethod(r.Method) || r.URL.Path == "/logout" {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Allow /logout explicitly to avoid Origin/Referer edge cases.
-		if r.URL.Path == "/logout" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Build allowed origin and host allowlists derived from config and proxy headers.
-		allowed := make(map[string]struct{}, 4)
-		allowedHosts := make(map[string]struct{}, 4)
-
-		firstHeaderValue := func(v string) string {
-			if v == "" {
-				return ""
-			}
-			parts := strings.Split(v, ",")
-			if len(parts) == 0 {
-				return ""
-			}
-			return strings.TrimSpace(parts[0])
-		}
-
-		addHost := func(h string) {
-			h = strings.TrimSpace(h)
-			if h == "" {
-				return
-			}
-			lower := strings.ToLower(h)
-			allowedHosts[lower] = struct{}{}
-			if hostOnly, _, err := net.SplitHostPort(lower); err == nil {
-				allowedHosts[hostOnly] = struct{}{}
-			} else {
-				if strings.HasSuffix(lower, ":80") {
-					allowedHosts[strings.TrimSuffix(lower, ":80")] = struct{}{}
-				}
-				if strings.HasSuffix(lower, ":443") {
-					allowedHosts[strings.TrimSuffix(lower, ":443")] = struct{}{}
-				}
-			}
-		}
-
-		addOrigin := func(scheme, host string) {
-			scheme = strings.TrimSpace(scheme)
-			host = strings.TrimSpace(host)
-			if scheme == "" || host == "" {
-				return
-			}
-			scheme = strings.ToLower(scheme)
-			lowerHost := strings.ToLower(host)
-			allowed[scheme+"://"+lowerHost] = struct{}{}
-			addHost(host)
-			if hostOnly, _, err := net.SplitHostPort(lowerHost); err == nil {
-				allowed[scheme+"://"+hostOnly] = struct{}{}
-				addHost(hostOnly)
-			} else {
-				if strings.HasSuffix(lowerHost, ":80") {
-					trimmed := strings.TrimSuffix(lowerHost, ":80")
-					allowed[scheme+"://"+trimmed] = struct{}{}
-					addHost(trimmed)
-				}
-				if strings.HasSuffix(lowerHost, ":443") {
-					trimmed := strings.TrimSuffix(lowerHost, ":443")
-					allowed[scheme+"://"+trimmed] = struct{}{}
-					addHost(trimmed)
-				}
-			}
-		}
-
-		// (1) APP_BASE_URL origin
-		if u, err := url.Parse(appBaseURL); err == nil && u.Scheme != "" && u.Host != "" {
-			addOrigin(u.Scheme, u.Host)
-		}
-
-		// (2) origin derived from request / proxy headers
-		proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto"))
-		host := firstHeaderValue(r.Header.Get("X-Forwarded-Host"))
-		if host == "" {
-			host = r.Host
-		}
-
-		if proto == "" {
-			if r.TLS != nil {
-				proto = "https"
-			} else {
-				proto = "http"
-			}
-		}
-
-		proto = strings.ToLower(strings.TrimSpace(proto))
-		host = strings.TrimSpace(host)
-		addOrigin(proto, host)
-
-		if rHost := strings.TrimSpace(r.Host); rHost != "" {
-			scheme := "http"
-			if r.TLS != nil {
-				scheme = "https"
-			}
-			addOrigin(scheme, rHost)
-		}
-
-		reqHostKey := strings.ToLower(host)
-		reqOrigin := proto + "://" + reqHostKey
-
-		// Helper to compare only scheme://host[:port] (ignores scheme mismatches for same host)
-		matchesAllowed := func(hdr string) bool {
-			if hdr == "" {
-				return false
-			}
-			u, err := url.Parse(hdr)
-			if err != nil || u.Host == "" {
-				return false
-			}
-			scheme := strings.ToLower(u.Scheme)
-			hostKey := strings.ToLower(u.Host)
-			if scheme != "" {
-				if _, ok := allowed[scheme+"://"+hostKey]; ok {
-					return true
-				}
-			}
-			if hostOnly, _, err := net.SplitHostPort(hostKey); err == nil {
-				if scheme != "" {
-					if _, ok := allowed[scheme+"://"+hostOnly]; ok {
-						return true
-					}
-				}
-				if _, ok := allowedHosts[hostOnly]; ok {
-					return true
-				}
-			}
-			if _, ok := allowedHosts[hostKey]; ok {
-				return true
-			}
-			return false
-		}
-
+		allowed, allowedHosts, reqOrigin := buildOriginAllowlist(r)
 		origin := r.Header.Get("Origin")
 		referer := r.Header.Get("Referer")
 
-		// Accept if either header matches an allowed origin.
-		if matchesAllowed(origin) || matchesAllowed(referer) {
+		if matchesAllowedHeader(origin, allowed, allowedHosts) || matchesAllowedHeader(referer, allowed, allowedHosts) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// ...or if headers are missing but the request origin itself is allowed.
-		if origin == "" && referer == "" {
-			if _, ok := allowed[reqOrigin]; ok {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if hostOnly, _, err := net.SplitHostPort(reqHostKey); err == nil {
-				if _, ok := allowed[proto+"://"+hostOnly]; ok {
-					next.ServeHTTP(w, r)
-					return
-				}
-				if _, ok := allowedHosts[hostOnly]; ok {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-			if reqHostKey != "" {
-				if _, ok := allowedHosts[reqHostKey]; ok {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
+		if origin == "" && referer == "" && requestOriginAllowed(reqOrigin, allowed, allowedHosts) {
+			next.ServeHTTP(w, r)
+			return
 		}
+
 		http.Error(w, "CSRF check failed", http.StatusForbidden)
 	})
+}
+
+func isSafeMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
+}
+
+func buildOriginAllowlist(r *http.Request) (map[string]struct{}, map[string]struct{}, string) {
+	allowed := make(map[string]struct{}, 4)
+	allowedHosts := make(map[string]struct{}, 4)
+
+	if u, err := url.Parse(appBaseURL); err == nil && u.Scheme != "" && u.Host != "" {
+		addOriginAllowlist(allowed, allowedHosts, u.Scheme, u.Host)
+	}
+
+	proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto"))
+	host := firstHeaderValue(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+
+	proto = strings.ToLower(strings.TrimSpace(proto))
+	host = strings.TrimSpace(host)
+	addOriginAllowlist(allowed, allowedHosts, proto, host)
+
+	if rHost := strings.TrimSpace(r.Host); rHost != "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		addOriginAllowlist(allowed, allowedHosts, scheme, rHost)
+	}
+
+	return allowed, allowedHosts, proto + "://" + strings.ToLower(host)
+}
+
+func firstHeaderValue(v string) string {
+	if v == "" {
+		return ""
+	}
+	parts := strings.Split(v, ",")
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(parts[0])
+}
+
+func addOriginAllowlist(allowed map[string]struct{}, hosts map[string]struct{}, scheme, host string) {
+	scheme = strings.ToLower(strings.TrimSpace(scheme))
+	host = strings.TrimSpace(host)
+	if scheme == "" || host == "" {
+		return
+	}
+	lowerHost := strings.ToLower(host)
+	allowed[scheme+"://"+lowerHost] = struct{}{}
+	addHostAllowlist(hosts, lowerHost)
+	if hostOnly, _, err := net.SplitHostPort(lowerHost); err == nil {
+		allowed[scheme+"://"+hostOnly] = struct{}{}
+		addHostAllowlist(hosts, hostOnly)
+		return
+	}
+	for _, suffix := range []string{":80", ":443"} {
+		if strings.HasSuffix(lowerHost, suffix) {
+			trimmed := strings.TrimSuffix(lowerHost, suffix)
+			allowed[scheme+"://"+trimmed] = struct{}{}
+			addHostAllowlist(hosts, trimmed)
+		}
+	}
+}
+
+func addHostAllowlist(hosts map[string]struct{}, host string) {
+	if host == "" {
+		return
+	}
+	hosts[host] = struct{}{}
+	if hostOnly, _, err := net.SplitHostPort(host); err == nil {
+		hosts[hostOnly] = struct{}{}
+	}
+}
+
+func matchesAllowedHeader(hdr string, allowed map[string]struct{}, allowedHosts map[string]struct{}) bool {
+	if hdr == "" {
+		return false
+	}
+	u, err := url.Parse(hdr)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	hostKey := strings.ToLower(u.Host)
+	if scheme != "" {
+		if _, ok := allowed[scheme+"://"+hostKey]; ok {
+			return true
+		}
+	}
+	if hostOnly, _, err := net.SplitHostPort(hostKey); err == nil {
+		if scheme != "" {
+			if _, ok := allowed[scheme+"://"+hostOnly]; ok {
+				return true
+			}
+		}
+		if _, ok := allowedHosts[hostOnly]; ok {
+			return true
+		}
+	}
+	if _, ok := allowedHosts[hostKey]; ok {
+		return true
+	}
+	return false
+}
+
+func requestOriginAllowed(reqOrigin string, allowed map[string]struct{}, allowedHosts map[string]struct{}) bool {
+	if reqOrigin == "" {
+		return false
+	}
+	if _, ok := allowed[reqOrigin]; ok {
+		return true
+	}
+	u, err := url.Parse(reqOrigin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	hostKey := strings.ToLower(u.Host)
+	if hostOnly, _, err := net.SplitHostPort(hostKey); err == nil {
+		if _, ok := allowed[u.Scheme+"://"+hostOnly]; ok {
+			return true
+		}
+		if _, ok := allowedHosts[hostOnly]; ok {
+			return true
+		}
+	}
+	_, ok := allowedHosts[hostKey]
+	return ok
 }
 
 func parseSameSite(value string, def http.SameSite) http.SameSite {

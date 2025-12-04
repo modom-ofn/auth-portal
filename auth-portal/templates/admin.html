@@ -187,14 +187,14 @@
         </section>
     </main>
 
-    <div id="help-modal" class="modal" hidden>
+    <dialog id="help-modal" class="modal" hidden aria-labelledby="help-modal-title">
         <div class="modal-backdrop" data-help-close></div>
-        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+        <div class="modal-dialog">
             <button type="button" id="help-modal-close" class="icon-btn close-btn" aria-label="Close help" title="Close">×</button>
             <h3 id="help-modal-title">Configuration Help</h3>
             <div id="help-modal-body" class="modal-body"></div>
         </div>
-    </div>
+    </dialog>
 
     <footer class="admin-footer">
         <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>

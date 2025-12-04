@@ -48,11 +48,11 @@ func (r *ipRateLimiter) allow(req *http.Request) bool {
 		key = "unknown"
 	}
 
-	limiter := r.getLimiter(key)
+	limiter := r.limiterFor(key)
 	return limiter.Allow()
 }
 
-func (r *ipRateLimiter) getLimiter(key string) *rate.Limiter {
+func (r *ipRateLimiter) limiterFor(key string) *rate.Limiter {
 	now := time.Now()
 
 	r.mu.Lock()

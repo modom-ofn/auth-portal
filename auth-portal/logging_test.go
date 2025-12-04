@@ -17,9 +17,9 @@ func TestClientIPNoTrustedProxyIgnoresForwardedFor(t *testing.T) {
 	cleanup := withTrustedProxies(t, "")
 	defer cleanup()
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, testExampleURL, nil)
 	req.RemoteAddr = "198.51.100.1:12345"
-	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set(testForwardHeader, "203.0.113.10")
 
 	if got := clientIP(req); got != "198.51.100.1" {
 		t.Fatalf("expected remote IP, got %q", got)
@@ -27,12 +27,12 @@ func TestClientIPNoTrustedProxyIgnoresForwardedFor(t *testing.T) {
 }
 
 func TestClientIPTrustedProxyUsesForwardChain(t *testing.T) {
-	cleanup := withTrustedProxies(t, "198.51.100.0/24")
+	cleanup := withTrustedProxies(t, testProxyCIDR)
 	defer cleanup()
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, testExampleURL, nil)
 	req.RemoteAddr = "198.51.100.2:5000"
-	req.Header.Set("X-Forwarded-For", "203.0.113.10, 198.51.100.3")
+	req.Header.Set(testForwardHeader, "203.0.113.10, 198.51.100.3")
 
 	if got := clientIP(req); got != "203.0.113.10" {
 		t.Fatalf("expected client IP from forwarded chain, got %q", got)
@@ -40,12 +40,12 @@ func TestClientIPTrustedProxyUsesForwardChain(t *testing.T) {
 }
 
 func TestClientIPUntrustedRemoteIgnoresSpoofedForwarded(t *testing.T) {
-	cleanup := withTrustedProxies(t, "198.51.100.0/24")
+	cleanup := withTrustedProxies(t, testProxyCIDR)
 	defer cleanup()
 
-	req := httptest.NewRequest(http.MethodPost, "http://example.com", nil)
+	req := httptest.NewRequest(http.MethodPost, testExampleURL, nil)
 	req.RemoteAddr = "203.0.113.1:4444"
-	req.Header.Set("X-Forwarded-For", "198.51.100.20")
+	req.Header.Set(testForwardHeader, "198.51.100.20")
 
 	if got := clientIP(req); got != "203.0.113.1" {
 		t.Fatalf("expected remote IP when proxy untrusted, got %q", got)
@@ -53,10 +53,10 @@ func TestClientIPUntrustedRemoteIgnoresSpoofedForwarded(t *testing.T) {
 }
 
 func TestClientIPTrustedProxyUsesRealIP(t *testing.T) {
-	cleanup := withTrustedProxies(t, "198.51.100.0/24")
+	cleanup := withTrustedProxies(t, testProxyCIDR)
 	defer cleanup()
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, testExampleURL, nil)
 	req.RemoteAddr = "198.51.100.2:6000"
 	req.Header.Set("X-Real-IP", "203.0.113.42")
 
@@ -66,10 +66,10 @@ func TestClientIPTrustedProxyUsesRealIP(t *testing.T) {
 }
 
 func TestClientIPUntrustedRemoteIgnoresRealIP(t *testing.T) {
-	cleanup := withTrustedProxies(t, "198.51.100.0/24")
+	cleanup := withTrustedProxies(t, testProxyCIDR)
 	defer cleanup()
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, testExampleURL, nil)
 	req.RemoteAddr = "203.0.113.1:6000"
 	req.Header.Set("X-Real-IP", "198.51.100.20")
 
@@ -77,3 +77,9 @@ func TestClientIPUntrustedRemoteIgnoresRealIP(t *testing.T) {
 		t.Fatalf("expected remote IP when proxy untrusted, got %q", got)
 	}
 }
+
+const (
+	testExampleURL    = "http://example.com"
+	testForwardHeader = "X-Forwarded-For"
+	testProxyCIDR     = "198.51.100.0/24"
+)
