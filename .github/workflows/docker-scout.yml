@@ -53,8 +53,8 @@ jobs:
 
       - name: Create badge
         run: |
-          mkdir -p .github/badges
-          echo "{\"schemaVersion\":1,\"label\":\"docker scout\",\"message\":\"critical: ${{ steps.parse.outputs.critical }}\",\"color\":\"red\"}" > .github/badges/docker-scout.json
+          mkdir -p /tmp/badges
+          echo "{\"schemaVersion\":1,\"label\":\"docker scout\",\"message\":\"critical: ${{ steps.parse.outputs.critical }}\",\"color\":\"red\"}" > /tmp/badges/docker-scout.json
 
       - name: Publish badge to badges branch
         env:
@@ -71,7 +71,7 @@ jobs:
             git rm -rf . || true
           fi
           mkdir -p .github/badges
-          cp "$GITHUB_WORKSPACE/.github/badges/docker-scout.json" .github/badges/docker-scout.json
+          cp /tmp/badges/docker-scout.json .github/badges/docker-scout.json
           git add .github/badges/docker-scout.json
           git commit -m "chore: update Docker Scout badge" || echo "No changes to commit"
           git push origin HEAD:badges || echo "No changes to push"
