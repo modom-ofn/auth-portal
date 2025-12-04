@@ -35,8 +35,8 @@ jobs:
             docker build -t "$IMAGE:$TAG" auth-portal
           fi
 
-      - name: Run Docker Scout CVE scan
-        run: docker scout cves $IMAGE:$TAG --json > scout.json
+      - name: Run Docker Scout CVE Quickview
+        run: docker scout quickview $IMAGE:$TAG --format json > scout.json
 
       - name: Extract critical count
         id: parse
