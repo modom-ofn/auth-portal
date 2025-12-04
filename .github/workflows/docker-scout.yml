@@ -56,8 +56,22 @@ jobs:
           mkdir -p .github/badges
           echo "{\"schemaVersion\":1,\"label\":\"docker scout\",\"message\":\"critical: ${{ steps.parse.outputs.critical }}\",\"color\":\"red\"}" > .github/badges/docker-scout.json
 
-      - name: Upload badge artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-scout-badge
-          path: .github/badges/docker-scout.json
+      - name: Publish badge to badges branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin badges || true
+          if git show-ref --verify --quiet refs/remotes/origin/badges; then
+            git checkout badges
+          else
+            git checkout --orphan badges
+            git rm -rf . || true
+          fi
+          mkdir -p .github/badges
+          cp "$GITHUB_WORKSPACE/.github/badges/docker-scout.json" .github/badges/docker-scout.json
+          git add .github/badges/docker-scout.json
+          git commit -m "chore: update Docker Scout badge" || echo "No changes to commit"
+          git push origin HEAD:badges || echo "No changes to push"
