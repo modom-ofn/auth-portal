@@ -762,8 +762,8 @@ func validateRedirectHost(parsed *url.URL, normalized string, client oauth.Clien
 		}
 		return nil
 	}
-	if !strings.HasPrefix(normalized, "/") {
-		return errors.New("redirect_uri must be absolute or start with /")
+	if !(strings.HasPrefix(normalized, "/") && (len(normalized) == 1 || (normalized[1] != '/' && normalized[1] != '\\'))) {
+		return errors.New("redirect_uri must start with a single / and not be followed by / or \\")
 	}
 	return nil
 }

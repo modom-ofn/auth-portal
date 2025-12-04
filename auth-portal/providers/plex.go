@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -392,6 +393,9 @@ func plexResolveAuthData(r *http.Request, timeout time.Duration) (plexAuthData, 
 	token, err := plexPollPin(pin.clientID, pin.id, timeout)
 	if err != nil || token == "" {
 		if err == nil {
+			if token == "" {
+				return plexAuthData{}, errPlexPinNotReady
+			}
 			return plexAuthData{}, errPlexPinNotReady
 		}
 		return plexAuthData{}, err
@@ -456,6 +460,46 @@ func plexRenderWaitingPage(w http.ResponseWriter) {
 	}
 }
 
+func plexSanitizeProto(r *http.Request) string {
+	proto := firstForwardHeader(r.Header.Get("X-Forwarded-Proto"))
+	proto = strings.ToLower(strings.TrimSpace(proto))
+	if proto != "http" && proto != "https" {
+		if r.TLS != nil {
+			return "https"
+		}
+		return "http"
+	}
+	return proto
+}
+
+func plexSanitizeHost(r *http.Request) string {
+	host := firstForwardHeader(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+	host = strings.TrimSpace(host)
+	if host == "" || strings.ContainsAny(host, "<>\"'\\/%") {
+		return r.Host
+	}
+	if u, err := url.Parse("http://" + host); err == nil && u.Host == host && u.Path == "" {
+		return host
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		if u, err2 := url.Parse("http://" + h); err2 == nil && u.Host == h && u.Path == "" {
+			return host
+		}
+	}
+	return r.Host
+}
+
+func firstForwardHeader(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	parts := strings.Split(raw, ",")
+	return strings.TrimSpace(parts[0])
+}
+
 // CompleteOutcome provides a structured result (no cookie writes).
 func (PlexProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOutcome, *HTTPResult, error) {
 	data, err := plexResolveAuthData(r, 60*time.Second)
@@ -496,18 +540,8 @@ func (PlexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 	// Determine external scheme/host correctly (supports reverse proxies)
-	proto := r.Header.Get("X-Forwarded-Proto")
-	if proto == "" {
-		if r.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
-		}
-	}
-	host := r.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = r.Host
-	}
+	proto := plexSanitizeProto(r)
+	host := plexSanitizeHost(r)
 	fwd := fmt.Sprintf("%s://%s/auth/forward", strings.ToLower(proto), host)
 	url := fmt.Sprintf("https://app.plex.tv/auth#?clientID=%s&code=%s&forwardUrl=%s&context[device][product]=AuthPortal&context[device][version]=2.0.0&context[device][platform]=Web&context[device][device]=Web", clientID, pin.Code, url.QueryEscape(fwd))
 	writeJSON(w, http.StatusOK, map[string]any{
