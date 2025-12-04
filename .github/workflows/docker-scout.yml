@@ -13,6 +13,7 @@ jobs:
     env:
       IMAGE: modomofn/auth-portal
       TAG: ${{ github.sha }}
+      SCOUT_CLI: docker/scout-cli:1.11.0
 
     steps:
       - name: Checkout repo
@@ -20,17 +21,6 @@ jobs:
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
-      
-      - name: Update Docker Scout
-        run: |
-          echo "=== Docker Scout Version ==="
-          docker scout version || echo "Docker Scout not installed"
-
-          echo "=== Docker CLI Version ==="
-          docker version
-
-          echo "=== Installing Docker Scout Plugin ==="
-          docker plugin install docker/scout --grant-all-permissions || echo "Plugin install failed or not supported"
 
       - name: Login to Docker Hub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
@@ -46,8 +36,8 @@ jobs:
             docker build -t "$IMAGE:$TAG" auth-portal
           fi
 
-      - name: Run Docker Scout CVE Quickview
-        run: docker scout quickview $IMAGE:$TAG --format json > scout.json
+      - name: Run Docker Scout CVE scan
+        run: docker run --rm "$SCOUT_CLI" cves "$IMAGE:$TAG" --json > scout.json
 
       - name: Extract critical count
         id: parse
