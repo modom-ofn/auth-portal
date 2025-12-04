@@ -6,6 +6,11 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 [![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
 
+[![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=auth-portal)
+[![SonarCloud Bugs](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=bugs)](https://sonarcloud.io/component_measures/metric/reliability_rating/list?id=modom-ofn_auth-portal)
+[![SonarCloud Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=vulnerabilities)](https://sonarcloud.io/component_measures/metric/security_rating/list?id=modom-ofn_auth-portal)
+![Docker Scout](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/modom-ofn/auth-portal/badges/.github/badges/docker-scout.json)
+
 **AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
 
 AuthPortal authenticates users directly against their connected media server accounts, seals the server tokens for reuse, and manages session lifecycle via HTTP-only cookies. Authorized users are directed to their personalized home page, while unrecognized users are served a restricted or “guest” view.
@@ -100,6 +105,7 @@ Admin console showing OAuth clients and backups tab with scheduled runs and rete
 - [How it works](#how-it-works)
 - [Customization](#customization)
 - [Security best practices](#security-best-practices)
+- [Security scans and code analysis](#security-scans-and-code-analysis)
 - [Contributing](#contributing)
 - [License](#license)
 - [Upgrade Guide (from < v2.0.2)](#upgrade-guide-from--v202)
@@ -673,6 +679,19 @@ DEBUG plex: resources match via machine id
 - Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).
 - If the portal is only used for same-origin apps, switch to SESSION_SAMESITE=strict; the fallback logic keeps you safe when Secure cookies aren’t yet possible (main.go:379-407).
 - Keep rate limits aligned with your threat model; newIPRateLimiter accepts tighter limits if you need to clamp brute force attempts (rate_limiter.go:10-74).
+
+---
+
+## Security scans and code analysis
+
+Automated security checks run on this project:
+
+- GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
+- Trivy: container and dependency scans to catch OS and library CVEs in our images.
+- Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
+- SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.
+
+If you spot an issue or have questions about these scans, please open an issue or reach out.
 
 ---
 
