@@ -36,7 +36,7 @@ jobs:
           fi
 
       - name: Run Docker Scout CVE scan
-        run: docker scout cves $IMAGE:$TAG --output json > scout.json
+        run: docker scout cves $IMAGE:$TAG --json > scout.json
 
       - name: Extract critical count
         id: parse
