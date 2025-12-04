@@ -47,7 +47,7 @@ jobs:
       - name: Extract critical count
         id: parse
         run: |
-          crit=$(grep -i '^CRITICAL' scout.txt | awk '{print $2}' | tr -d '\r' || true)
+          crit=$(awk 'BEGIN{c=0} {for (i=1;i<=NF;i++) if (toupper($i)=="CRITICAL" && (i+1)<=NF && $0 !~ /summary/i){c=$(i+1); exit}} END{print c}' scout.txt)
           if [[ -z "$crit" ]]; then crit=0; fi
           echo "critical=$crit" >> $GITHUB_OUTPUT
 
