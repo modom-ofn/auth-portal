@@ -6,9 +6,9 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 [![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
 
-[![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=auth-portal)
-[![SonarCloud Bugs](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=bugs)](https://sonarcloud.io/component_measures/metric/reliability_rating/list?id=modom-ofn_auth-portal)
-[![SonarCloud Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=vulnerabilities)](https://sonarcloud.io/component_measures/metric/security_rating/list?id=modom-ofn_auth-portal)
+[![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=modom-ofn_auth-portal)
+[![SonarCloud Bugs](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=bugs)](https://sonarcloud.io/component_measures?id=modom-ofn_auth-portal&metric=reliability_rating&view=list)
+[![SonarCloud Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=vulnerabilities)](https://sonarcloud.io/project/security_hotspots?id=modom-ofn_auth-portal)
 ![Docker Scout](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/modom-ofn/auth-portal/badges/.github/badges/docker-scout.json)
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
