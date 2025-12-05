@@ -36,6 +36,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Secret scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5
+        with:
+          args: detect --source . --no-git --redact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Go cache (optional)
         uses: actions/cache@v4
         with:
@@ -132,6 +139,47 @@ jobs:
             ${{ steps.vars.outputs.minor && format('{0}:{1}', env.IMAGE, steps.vars.outputs.minor) || '' }}
             ${{ steps.vars.outputs.major && format('{0}:{1}', env.IMAGE, steps.vars.outputs.major) || '' }}
 
+      - name: Install Syft
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SYFT_VERSION="v0.99.0"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | \
+            sh -s -- -b /usr/local/bin "$SYFT_VERSION"
+
+      - name: Generate SBOM (Syft)
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          syft "${IMAGE}:${{ steps.vars.outputs.sha }}" -o cyclonedx-json > auth-portal-sbom.cdx.json
+          ls -lh auth-portal-sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: auth-portal-sbom-${{ steps.vars.outputs.sha }}
+          path: auth-portal-sbom.cdx.json
+          retention-days: 14
+
+      - name: Install Grype
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          GRYPE_VERSION="v0.99.1"
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | \
+            sh -s -- -b /usr/local/bin "$GRYPE_VERSION"
+
+      - name: Vulnerability scan (Grype)
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          grype sbom:auth-portal-sbom.cdx.json -o table --fail-on high
+
       - name: Scan image with Trivy
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
@@ -149,3 +197,4 @@ jobs:
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:
           generate_release_notes: true
+          files: auth-portal-sbom.cdx.json

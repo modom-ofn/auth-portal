@@ -686,12 +686,24 @@ DEBUG plex: resources match via machine id
 
 Automated security checks run on this project:
 
+- Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
+- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
 - GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
 - SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.
 
 If you spot an issue or have questions about these scans, please open an issue or reach out.
+
+### Local secret scanning (pre-commit)
+
+Run Gitleaks locally before pushing:
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
 
 ---
 
