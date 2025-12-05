@@ -144,11 +144,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
           SYFT_VERSION="v0.99.0"
           SYFT_URL="https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz"
           curl -sSfL "$SYFT_URL" -o /tmp/syft.tgz
           tar -xzf /tmp/syft.tgz -C /tmp syft
-          install /tmp/syft /usr/local/bin/syft
+          install /tmp/syft "$HOME/.local/bin/syft"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           syft version
 
       - name: Generate SBOM (Syft)
@@ -172,11 +174,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
           GRYPE_VERSION="v0.99.1"
           GRYPE_URL="https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz"
           curl -sSfL "$GRYPE_URL" -o /tmp/grype.tgz
           tar -xzf /tmp/grype.tgz -C /tmp grype
-          install /tmp/grype /usr/local/bin/grype
+          install /tmp/grype "$HOME/.local/bin/grype"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           grype version
 
       - name: Vulnerability scan (Grype)
