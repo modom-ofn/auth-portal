@@ -17,10 +17,28 @@ import (
 	"github.com/lib/pq"
 )
 
+const (
+	sqlMockErrFmt            = "sqlmock.New: %v"
+	unmetExpectationsFmt     = "unmet expectations: %v"
+	unexpectedErrorFmt       = "unexpected error: %v"
+	unexpectedScopesFmt      = "unexpected scopes: got %v want %v"
+	unexpectedStatusFmt      = "unexpected status: got %d want %d"
+	decodeResponseFmt        = "decode response: %v"
+	unexpectedErrorCodeFmt   = "unexpected error code: got %q want %q"
+	unexpectedDescriptionFmt = "unexpected description: got %q want %q"
+
+	testClientID      = "client-123"
+	testClientName    = "Test App"
+	testCallbackURL   = "https://example.com/callback"
+	testTokenPath     = "/oidc/token"
+	headerContentType = "Content-Type"
+	mimeFormURLEnc    = "application/x-www-form-urlencoded"
+)
+
 func TestFinishAuthorizeFlowSuccess(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
+		t.Fatalf(sqlMockErrFmt, err)
 	}
 	defer db.Close()
 
@@ -31,11 +49,11 @@ func TestFinishAuthorizeFlowSuccess(t *testing.T) {
 
 	user := User{ID: 7, Username: "tester"}
 	client := oauth.Client{
-		ClientID:     "client-123",
-		Name:         "Test App",
-		RedirectURIs: []string{"https://example.com/callback"},
+		ClientID:     testClientID,
+		Name:         testClientName,
+		RedirectURIs: []string{testCallbackURL},
 	}
-	redirectURI := "https://example.com/callback"
+	redirectURI := testCallbackURL
 	scopes := []string{"openid", "profile"}
 
 	mock.ExpectExec("INSERT INTO oauth_consents").
@@ -49,7 +67,16 @@ func TestFinishAuthorizeFlowSuccess(t *testing.T) {
 	req := httptest.NewRequest("GET", "/oidc/authorize", nil)
 	rr := httptest.NewRecorder()
 
-	finishAuthorizeFlow(rr, req, user, client, redirectURI, "xyz", scopes, "", "", "nonce-123")
+	finishAuthorizeFlow(rr, req, authorizeFlowInput{
+		User:          user,
+		Client:        client,
+		RedirectURI:   redirectURI,
+		State:         "xyz",
+		Scopes:        scopes,
+		CodeChallenge: "",
+		CodeMethod:    "",
+		Nonce:         "nonce-123",
+	})
 
 	resp := rr.Result()
 	if resp.StatusCode != 302 {
@@ -60,7 +87,7 @@ func TestFinishAuthorizeFlowSuccess(t *testing.T) {
 		t.Fatalf("expected Location header")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
+		t.Fatalf(unmetExpectationsFmt, err)
 	}
 }
 
@@ -94,12 +121,12 @@ func TestEnforceClientScopePolicyAllowsConfiguredScopes(t *testing.T) {
 
 	filtered, err := enforceClientScopePolicy(requested, client)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorFmt, err)
 	}
 
 	want := []string{"openid", "profile", "offline_access"}
 	if !reflect.DeepEqual(filtered, want) {
-		t.Fatalf("unexpected scopes: got %v want %v", filtered, want)
+		t.Fatalf(unexpectedScopesFmt, filtered, want)
 	}
 }
 
@@ -119,12 +146,12 @@ func TestEnforceClientScopePolicyAllowsDefaultScopes(t *testing.T) {
 
 	filtered, err := enforceClientScopePolicy(requested, client)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorFmt, err)
 	}
 
 	want := []string{"openid", "profile"}
 	if !reflect.DeepEqual(filtered, want) {
-		t.Fatalf("unexpected scopes: got %v want %v", filtered, want)
+		t.Fatalf(unexpectedScopesFmt, filtered, want)
 	}
 }
 
@@ -136,12 +163,12 @@ func TestEnforceClientScopePolicyFallsBackToOpenID(t *testing.T) {
 
 	filtered, err := enforceClientScopePolicy(requested, client)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorFmt, err)
 	}
 
 	want := []string{"openid"}
 	if !reflect.DeepEqual(filtered, want) {
-		t.Fatalf("unexpected scopes: got %v want %v", filtered, want)
+		t.Fatalf(unexpectedScopesFmt, filtered, want)
 	}
 }
 
@@ -163,7 +190,7 @@ func TestAllowedScopesForClientEnsuresOpenID(t *testing.T) {
 func TestOIDCTokenHandlerRoutesRefreshGrant(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
+		t.Fatalf(sqlMockErrFmt, err)
 	}
 	defer db.Close()
 
@@ -179,7 +206,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
  WHERE client_id = $1
  LIMIT 1
 `)).
-		WithArgs("client-123").
+		WithArgs(testClientID).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"client_id",
 			"client_secret",
@@ -192,10 +219,10 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 			"updated_at",
 		}).
 			AddRow(
-				"client-123",
+				testClientID,
 				"",
-				"Test App",
-				pq.StringArray{"https://example.com/callback"},
+				testClientName,
+				pq.StringArray{testCallbackURL},
 				pq.StringArray{"openid"},
 				pq.StringArray{"authorization_code", "refresh_token"},
 				pq.StringArray{"code"},
@@ -205,39 +232,39 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 
 	form := url.Values{}
 	form.Set("grant_type", "REFRESH_TOKEN")
-	form.Set("client_id", "client-123")
+	form.Set("client_id", testClientID)
 
-	req := httptest.NewRequest(http.MethodPost, "/oidc/token", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, testTokenPath, strings.NewReader(form.Encode()))
+	req.Header.Set(headerContentType, mimeFormURLEnc)
 
 	rr := httptest.NewRecorder()
 	oidcTokenHandler(rr, req)
 
 	resp := rr.Result()
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("unexpected status: got %d want %d", resp.StatusCode, http.StatusBadRequest)
+		t.Fatalf(unexpectedStatusFmt, resp.StatusCode, http.StatusBadRequest)
 	}
 
 	var payload map[string]string
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf(decodeResponseFmt, err)
 	}
 	if payload["error"] != "invalid_request" {
-		t.Fatalf("unexpected error code: got %q want %q", payload["error"], "invalid_request")
+		t.Fatalf(unexpectedErrorCodeFmt, payload["error"], "invalid_request")
 	}
 	if payload["error_description"] != "refresh_token required" {
-		t.Fatalf("unexpected description: got %q want %q", payload["error_description"], "refresh_token required")
+		t.Fatalf(unexpectedDescriptionFmt, payload["error_description"], "refresh_token required")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
+		t.Fatalf(unmetExpectationsFmt, err)
 	}
 }
 
 func TestOIDCTokenHandlerRequiresGrantType(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
+		t.Fatalf(sqlMockErrFmt, err)
 	}
 	defer db.Close()
 
@@ -253,7 +280,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
  WHERE client_id = $1
  LIMIT 1
 `)).
-		WithArgs("client-123").
+		WithArgs(testClientID).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"client_id",
 			"client_secret",
@@ -266,10 +293,10 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 			"updated_at",
 		}).
 			AddRow(
-				"client-123",
+				testClientID,
 				"",
-				"Test App",
-				pq.StringArray{"https://example.com/callback"},
+				testClientName,
+				pq.StringArray{testCallbackURL},
 				pq.StringArray{"openid"},
 				pq.StringArray{"authorization_code"},
 				pq.StringArray{"code"},
@@ -278,39 +305,39 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 			))
 
 	form := url.Values{}
-	form.Set("client_id", "client-123")
+	form.Set("client_id", testClientID)
 
-	req := httptest.NewRequest(http.MethodPost, "/oidc/token", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, testTokenPath, strings.NewReader(form.Encode()))
+	req.Header.Set(headerContentType, mimeFormURLEnc)
 
 	rr := httptest.NewRecorder()
 	oidcTokenHandler(rr, req)
 
 	resp := rr.Result()
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("unexpected status: got %d want %d", resp.StatusCode, http.StatusBadRequest)
+		t.Fatalf(unexpectedStatusFmt, resp.StatusCode, http.StatusBadRequest)
 	}
 
 	var payload map[string]string
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf(decodeResponseFmt, err)
 	}
 	if payload["error"] != "invalid_request" {
-		t.Fatalf("unexpected error code: got %q want %q", payload["error"], "invalid_request")
+		t.Fatalf(unexpectedErrorCodeFmt, payload["error"], "invalid_request")
 	}
 	if payload["error_description"] != "grant_type required" {
-		t.Fatalf("unexpected description: got %q want %q", payload["error_description"], "grant_type required")
+		t.Fatalf(unexpectedDescriptionFmt, payload["error_description"], "grant_type required")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
+		t.Fatalf(unmetExpectationsFmt, err)
 	}
 }
 
 func TestOIDCTokenHandlerRejectsUnauthorizedGrant(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
+		t.Fatalf(sqlMockErrFmt, err)
 	}
 	defer db.Close()
 
@@ -326,7 +353,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
  WHERE client_id = $1
  LIMIT 1
 `)).
-		WithArgs("client-123").
+		WithArgs(testClientID).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"client_id",
 			"client_secret",
@@ -339,10 +366,10 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 			"updated_at",
 		}).
 			AddRow(
-				"client-123",
+				testClientID,
 				"",
-				"Test App",
-				pq.StringArray{"https://example.com/callback"},
+				testClientName,
+				pq.StringArray{testCallbackURL},
 				pq.StringArray{"openid"},
 				pq.StringArray{"authorization_code"},
 				pq.StringArray{"code"},
@@ -352,32 +379,32 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
-	form.Set("client_id", "client-123")
+	form.Set("client_id", testClientID)
 
-	req := httptest.NewRequest(http.MethodPost, "/oidc/token", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, testTokenPath, strings.NewReader(form.Encode()))
+	req.Header.Set(headerContentType, mimeFormURLEnc)
 
 	rr := httptest.NewRecorder()
 	oidcTokenHandler(rr, req)
 
 	resp := rr.Result()
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("unexpected status: got %d want %d", resp.StatusCode, http.StatusBadRequest)
+		t.Fatalf(unexpectedStatusFmt, resp.StatusCode, http.StatusBadRequest)
 	}
 
 	var payload map[string]string
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf(decodeResponseFmt, err)
 	}
 	if payload["error"] != "unauthorized_client" {
-		t.Fatalf("unexpected error code: got %q want %q", payload["error"], "unauthorized_client")
+		t.Fatalf(unexpectedErrorCodeFmt, payload["error"], "unauthorized_client")
 	}
 	if payload["error_description"] != "grant type not allowed for this client" {
-		t.Fatalf("unexpected description: got %q want %q", payload["error_description"], "grant type not allowed for this client")
+		t.Fatalf(unexpectedDescriptionFmt, payload["error_description"], "grant type not allowed for this client")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unmet expectations: %v", err)
+		t.Fatalf(unmetExpectationsFmt, err)
 	}
 }
 

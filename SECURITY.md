@@ -8,9 +8,9 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.x` (latest: `v2.0.3`) | ✅ Supported | Receives all security and high-priority bug fixes. |
+| `v2.0.3` (latest: `v2.0.3`) | ✅ Supported | Receives all security and high-priority bug fixes. |
 | `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
-| `< v2.0.0` | ❌ End-of-life | Please upgrade to a supported release. |
+| `< v2.0.3` | ❌ End-of-life | Please upgrade to a supported release. |
 
 When a new minor series ships, the previous series remains supported for at least 90 days. I will post deprecation notices in the release notes and CHANGELOG when a branch approaches end-of-life.
 
@@ -37,10 +37,20 @@ If you believe the issue should remain private until a fix is available, mention
 
 Thank you for helping keep AuthPortal secure for everyone! Your reports make the project stronger.
 
-
 ## Additional Security Note
 
 AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, CSP/HSTS headers, MFA gating, per-IP rate limiting, CSRF origin checks, and encrypted config/backups to protect its authentication flows, but it is still “use at your own risk,” so you should treat these controls as best-effort hardening rather than formal assurance.
+
+## Security scans and code analysis
+
+Automated security checks run on this project:
+
+- GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
+- Trivy: container and dependency scans to catch OS and library CVEs in our images.
+- Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
+- SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.
+
+If you spot an issue or have questions about these scans, please open an issue or reach out.
 
 ### Security Measures
 

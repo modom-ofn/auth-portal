@@ -1,0 +1,77 @@
+name: Docker Scout Scan
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      IMAGE: modomofn/auth-portal
+      TAG: ${{ github.sha }}
+      SCOUT_CLI: docker/scout-cli:1.11.0
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull image (or build if missing)
+        run: |
+          set -euo pipefail
+          if ! docker pull "$IMAGE:$TAG"; then
+            echo "Remote image not found, building locally for scan..."
+            docker build -t "$IMAGE:$TAG" auth-portal
+          fi
+
+      - name: Run Docker Scout CVE scan
+        run: |
+          docker run --rm \
+            -e DOCKER_HOST=unix:///var/run/docker.sock \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.docker":/root/.docker \
+            "$SCOUT_CLI" cves "$IMAGE:$TAG" --exit-code 0 | tee scout.txt
+
+      - name: Extract critical count
+        id: parse
+        run: |
+          crit=$(awk 'BEGIN{c=0} {for (i=1;i<=NF;i++) if (toupper($i)=="CRITICAL" && (i+1)<=NF && $0 !~ /summary/i){c=$(i+1); exit}} END{print c}' scout.txt)
+          if [[ -z "$crit" ]]; then crit=0; fi
+          echo "critical=$crit" >> $GITHUB_OUTPUT
+
+      - name: Create badge
+        run: |
+          mkdir -p /tmp/badges
+          echo "{\"schemaVersion\":1,\"label\":\"docker scout\",\"message\":\"critical: ${{ steps.parse.outputs.critical }}\",\"color\":\"red\"}" > /tmp/badges/docker-scout.json
+
+      - name: Publish badge to badges branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin badges || true
+          if git show-ref --verify --quiet refs/remotes/origin/badges; then
+            git checkout badges
+          else
+            git checkout --orphan badges
+            git rm -rf . || true
+          fi
+          mkdir -p .github/badges
+          cp /tmp/badges/docker-scout.json .github/badges/docker-scout.json
+          git add .github/badges/docker-scout.json
+          git commit -m "chore: update Docker Scout badge" || echo "No changes to commit"
+          git push origin HEAD:badges || echo "No changes to push"

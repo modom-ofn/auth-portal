@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+const (
+	embyContentTypeHTML = "text/html; charset=utf-8"
+	embyHeaderContent   = "Content-Type"
+	embyForwardAuthPath = "/auth/forward?emby=1"
+)
+
 // Minimal shape returned by /Users/Me
 type embyMe struct {
 	ID   string `json:"Id"`
@@ -89,7 +95,7 @@ func (EmbyProvider) Health() error {
 func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOutcome, *HTTPResult, error) {
 	if r.Method == http.MethodGet {
 		hdr := http.Header{}
-		hdr.Set("Content-Type", "text/html; charset=utf-8")
+		hdr.Set(embyHeaderContent, embyContentTypeHTML)
 		body := embyLoginPageHTML("", "")
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusOK, Header: hdr, Body: body}, nil
 	}
@@ -101,75 +107,22 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 	password := r.Form.Get("password")
 	if username == "" || password == "" {
 		hdr := http.Header{}
-		hdr.Set("Location", "/auth/forward?emby=1")
+		hdr.Set("Location", embyForwardAuthPath)
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusSeeOther, Header: hdr}, nil
 	}
 
-	clientID := randClientID()
-	auth, err := embyAuthenticate(EmbyServerURL, clientID, username, password)
+	auth, _, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
 		}
 		hdr := http.Header{}
-		hdr.Set("Content-Type", "text/html; charset=utf-8")
+		hdr.Set(embyHeaderContent, embyContentTypeHTML)
 		body := embyLoginPageHTML(username, "Login failed; please try again.")
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
-	var md mediaUserDetail
-	var detailErr error
-	if strings.TrimSpace(EmbyAPIKey) != "" {
-		md, detailErr = mediaGetUserDetail("emby", EmbyServerURL, EmbyAPIKey, auth.User.ID)
-	} else {
-		md, detailErr = mediaGetUserDetail("emby", EmbyServerURL, auth.AccessToken, auth.User.ID)
-	}
-	if detailErr != nil {
-		if Warnf != nil {
-			Warnf("emby detail fetch failed for %s: %v", auth.User.Name, detailErr)
-		}
-	}
-
-	authorized := false
-	if owner := strings.TrimSpace(EmbyOwnerUsername); owner != "" && strings.EqualFold(auth.User.Name, owner) {
-		authorized = true
-	}
-	if ownerID := strings.TrimSpace(EmbyOwnerID); ownerID != "" && auth.User.ID == ownerID {
-		authorized = true
-	}
-	if md.ID != "" && !md.Policy.IsDisabled {
-		authorized = true
-	}
-
-	sealedToken, serr := SealToken(auth.AccessToken)
-	if serr != nil {
-		log.Printf("WARN: emby token seal failed: %v", serr)
-		sealedToken = ""
-	}
-	mediaUUID := "emby-" + auth.User.ID
-
-	if UpsertUser != nil {
-		err := UpsertUser(User{
-			Username:    auth.User.Name,
-			Email:       "",
-			MediaUUID:   mediaUUID,
-			MediaToken:  sealedToken,
-			MediaAccess: authorized,
-			Provider:    "emby",
-		})
-		if err != nil && Warnf != nil {
-			Warnf("emby upsert failed for %s: %v", auth.User.Name, err)
-		}
-	}
-
-	return AuthOutcome{
-		Provider:    "emby",
-		Username:    auth.User.Name,
-		Email:       "",
-		MediaUUID:   mediaUUID,
-		SealedToken: sealedToken,
-		Authorized:  authorized,
-	}, nil, nil
+	return finalizeEmbyOutcome(auth, authorized), nil, nil
 }
 
 // StartWeb: tell the client to open our own login form popup (/auth/forward?emby=1)
@@ -177,15 +130,17 @@ func (EmbyProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":       true,
 		"provider": "emby",
-		"authUrl":  "/auth/forward?emby=1",
+		"authUrl":  embyForwardAuthPath,
 	})
 }
 
 func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set(embyHeaderContent, embyContentTypeHTML)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(embyLoginPageHTML("", ""))
+		if _, err := w.Write(embyLoginPageHTML("", "")); err != nil {
+			log.Printf("emby login write failed: %v", err)
+		}
 		return
 	}
 
@@ -196,19 +151,20 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.Form.Get("username"))
 	password := r.Form.Get("password")
 	if username == "" || password == "" {
-		http.Redirect(w, r, "/auth/forward?emby=1", http.StatusSeeOther)
+		http.Redirect(w, r, embyForwardAuthPath, http.StatusSeeOther)
 		return
 	}
 
-	clientID := randClientID()
-	auth, err := embyAuthenticate(EmbyServerURL, clientID, username, password)
+	auth, _, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set(embyHeaderContent, embyContentTypeHTML)
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write(embyLoginPageHTML(username, "Login failed; please try again."))
+		if _, writeErr := w.Write(embyLoginPageHTML(username, "Login failed; please try again.")); writeErr != nil {
+			log.Printf("emby login write failed: %v", writeErr)
+		}
 		return
 	}
 
@@ -221,44 +177,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var detail embyUserDetail
-	if EmbyAPIKey != "" {
-		d, derr := embyGetUserDetail(EmbyServerURL, EmbyAPIKey, auth.User.ID)
-		if derr == nil {
-			detail = d
-		} else if Warnf != nil {
-			Warnf("emby detail fetch failed for %s: %v", auth.User.Name, derr)
-		}
-	}
-
-	authorized := false
-	if EmbyOwnerUsername != "" && auth.User.Name == EmbyOwnerUsername {
-		authorized = true
-	}
-	if EmbyOwnerID != "" && auth.User.ID == EmbyOwnerID {
-		authorized = true
-	}
-	if EmbyAPIKey != "" && detail.ID != "" && !detail.Policy.IsDisabled {
-		authorized = true
-	}
-
-	sealedToken, serr := SealToken(auth.AccessToken)
-	if serr != nil {
-		log.Printf("WARN: emby token seal failed: %v", serr)
-		sealedToken = ""
-	}
-	mediaUUID := "emby-" + auth.User.ID
-
-	if UpsertUser != nil {
-		_ = UpsertUser(User{
-			Username:    auth.User.Name,
-			Email:       "",
-			MediaUUID:   mediaUUID,
-			MediaToken:  sealedToken,
-			MediaAccess: authorized,
-			Provider:    "emby",
-		})
-	}
+	_, mediaUUID := saveEmbyUser(auth, authorized)
 
 	if authorized {
 		if SetSessionCookie != nil {
@@ -277,7 +196,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (EmbyProvider) IsAuthorized(uuid, _username string) (bool, error) {
+func (EmbyProvider) IsAuthorized(uuid, _ string) (bool, error) {
 	if GetUserByUUID == nil {
 		return false, fmt.Errorf("GetUserByUUID not configured")
 	}
@@ -299,6 +218,80 @@ func (EmbyProvider) IsAuthorized(uuid, _username string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func processEmbyLogin(username, password string) (mediaAuthResp, embyUserDetail, bool, error) {
+	clientID := randClientID()
+	auth, err := embyAuthenticate(EmbyServerURL, clientID, username, password)
+	if err != nil {
+		return mediaAuthResp{}, embyUserDetail{}, false, err
+	}
+
+	detail := embyUserDetail{}
+	if strings.TrimSpace(EmbyAPIKey) != "" {
+		if d, derr := embyGetUserDetail(EmbyServerURL, EmbyAPIKey, auth.User.ID); derr == nil {
+			detail = d
+		} else if Warnf != nil {
+			Warnf("emby detail fetch failed for %s: %v", auth.User.Name, derr)
+		}
+	} else {
+		if d, derr := embyGetUserDetail(EmbyServerURL, auth.AccessToken, auth.User.ID); derr == nil {
+			detail = d
+		} else if Warnf != nil {
+			Warnf("emby detail fetch failed for %s: %v", auth.User.Name, derr)
+		}
+	}
+
+	authorized := isEmbyAuthorized(auth.User.Name, auth.User.ID, detail)
+	return auth, detail, authorized, nil
+}
+
+func isEmbyAuthorized(username, userID string, detail embyUserDetail) bool {
+	if owner := strings.TrimSpace(EmbyOwnerUsername); owner != "" && strings.EqualFold(username, owner) {
+		return true
+	}
+	if ownerID := strings.TrimSpace(EmbyOwnerID); ownerID != "" && userID == ownerID {
+		return true
+	}
+	if detail.ID != "" && !detail.Policy.IsDisabled {
+		return true
+	}
+	return false
+}
+
+func saveEmbyUser(auth mediaAuthResp, authorized bool) (sealedToken string, mediaUUID string) {
+	sealedToken, serr := SealToken(auth.AccessToken)
+	if serr != nil {
+		log.Printf("WARN: emby token seal failed: %v", serr)
+		sealedToken = ""
+	}
+	mediaUUID = "emby-" + auth.User.ID
+
+	if UpsertUser != nil {
+		if err := UpsertUser(User{
+			Username:    auth.User.Name,
+			Email:       "",
+			MediaUUID:   mediaUUID,
+			MediaToken:  sealedToken,
+			MediaAccess: authorized,
+			Provider:    "emby",
+		}); err != nil && Warnf != nil {
+			Warnf("emby upsert failed for %s: %v", auth.User.Name, err)
+		}
+	}
+	return sealedToken, mediaUUID
+}
+
+func finalizeEmbyOutcome(auth mediaAuthResp, authorized bool) AuthOutcome {
+	sealedToken, mediaUUID := saveEmbyUser(auth, authorized)
+	return AuthOutcome{
+		Provider:    "emby",
+		Username:    auth.User.Name,
+		Email:       "",
+		MediaUUID:   mediaUUID,
+		SealedToken: sealedToken,
+		Authorized:  authorized,
+	}
 }
 
 // embyTokenStillValid checks whether the user's token is currently accepted by the server.
@@ -349,7 +342,10 @@ func embyAuthenticate(serverURL, clientID, username, password string) (mediaAuth
 // embyGetMe fetches the current user info using an access token.
 func embyGetMe(serverURL, token string) (embyMe, error) {
 	var out embyMe
-	req, _ := http.NewRequest(http.MethodGet, strings.TrimSuffix(serverURL, "/")+"/Users/Me", nil)
+	req, reqErr := http.NewRequest(http.MethodGet, strings.TrimSuffix(serverURL, "/")+"/Users/Me", nil)
+	if reqErr != nil {
+		return out, reqErr
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Emby-Token", token)
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
@@ -357,7 +353,10 @@ func embyGetMe(serverURL, token string) (embyMe, error) {
 		return out, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return out, readErr
+	}
 	if resp.StatusCode != 200 {
 		return out, fmt.Errorf("emby me %d", resp.StatusCode)
 	}

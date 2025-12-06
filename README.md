@@ -2,9 +2,14 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.25.3%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.25.5%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 [![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
+
+[![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=modom-ofn_auth-portal)
+[![SonarCloud Bugs](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=bugs)](https://sonarcloud.io/component_measures?id=modom-ofn_auth-portal&metric=reliability_rating&view=list)
+[![SonarCloud Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=vulnerabilities)](https://sonarcloud.io/project/security_hotspots?id=modom-ofn_auth-portal)
+![Docker Scout](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/modom-ofn/auth-portal/badges/.github/badges/docker-scout.json)
 
 **AuthPortal** is a lightweight, self-hosted authentication gateway built for Plex, Jellyfin, and Emby ecosystems. It provides a unified login experience for media-based communities and home-lab environments—issuing secure, signed sessions for use across your intranet portals and apps.
 
@@ -100,6 +105,7 @@ Admin console showing OAuth clients and backups tab with scheduled runs and rete
 - [How it works](#how-it-works)
 - [Customization](#customization)
 - [Security best practices](#security-best-practices)
+- [Security scans and code analysis](#security-scans-and-code-analysis)
 - [Contributing](#contributing)
 - [License](#license)
 - [Upgrade Guide (from < v2.0.2)](#upgrade-guide-from--v202)
@@ -542,7 +548,7 @@ CREATE TABLE IF NOT EXISTS pins (
 
 ## Build & Images
 
-- Go: `1.25.3` on `alpine:3.21`.
+- Go: `1.25.5` on `alpine:3.21`.
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.25`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
 - Runtime: `alpine:3.21`, installs CA certs + tzdata, runs as non-root `uid 10001`.
@@ -676,6 +682,31 @@ DEBUG plex: resources match via machine id
 
 ---
 
+## Security scans and code analysis
+
+Automated security checks run on this project:
+
+- Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
+- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
+- GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
+- Trivy: container and dependency scans to catch OS and library CVEs in our images.
+- Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
+- SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.
+
+If you spot an issue or have questions about these scans, please open an issue or reach out.
+
+### Local secret scanning (pre-commit)
+
+Run Gitleaks locally before pushing:
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+---
+
 ## Contributing
 
 Issues and PRs welcome:  
@@ -695,7 +726,7 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ## Upgrade Guide (from < v2.0.2)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.3` so you pick up Go 1.25.3 plus the patched OpenSSL 3.3.5 / BusyBox layers.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.3` so you pick up Go 1.25.5 plus the patched OpenSSL 3.3.5 / BusyBox layers.
 2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
 3) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.

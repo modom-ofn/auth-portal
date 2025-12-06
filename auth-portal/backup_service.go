@@ -24,11 +24,15 @@ const (
 	defaultBackupDirName   = "backups"
 	legacyScheduleFilename = "schedule.json"
 	backupEnvelopeVersion  = "enc-v1"
+
+	appSettingsSectionKey = "app-settings"
 )
 
 var (
 	errUnknownBackupSection = errors.New("unknown backup section")
 )
+
+var defaultBackupSections = []string{"providers", "security", "mfa", appSettingsSectionKey}
 
 type backupService struct {
 	store *configstore.Store
@@ -329,7 +333,7 @@ func (s *backupService) createBackup(ctx context.Context, sections []string, aut
 
 	validSections := normalizeBackupSections(sections)
 	if len(validSections) == 0 {
-		validSections = []string{"providers", "security", "mfa", "app-settings"}
+		validSections = defaultBackupSections
 	}
 
 	doc := backupDocument{
@@ -523,58 +527,20 @@ func (s *backupService) RestoreBackup(ctx context.Context, name, actor string) (
 }
 
 func decodeSectionPayload(key string, raw json.RawMessage) (any, error) {
-	switch key {
-	case "providers":
-		var cfg ProvidersConfig
-		if len(raw) > 0 {
-			if err := json.Unmarshal(raw, &cfg); err != nil {
-				return nil, err
-			}
-		}
-		normalizeProvidersConfig(&cfg)
-		if err := validateProvidersConfig(cfg); err != nil {
-			return nil, err
-		}
-		return cfg, nil
-	case "security":
-		var cfg SecurityConfig
-		if len(raw) > 0 {
-			if err := json.Unmarshal(raw, &cfg); err != nil {
-				return nil, err
-			}
-		}
-		normalizeSecurityConfig(&cfg)
-		if err := validateSecurityConfig(cfg); err != nil {
-			return nil, err
-		}
-		return cfg, nil
-	case "mfa":
-		var cfg MFAConfig
-		if len(raw) > 0 {
-			if err := json.Unmarshal(raw, &cfg); err != nil {
-				return nil, err
-			}
-		}
-		normalizeMFAConfig(&cfg)
-		if err := validateMFAConfig(cfg); err != nil {
-			return nil, err
-		}
-		return cfg, nil
-	case "app-settings":
-		var cfg AppSettingsConfig
-		if len(raw) > 0 {
-			if err := json.Unmarshal(raw, &cfg); err != nil {
-				return nil, err
-			}
-		}
-		normalizeAppSettingsConfig(&cfg)
-		if err := validateAppSettingsConfig(cfg); err != nil {
-			return nil, err
-		}
-		return cfg, nil
-	default:
+	decoders := map[string]func(json.RawMessage) (any, error){
+		"providers":           func(r json.RawMessage) (any, error) { return parseProvidersPayload(r) },
+		"security":            func(r json.RawMessage) (any, error) { return parseSecurityPayload(r) },
+		"mfa":                 func(r json.RawMessage) (any, error) { return parseMFAPayload(r) },
+		appSettingsSectionKey: func(r json.RawMessage) (any, error) { return parseAppSettingsPayload(r) },
+	}
+	decoder, ok := decoders[key]
+	if !ok {
 		return nil, errUnknownBackupSection
 	}
+	if len(raw) == 0 {
+		raw = json.RawMessage([]byte("{}"))
+	}
+	return decoder(raw)
 }
 
 func defaultBackupSchedule() backupSchedule {
@@ -584,13 +550,31 @@ func defaultBackupSchedule() backupSchedule {
 		TimeOfDay: "02:00",
 		DayOfWeek: "sunday",
 		Minute:    0,
-		Sections:  []string{"providers", "security", "mfa", "app-settings"},
+		Sections:  defaultBackupSections,
 		Retention: 30,
 	}
 }
 
 func normalizeBackupSchedule(sched backupSchedule) (backupSchedule, error) {
-	normalized := backupSchedule{
+	normalized := normalizeScheduleFields(sched)
+	normalized = applyScheduleDefaults(normalized)
+
+	if err := validateScheduleFrequency(normalized.Frequency); err != nil {
+		return backupSchedule{}, err
+	}
+	if err := normalizeScheduleTiming(&normalized); err != nil {
+		return backupSchedule{}, err
+	}
+
+	normalized.Sections = ensureBackupSections(normalized.Sections)
+	if normalized.Retention < 0 {
+		normalized.Retention = 0
+	}
+	return normalized, nil
+}
+
+func normalizeScheduleFields(sched backupSchedule) backupSchedule {
+	return backupSchedule{
 		Enabled:   sched.Enabled,
 		Frequency: strings.ToLower(strings.TrimSpace(sched.Frequency)),
 		TimeOfDay: strings.TrimSpace(sched.TimeOfDay),
@@ -600,49 +584,59 @@ func normalizeBackupSchedule(sched backupSchedule) (backupSchedule, error) {
 		Retention: sched.Retention,
 		LastRun:   sched.LastRun,
 	}
+}
 
-	if normalized.Frequency == "" {
-		normalized.Frequency = "daily"
+func applyScheduleDefaults(sched backupSchedule) backupSchedule {
+	if sched.Frequency == "" {
+		sched.Frequency = "daily"
 	}
-	switch normalized.Frequency {
+	return sched
+}
+
+func validateScheduleFrequency(freq string) error {
+	switch freq {
 	case "hourly", "daily", "weekly":
+		return nil
 	default:
-		return backupSchedule{}, fmt.Errorf("unsupported frequency %q", normalized.Frequency)
+		return fmt.Errorf("unsupported frequency %q", freq)
+	}
+}
+
+func normalizeScheduleTiming(sched *backupSchedule) error {
+	if sched.Frequency == "hourly" {
+		if sched.Minute < 0 || sched.Minute > 59 {
+			sched.Minute = 0
+		}
+		sched.TimeOfDay = ""
+		sched.DayOfWeek = ""
+		return nil
 	}
 
-	if normalized.Retention < 0 {
-		normalized.Retention = 0
+	if sched.TimeOfDay == "" {
+		sched.TimeOfDay = "02:00"
 	}
-	if normalized.Frequency == "hourly" {
-		if normalized.Minute < 0 || normalized.Minute > 59 {
-			normalized.Minute = 0
+	if _, _, err := parseTimeOfDay(sched.TimeOfDay); err != nil {
+		return err
+	}
+	if sched.Frequency == "weekly" {
+		if sched.DayOfWeek == "" {
+			sched.DayOfWeek = "sunday"
 		}
-		normalized.TimeOfDay = ""
-		normalized.DayOfWeek = ""
+		if _, err := parseWeekday(sched.DayOfWeek); err != nil {
+			return err
+		}
 	} else {
-		if normalized.TimeOfDay == "" {
-			normalized.TimeOfDay = "02:00"
-		}
-		if _, _, err := parseTimeOfDay(normalized.TimeOfDay); err != nil {
-			return backupSchedule{}, err
-		}
-		if normalized.Frequency == "weekly" {
-			if normalized.DayOfWeek == "" {
-				normalized.DayOfWeek = "sunday"
-			}
-			if _, err := parseWeekday(normalized.DayOfWeek); err != nil {
-				return backupSchedule{}, err
-			}
-		} else {
-			normalized.DayOfWeek = ""
-		}
-		normalized.Minute = 0
+		sched.DayOfWeek = ""
 	}
+	sched.Minute = 0
+	return nil
+}
 
-	if len(normalized.Sections) == 0 {
-		normalized.Sections = []string{"providers", "security", "mfa", "app-settings"}
+func ensureBackupSections(sections []string) []string {
+	if len(sections) == 0 {
+		return defaultBackupSections
 	}
-	return normalized, nil
+	return sections
 }
 
 func normalizeBackupSections(sections []string) []string {
@@ -653,7 +647,7 @@ func normalizeBackupSections(sections []string) []string {
 	for _, section := range sections {
 		key := strings.ToLower(strings.TrimSpace(section))
 		switch key {
-		case "providers", "security", "mfa", "app-settings":
+		case "providers", "security", "mfa", appSettingsSectionKey:
 			set[key] = struct{}{}
 		}
 	}
