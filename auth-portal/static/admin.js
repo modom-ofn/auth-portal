@@ -52,6 +52,23 @@
   const backupEmptyState = document.getElementById('backup-empty');
   const backupSectionCheckboxes = Array.from(document.querySelectorAll('.backup-section-checkbox'));
   const backupFrequencyRows = Array.from(document.querySelectorAll('[data-frequency-row]'));
+
+  const usersPanel = document.getElementById('users-panel');
+  const usersReloadBtn = document.getElementById('users-reload-btn');
+  const usersTableWrapper = document.getElementById('users-table-wrapper');
+  const usersTableBody = document.getElementById('users-rows');
+  const usersEmptyState = document.getElementById('users-empty');
+  const usersSearchInput = document.getElementById('users-search');
+  const usersFilterMFA = document.getElementById('users-filter-mfa');
+  const usersFilterAdmin = document.getElementById('users-filter-admin');
+  const usersCountEl = document.getElementById('users-count');
+  const usersMfaCountEl = document.getElementById('users-mfa-count');
+  const usersAdminCountEl = document.getElementById('users-admin-count');
+  const usersRecentCountEl = document.getElementById('users-recent-count');
+  const usersLoadedAtEl = document.getElementById('users-loaded-at');
+  const userInfoModal = document.getElementById('user-info-modal');
+  const userInfoBody = document.getElementById('user-info-body');
+  const userInfoClose = document.getElementById('user-info-close');
   const appTimeZone = document.body?.dataset?.appTimezone || 'UTC';
 
   if (
@@ -95,6 +112,13 @@
     runningBackup: false,
     schedule: null,
     backups: [],
+  };
+
+  const usersState = {
+    loading: false,
+    loaded: false,
+    users: [],
+    lastLoadedAt: null,
   };
 
   const defaultHelpContent = {
@@ -296,6 +320,9 @@
     if (backupsPanel) {
       backupsPanel.hidden = true;
     }
+    if (usersPanel) {
+      usersPanel.hidden = true;
+    }
   };
 
   const showOAuthPanel = () => {
@@ -307,6 +334,9 @@
     if (backupsPanel) {
       backupsPanel.hidden = true;
     }
+    if (usersPanel) {
+      usersPanel.hidden = true;
+    }
   };
 
   const showBackupsPanel = () => {
@@ -317,6 +347,23 @@
     }
     if (backupsPanel) {
       backupsPanel.hidden = false;
+    }
+    if (usersPanel) {
+      usersPanel.hidden = true;
+    }
+  };
+
+  const showUsersPanel = () => {
+    configForm.hidden = true;
+    historyPanel.hidden = true;
+    if (oauthPanel) {
+      oauthPanel.hidden = true;
+    }
+    if (backupsPanel) {
+      backupsPanel.hidden = true;
+    }
+    if (usersPanel) {
+      usersPanel.hidden = false;
     }
   };
 
@@ -977,6 +1024,262 @@
     return `${size.toFixed(precision)} ${units[unitIndex]}`;
   };
 
+  const applyUserFilters = (users) => {
+    const query = (usersSearchInput?.value || '').toLowerCase().trim();
+    const requireMFA = Boolean(usersFilterMFA?.checked);
+    const requireAdmin = Boolean(usersFilterAdmin?.checked);
+    return (users || []).filter((user) => {
+      if (query) {
+        const haystack = `${user.username || ''} ${user.email || ''}`.toLowerCase();
+        if (!haystack.includes(query)) {
+          return false;
+        }
+      }
+      if (requireMFA && !user.mfaEnabled) {
+        return false;
+      }
+      if (requireAdmin && !user.isAdmin) {
+        return false;
+      }
+      return true;
+    });
+  };
+
+  const createPill = (label, tone = 'info') => {
+    const span = document.createElement('span');
+    span.className = `pill ${tone}`;
+    span.textContent = label;
+    return span;
+  };
+
+  const renderUserProviders = (providers) => {
+    const container = document.createElement('div');
+    container.className = 'user-providers';
+    if (!Array.isArray(providers) || !providers.length) {
+      container.textContent = '-';
+      return container;
+    }
+    providers.forEach((prov) => {
+      const parts = [prov.provider || 'media'];
+      if (prov.mediaUuid) {
+        parts.push(shortenId(prov.mediaUuid, 28));
+      }
+      const pill = createPill(parts.join(' • '), prov.mediaAccess ? 'success' : 'muted');
+      if (prov.mediaUuid) {
+        pill.title = prov.mediaUuid;
+      }
+      container.appendChild(pill);
+    });
+    return container;
+  };
+
+  const formatMaybeDate = (value) => {
+    if (!value) {
+      return '-';
+    }
+    return formatDate(value);
+  };
+
+  const buildUserDetails = (user) => {
+    const safe = user || {};
+    const lines = [];
+    const add = (label, val) => {
+      lines.push(
+        `<div class="user-info-row"><div class="user-info-label">${label}</div><div class="user-info-value">${val || '-'}</div></div>`
+      );
+    };
+
+    add('Username', safe.username || '');
+    add('Email', safe.email || '');
+    add('UUID', safe.mediaUuid || '');
+    add(
+      'Providers',
+      (safe.providers || [])
+        .map((p) => `${p.provider || 'media'} • ${p.mediaUuid || ''}`)
+        .join('<br>')
+    );
+    add('Admin', safe.isAdmin ? 'Yes' : 'No');
+    add('Admin Granted', safe.adminGrantedAt ? formatDate(safe.adminGrantedAt) : '-');
+    add('Granted By', safe.adminGrantedBy || '');
+    add('MFA Enabled', safe.mfaEnabled ? 'Yes' : 'No');
+    add('MFA Enrolled', formatMaybeDate(safe.mfaEnrolledAt));
+    add('Recovery Rotated', formatMaybeDate(safe.mfaRecoveryLastRotated));
+    if (typeof safe.recoveryCodesRemaining === 'number') {
+      add('Recovery Codes Left', String(safe.recoveryCodesRemaining));
+    }
+    add('Last Seen', formatMaybeDate(safe.lastSeenAt));
+    add('Created At', formatMaybeDate(safe.createdAt));
+    add('Updated At', formatMaybeDate(safe.updatedAt));
+    return `<div class="user-info-grid">${lines.join('')}</div>`;
+  };
+
+  const shortenId = (value, max = 22) => {
+    const raw = String(value || '').trim();
+    if (!raw) {
+      return '';
+    }
+    if (raw.length <= max) {
+      return raw;
+    }
+    const head = raw.slice(0, 6);
+    const tail = raw.slice(-4);
+    return `${head}…${tail}`;
+  };
+
+  const countRecentUsers = (users) => {
+    const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return (users || []).filter((user) => {
+      const candidate = user.lastSeenAt;
+      if (!candidate) {
+        return false;
+      }
+      const ts = new Date(candidate).getTime();
+      return Number.isFinite(ts) && ts >= threshold;
+    }).length;
+  };
+
+  const renderUsers = () => {
+    if (!usersTableBody || !usersEmptyState) {
+      return;
+    }
+    const filtered = applyUserFilters(usersState.users);
+    const total = usersState.users.length;
+    const mfaTotal = usersState.users.filter((user) => user.mfaEnabled).length;
+    const adminTotal = usersState.users.filter((user) => user.isAdmin).length;
+    const recentTotal = countRecentUsers(usersState.users);
+
+    if (usersCountEl) {
+      usersCountEl.textContent = String(total);
+    }
+    if (usersMfaCountEl) {
+      usersMfaCountEl.textContent = String(mfaTotal);
+    }
+    if (usersAdminCountEl) {
+      usersAdminCountEl.textContent = String(adminTotal);
+    }
+    if (usersRecentCountEl) {
+      usersRecentCountEl.textContent = String(recentTotal);
+    }
+    if (usersLoadedAtEl) {
+      usersLoadedAtEl.textContent = usersState.lastLoadedAt
+        ? `Loaded ${formatDate(usersState.lastLoadedAt)}`
+        : 'Not loaded';
+    }
+
+    usersTableBody.innerHTML = '';
+
+    if (!filtered.length) {
+      if (usersTableWrapper) {
+        usersTableWrapper.hidden = true;
+      }
+      usersEmptyState.hidden = false;
+      usersEmptyState.textContent = usersState.loaded
+        ? 'No users match the current filters.'
+        : 'No users found.';
+      return;
+    }
+
+    usersEmptyState.hidden = true;
+    if (usersTableWrapper) {
+      usersTableWrapper.hidden = false;
+    }
+
+    filtered.forEach((user) => {
+      const tr = document.createElement('tr');
+
+      const userTd = document.createElement('td');
+      userTd.className = 'user-cell';
+      const name = document.createElement('strong');
+      name.textContent = user.username || '(unknown)';
+      userTd.appendChild(name);
+      if (user.email) {
+        const email = document.createElement('div');
+        email.className = 'muted';
+        email.textContent = user.email;
+        userTd.appendChild(email);
+      }
+      tr.appendChild(userTd);
+
+      const providersTd = document.createElement('td');
+      providersTd.appendChild(renderUserProviders(user.providers));
+      tr.appendChild(providersTd);
+
+      const mfaTd = document.createElement('td');
+      mfaTd.className = 'user-meta-cell';
+      mfaTd.appendChild(createPill(user.mfaEnabled ? 'Enabled' : 'Disabled', user.mfaEnabled ? 'success' : 'warn'));
+      tr.appendChild(mfaTd);
+
+      const adminTd = document.createElement('td');
+      adminTd.className = 'user-meta-cell';
+      adminTd.appendChild(createPill(user.isAdmin ? 'Admin' : 'User', user.isAdmin ? 'info' : 'muted'));
+      tr.appendChild(adminTd);
+
+      const lastSeenTd = document.createElement('td');
+      lastSeenTd.textContent = formatDate(user.lastSeenAt);
+      tr.appendChild(lastSeenTd);
+
+      const actionsTd = document.createElement('td');
+      actionsTd.className = 'users-actions';
+      const infoBtn = document.createElement('button');
+      infoBtn.type = 'button';
+      infoBtn.className = 'ghost-btn';
+      infoBtn.textContent = 'Info';
+      infoBtn.addEventListener('click', () => {
+        if (!userInfoModal || !userInfoBody) {
+          return;
+        }
+        userInfoBody.innerHTML = buildUserDetails(user);
+        userInfoModal.hidden = false;
+        document.body.classList.add('modal-open');
+        if (userInfoClose) {
+          userInfoClose.focus();
+        }
+      });
+      actionsTd.appendChild(infoBtn);
+      tr.appendChild(actionsTd);
+
+      usersTableBody.appendChild(tr);
+    });
+  };
+
+  const loadUsers = async (options = {}) => {
+    if (!usersPanel || usersState.loading) {
+      return;
+    }
+    usersState.loading = true;
+    if (usersReloadBtn) {
+      usersReloadBtn.disabled = true;
+    }
+    if (usersEmptyState) {
+      usersEmptyState.hidden = false;
+      usersEmptyState.textContent = 'Loading users...';
+    }
+    try {
+      const res = await fetch('/api/admin/users', { credentials: 'same-origin' });
+      if (!res.ok) {
+        throw new Error(`Users fetch failed (${res.status})`);
+      }
+      const json = await res.json();
+      if (!(json?.ok)) {
+        throw new Error(json?.error || 'Users fetch failed');
+      }
+      usersState.users = Array.isArray(json.users) ? json.users : [];
+      usersState.loaded = true;
+      usersState.lastLoadedAt = new Date().toISOString();
+      renderUsers();
+      if (options.announce) {
+        showStatus('Users refreshed.', 'success');
+      }
+    } catch (err) {
+      showStatus(err.message || 'Users fetch failed', 'error');
+    } finally {
+      usersState.loading = false;
+      if (usersReloadBtn) {
+        usersReloadBtn.disabled = false;
+      }
+    }
+  };
+
   const renderOAuthClients = () => {
     if (!oauthRows || !oauthEmptyState || !oauthTable || !oauthTableWrapper) {
       return;
@@ -1149,7 +1452,8 @@
     }
   };
 
-  const activateSection = async (section) => {
+  const activateSection = async (rawSection) => {
+    const section = String(rawSection || '').toLowerCase();
     if (!section) {
       return;
     }
@@ -1157,6 +1461,7 @@
       section === currentSection &&
       section !== 'oauth' &&
       section !== 'backups' &&
+      section !== 'users' &&
       state.data[section]
     ) {
       return;
@@ -1176,6 +1481,15 @@
       await loadOAuthClients();
       return;
     }
+    if (section === 'users' && usersPanel) {
+      showUsersPanel();
+      if (usersState.loaded) {
+        renderUsers();
+        return;
+      }
+      await loadUsers();
+      return;
+    }
     if (section === 'backups' && backupsPanel) {
       showBackupsPanel();
       clearSecretBanner();
@@ -1189,7 +1503,7 @@
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      const section = tab.dataset.section;
+      const section = String(tab.dataset.section || '').toLowerCase();
       if (!section) {
         return;
       }
@@ -1381,6 +1695,50 @@
     updateScheduleVisibility();
     updateBackupControls();
   }
+
+  if (usersReloadBtn) {
+    usersReloadBtn.addEventListener('click', async () => {
+      await loadUsers({ announce: true });
+    });
+  }
+
+  [usersSearchInput, usersFilterMFA, usersFilterAdmin].forEach((input) => {
+    if (!input) {
+      return;
+    }
+    const handler = () => {
+      if (usersState.loaded) {
+        renderUsers();
+      }
+    };
+    input.addEventListener(input === usersSearchInput ? 'input' : 'change', handler);
+  });
+
+  const closeUserInfoModal = () => {
+    if (!userInfoModal) {
+      return;
+    }
+    userInfoModal.hidden = true;
+    document.body.classList.remove('modal-open');
+  };
+
+  if (userInfoClose) {
+    userInfoClose.addEventListener('click', closeUserInfoModal);
+  }
+  if (userInfoModal) {
+    userInfoModal.addEventListener('click', (event) => {
+      const target = event.target;
+      const isClose = target?.dataset?.userClose !== undefined;
+      if (target === userInfoModal || isClose) {
+        closeUserInfoModal();
+      }
+    });
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !userInfoModal?.hidden) {
+      closeUserInfoModal();
+    }
+  });
 
   updateHelpButton(currentSection);
   showConfigPanels();

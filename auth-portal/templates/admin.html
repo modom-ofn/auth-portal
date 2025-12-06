@@ -22,6 +22,7 @@
             <button type="button" class="admin-tab" data-section="security">Security</button>
             <button type="button" class="admin-tab" data-section="mfa">MFA</button>
             <button type="button" class="admin-tab" data-section="app-settings">App Settings</button>
+            <button type="button" class="admin-tab" data-section="users">Users</button>
             <button type="button" class="admin-tab" data-section="oauth">OAuth Clients</button>
             <button type="button" class="admin-tab" data-section="backups">Backups</button>
         </aside>
@@ -54,6 +55,56 @@
                     <ul id="history-list" class="history-list">
                         <li>Loading…</li>
                     </ul>
+                </div>
+
+                <div id="users-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <h2>Users</h2>
+                        <div class="users-header-actions">
+                            <input type="search" id="users-search" placeholder="Search username or email" aria-label="Search users">
+                            <button type="button" id="users-reload-btn" class="ghost-btn">Refresh</button>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Inspect every AuthPortal user, MFA coverage, admin access, and recent activity.</p>
+                    <div class="user-summary">
+                        <div class="user-stat">
+                            <span class="stat-label">Total users</span>
+                            <span class="stat-value" id="users-count">-</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="stat-label">MFA enabled</span>
+                            <span class="stat-value" id="users-mfa-count">-</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="stat-label">Admins</span>
+                            <span class="stat-value" id="users-admin-count">-</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="stat-label">Seen last 7d</span>
+                            <span class="stat-value" id="users-recent-count">-</span>
+                        </div>
+                    </div>
+                    <div class="user-filters">
+                        <label><input type="checkbox" id="users-filter-mfa"> MFA enabled</label>
+                        <label><input type="checkbox" id="users-filter-admin"> Admins only</label>
+                        <span class="muted" id="users-loaded-at">Not loaded</span>
+                    </div>
+                    <div id="users-empty" class="muted">Loading users...</div>
+                    <div id="users-table-wrapper" class="users-table-wrapper" hidden>
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Providers</th>
+                                    <th>MFA</th>
+                                    <th>Admin</th>
+                                    <th>Last Seen</th>
+                                    <th class="actions-col"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-rows"></tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <div id="oauth-panel" class="panel" hidden>
@@ -193,6 +244,15 @@
             <button type="button" id="help-modal-close" class="icon-btn close-btn" aria-label="Close help" title="Close">×</button>
             <h3 id="help-modal-title">Configuration Help</h3>
             <div id="help-modal-body" class="modal-body"></div>
+        </div>
+    </dialog>
+
+    <dialog id="user-info-modal" class="modal" hidden aria-labelledby="user-info-title">
+        <div class="modal-backdrop" data-user-close></div>
+        <div class="modal-dialog">
+            <button type="button" id="user-info-close" class="icon-btn close-btn" aria-label="Close user details" title="Close">x</button>
+            <h3 id="user-info-title">User Details</h3>
+            <div id="user-info-body" class="modal-body user-info-body"></div>
         </div>
     </dialog>
 

@@ -66,6 +66,11 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS mfa_recovery_last_rotated TIMESTAMPTZ
 `,
 		`
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ
+`,
+		`CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users (last_seen_at DESC);`,
+		`
 CREATE TABLE IF NOT EXISTS user_mfa (
   user_id        BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   secret_enc     TEXT,
@@ -117,13 +122,19 @@ SELECT u.id,
          WHEN media_uuid LIKE 'plex-%' THEN 'plex'
          WHEN media_uuid LIKE 'emby-%' THEN 'emby'
          WHEN media_uuid LIKE 'jellyfin-%' THEN 'jellyfin'
-         ELSE 'media'
+         ELSE NULL
        END AS provider,
        media_uuid,
        media_token,
        media_access
   FROM users u
- WHERE media_uuid IS NOT NULL AND media_uuid <> ''
+ WHERE media_uuid IS NOT NULL
+   AND media_uuid <> ''
+   AND (
+     media_uuid LIKE 'plex-%'
+     OR media_uuid LIKE 'emby-%'
+     OR media_uuid LIKE 'jellyfin-%'
+   )
 ON CONFLICT (provider, media_uuid) DO UPDATE
    SET media_token  = COALESCE(NULLIF(EXCLUDED.media_token, ''), identities.media_token),
        media_access = EXCLUDED.media_access,

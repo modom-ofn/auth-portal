@@ -254,6 +254,8 @@ func upsertUserIdentity(username, email, provider, mediaUUID, mediaToken string,
 		return 0, err
 	}
 
+	provider = normalizeIdentityProvider(provider, mediaUUID)
+
 	// Then, upsert identities row
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
@@ -517,6 +519,81 @@ func userHasMFAEnabled(mediaUUID, username string) (bool, error) {
 		return false, err
 	}
 	return enabled, nil
+}
+
+// touchUserLastSeen updates the last_seen_at marker for the user and bumps updated_at.
+func touchUserLastSeen(uuid, username string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	uuid = strings.TrimSpace(uuid)
+	username = strings.TrimSpace(username)
+
+	if uuid != "" {
+		res, err := db.ExecContext(ctx, `
+UPDATE users
+   SET last_seen_at = now(),
+       updated_at   = now()
+ WHERE media_uuid = $1
+`, uuid)
+		if err != nil {
+			return err
+		}
+		rows, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows > 0 {
+			return nil
+		}
+	}
+
+	if username == "" {
+		return sql.ErrNoRows
+	}
+
+	res, err := db.ExecContext(ctx, `
+UPDATE users
+   SET last_seen_at = now(),
+       updated_at   = now()
+ WHERE username = $1
+`, username)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// normalizeIdentityProvider resolves a provider key using the supplied value or the UUID prefix.
+func normalizeIdentityProvider(provider, mediaUUID string) string {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	switch p {
+	case "plex", "emby", "jellyfin":
+		return p
+	}
+	uuid := strings.ToLower(strings.TrimSpace(mediaUUID))
+	switch {
+	case strings.HasPrefix(uuid, "plex-"):
+		return "plex"
+	case strings.HasPrefix(uuid, "emby-"):
+		return "emby"
+	case strings.HasPrefix(uuid, "jellyfin-"):
+		return "jellyfin"
+	}
+	if mediaProviderKey != "" {
+		return strings.ToLower(strings.TrimSpace(mediaProviderKey))
+	}
+	if currentProvider != nil && currentProvider.Name() != "" {
+		return strings.ToLower(strings.TrimSpace(currentProvider.Name()))
+	}
+	return "plex"
 }
 
 func touchMFALastUsed(userID int) error {

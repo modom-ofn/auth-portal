@@ -8,7 +8,7 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.3` (latest: `v2.0.3`) | ✅ Supported | Receives all security and high-priority bug fixes. |
+| `v2.0.4` (latest: `v2.0.4`) | ✅ Supported | Receives all security and high-priority bug fixes. |
 | `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
 | `< v2.0.3` | ❌ End-of-life | Please upgrade to a supported release. |
 
@@ -45,6 +45,8 @@ AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, CSP/HSTS header
 
 Automated security checks run on this project:
 
+- Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
+- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
 - GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.

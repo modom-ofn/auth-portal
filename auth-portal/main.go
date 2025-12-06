@@ -304,12 +304,12 @@ func initProviderDeps() {
 		SetUserAdminByUsername: func(username string, admin bool) error {
 			return setUserAdminByUsername(username, admin, "jellyfin")
 		},
-		FinalizeLogin:                finalizeLoginSession,
-		SetSessionCookie:             setSessionCookie,
-		SetTempSessionCookie:         setTempSessionCookie,
-		SealToken:                    SealToken,
-		Debugf:                       Debugf,
-		Warnf:                        Warnf,
+		FinalizeLogin:        finalizeLoginSession,
+		SetSessionCookie:     setSessionCookie,
+		SetTempSessionCookie: setTempSessionCookie,
+		SealToken:            SealToken,
+		Debugf:               Debugf,
+		Warnf:                Warnf,
 	})
 }
 
@@ -438,6 +438,7 @@ func buildRouter() *mux.Router {
 	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
 	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
 	adminAPI.Handle("/config/history/{section}", adminProtected(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/users", adminProtected(http.HandlerFunc(adminUsersListHandler))).Methods("GET")
 	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
 	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
 	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
@@ -587,6 +588,10 @@ func setSessionCookieWithTTL(w http.ResponseWriter, uuid, username string, ttl t
 		Secure:   secure,
 	})
 
+	if err := touchUserLastSeen(uuid, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("session last-seen update failed for %s (%s): %v", username, uuid, err)
+	}
+
 	return nil
 }
 
@@ -701,6 +706,9 @@ func finalizeLoginSession(w http.ResponseWriter, uuid, username string) (bool, e
 			if err := setPendingMFACookie(w, uuid, username); err != nil {
 				return false, err
 			}
+			if err := touchUserLastSeen(uuid, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				log.Printf("auth finalize (pending enforced): last-seen update failed for %s (%s): %v", username, uuid, err)
+			}
 			return true, nil
 		}
 
@@ -715,6 +723,9 @@ func finalizeLoginSession(w http.ResponseWriter, uuid, username string) (bool, e
 
 	if err := setPendingMFACookie(w, uuid, username); err != nil {
 		return false, err
+	}
+	if err := touchUserLastSeen(uuid, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("auth finalize (pending mfa): last-seen update failed for %s (%s): %v", username, uuid, err)
 	}
 	return true, nil
 }
@@ -790,6 +801,13 @@ func sessionStateFromRequest(w http.ResponseWriter, r *http.Request) sessionStat
 				log.Printf("requireSessionOrPending: authorization check failed for %s (%s): %v", state.username, state.uuid, authErr)
 			}
 		}
+		if state.uuid != "" || state.username != "" {
+			go func(uuid, username string) {
+				if err := touchUserLastSeen(uuid, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+					log.Printf("session last-seen update failed for %s (%s): %v", username, uuid, err)
+				}
+			}(state.uuid, state.username)
+		}
 	} else {
 		expireSessionCookieOnly(w)
 	}
@@ -834,6 +852,13 @@ func authMiddleware(next http.Handler) http.Handler {
 				ctx := withUsername(r.Context(), claims.Username)
 				ctx = withUUID(ctx, claims.UUID)
 				ctx = withAdmin(ctx, adminFlag)
+				if claims.UUID != "" || claims.Username != "" {
+					go func(uuid, username string) {
+						if err := touchUserLastSeen(uuid, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+							log.Printf("auth middleware last-seen update failed for %s (%s): %v", username, uuid, err)
+						}
+					}(claims.UUID, claims.Username)
+				}
 				r = r.WithContext(ctx)
 			} else {
 				clearSessionCookie(w)
