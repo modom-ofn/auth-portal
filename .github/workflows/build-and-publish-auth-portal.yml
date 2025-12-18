@@ -32,19 +32,19 @@ jobs:
       IMAGE: modomofn/auth-portal
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
           fetch-depth: 0
 
       - name: Secret scan (Gitleaks)
-        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         with:
           args: detect --source . --no-git --redact
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go cache (optional)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
@@ -163,7 +163,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: auth-portal-sbom-${{ steps.vars.outputs.sha }}
           path: auth-portal-sbom.cdx.json
