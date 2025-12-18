@@ -94,12 +94,10 @@
                         <table class="users-table">
                             <thead>
                                 <tr>
-                                    <th>User</th>
-                                    <th>Providers</th>
-                                    <th>MFA</th>
-                                    <th>Admin</th>
-                                    <th>Last Seen</th>
-                                    <th class="actions-col"></th>
+                                    <th><button type="button" class="sort-btn" data-users-sort="user"><span>User</span><span class="sort-arrow">↕</span></button></th>
+                                    <th><button type="button" class="sort-btn" data-users-sort="mfa"><span>MFA</span><span class="sort-arrow">↕</span></button></th>
+                                    <th><button type="button" class="sort-btn" data-users-sort="role"><span>Admin</span><span class="sort-arrow">↕</span></button></th>
+                                    <th><button type="button" class="sort-btn" data-users-sort="lastSeen"><span>Last Seen</span><span class="sort-arrow">↕</span></button></th>
                                 </tr>
                             </thead>
                             <tbody id="users-rows"></tbody>

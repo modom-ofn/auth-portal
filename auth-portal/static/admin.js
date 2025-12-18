@@ -66,6 +66,7 @@
   const usersAdminCountEl = document.getElementById('users-admin-count');
   const usersRecentCountEl = document.getElementById('users-recent-count');
   const usersLoadedAtEl = document.getElementById('users-loaded-at');
+  const usersSortButtons = document.querySelectorAll('[data-users-sort]');
   const userInfoModal = document.getElementById('user-info-modal');
   const userInfoBody = document.getElementById('user-info-body');
   const userInfoClose = document.getElementById('user-info-close');
@@ -119,6 +120,10 @@
     loaded: false,
     users: [],
     lastLoadedAt: null,
+    sort: {
+      key: 'user',
+      dir: 'asc',
+    },
   };
 
   const defaultHelpContent = {
@@ -1052,6 +1057,89 @@
     return span;
   };
 
+  const getUserRoleWeight = (user) => {
+    if (user?.isAdmin) {
+      return 2;
+    }
+    if (user && user.mediaAccess === false) {
+      return 0;
+    }
+    return 1;
+  };
+
+  const getUserRole = (user) => {
+    if (user?.isAdmin) {
+      return { label: 'Admin', tone: 'info' };
+    }
+    if (user && user.mediaAccess === false) {
+      return { label: 'Guest', tone: 'warn' };
+    }
+    return { label: 'User', tone: 'muted' };
+  };
+
+  const compareNames = (a, b) => {
+    const nameA = String(a?.username || '').toLowerCase();
+    const nameB = String(b?.username || '').toLowerCase();
+    const primary = nameA.localeCompare(nameB);
+    if (primary !== 0) {
+      return primary;
+    }
+    return String(a?.email || '').toLowerCase().localeCompare(String(b?.email || '').toLowerCase());
+  };
+
+  const sortUsers = (users) => {
+    const direction = usersState.sort.dir === 'desc' ? -1 : 1;
+    const key = usersState.sort.key;
+    const sorted = [...(users || [])];
+
+    sorted.sort((a, b) => {
+      if (key === 'mfa') {
+        const diff = Number(a?.mfaEnabled) - Number(b?.mfaEnabled);
+        if (diff !== 0) {
+          return diff * direction;
+        }
+        return compareNames(a, b);
+      }
+      if (key === 'role') {
+        const diff = getUserRoleWeight(a) - getUserRoleWeight(b);
+        if (diff !== 0) {
+          return diff * direction;
+        }
+        return compareNames(a, b);
+      }
+      if (key === 'lastSeen') {
+        const aTime = a?.lastSeenAt ? new Date(a.lastSeenAt).getTime() : null;
+        const bTime = b?.lastSeenAt ? new Date(b.lastSeenAt).getTime() : null;
+        if (aTime === bTime) {
+          return compareNames(a, b);
+        }
+        if (!aTime) {
+          return 1;
+        }
+        if (!bTime) {
+          return -1;
+        }
+        const diff = aTime - bTime;
+        return direction === -1 ? -diff : diff;
+      }
+      return compareNames(a, b) * direction;
+    });
+
+    return sorted;
+  };
+
+  const updateSortIndicators = () => {
+    usersSortButtons.forEach((btn) => {
+      const key = btn.dataset.usersSort;
+      const indicator = btn.querySelector('.sort-arrow');
+      const active = key === usersState.sort.key;
+      btn.toggleAttribute('data-sort-active', active);
+      if (indicator) {
+        indicator.textContent = active ? (usersState.sort.dir === 'asc' ? '↑' : '↓') : '↕';
+      }
+    });
+  };
+
   const renderUserProviders = (providers) => {
     const container = document.createElement('div');
     container.className = 'user-providers';
@@ -1098,7 +1186,7 @@
         .map((p) => `${p.provider || 'media'} • ${p.mediaUuid || ''}`)
         .join('<br>')
     );
-    add('Admin', safe.isAdmin ? 'Yes' : 'No');
+    add('Role', getUserRole(safe).label);
     add('Admin Granted', safe.adminGrantedAt ? formatDate(safe.adminGrantedAt) : '-');
     add('Granted By', safe.adminGrantedBy || '');
     add('MFA Enabled', safe.mfaEnabled ? 'Yes' : 'No');
@@ -1111,6 +1199,18 @@
     add('Created At', formatMaybeDate(safe.createdAt));
     add('Updated At', formatMaybeDate(safe.updatedAt));
     return `<div class="user-info-grid">${lines.join('')}</div>`;
+  };
+
+  const showUserInfo = (user) => {
+    if (!userInfoModal || !userInfoBody) {
+      return;
+    }
+    userInfoBody.innerHTML = buildUserDetails(user);
+    userInfoModal.hidden = false;
+    document.body.classList.add('modal-open');
+    if (userInfoClose) {
+      userInfoClose.focus();
+    }
   };
 
   const shortenId = (value, max = 22) => {
@@ -1143,10 +1243,12 @@
       return;
     }
     const filtered = applyUserFilters(usersState.users);
+    const sorted = sortUsers(filtered);
     const total = usersState.users.length;
     const mfaTotal = usersState.users.filter((user) => user.mfaEnabled).length;
     const adminTotal = usersState.users.filter((user) => user.isAdmin).length;
     const recentTotal = countRecentUsers(usersState.users);
+    updateSortIndicators();
 
     if (usersCountEl) {
       usersCountEl.textContent = String(total);
@@ -1184,14 +1286,17 @@
       usersTableWrapper.hidden = false;
     }
 
-    filtered.forEach((user) => {
+    sorted.forEach((user) => {
       const tr = document.createElement('tr');
 
       const userTd = document.createElement('td');
       userTd.className = 'user-cell';
-      const name = document.createElement('strong');
-      name.textContent = user.username || '(unknown)';
-      userTd.appendChild(name);
+      const nameBtn = document.createElement('button');
+      nameBtn.type = 'button';
+      nameBtn.className = 'user-name-btn';
+      nameBtn.textContent = user.username || '(unknown)';
+      nameBtn.addEventListener('click', () => showUserInfo(user));
+      userTd.appendChild(nameBtn);
       if (user.email) {
         const email = document.createElement('div');
         email.className = 'muted';
@@ -1200,10 +1305,6 @@
       }
       tr.appendChild(userTd);
 
-      const providersTd = document.createElement('td');
-      providersTd.appendChild(renderUserProviders(user.providers));
-      tr.appendChild(providersTd);
-
       const mfaTd = document.createElement('td');
       mfaTd.className = 'user-meta-cell';
       mfaTd.appendChild(createPill(user.mfaEnabled ? 'Enabled' : 'Disabled', user.mfaEnabled ? 'success' : 'warn'));
@@ -1211,32 +1312,13 @@
 
       const adminTd = document.createElement('td');
       adminTd.className = 'user-meta-cell';
-      adminTd.appendChild(createPill(user.isAdmin ? 'Admin' : 'User', user.isAdmin ? 'info' : 'muted'));
+      const role = getUserRole(user);
+      adminTd.appendChild(createPill(role.label, role.tone));
       tr.appendChild(adminTd);
 
       const lastSeenTd = document.createElement('td');
       lastSeenTd.textContent = formatDate(user.lastSeenAt);
       tr.appendChild(lastSeenTd);
-
-      const actionsTd = document.createElement('td');
-      actionsTd.className = 'users-actions';
-      const infoBtn = document.createElement('button');
-      infoBtn.type = 'button';
-      infoBtn.className = 'ghost-btn';
-      infoBtn.textContent = 'Info';
-      infoBtn.addEventListener('click', () => {
-        if (!userInfoModal || !userInfoBody) {
-          return;
-        }
-        userInfoBody.innerHTML = buildUserDetails(user);
-        userInfoModal.hidden = false;
-        document.body.classList.add('modal-open');
-        if (userInfoClose) {
-          userInfoClose.focus();
-        }
-      });
-      actionsTd.appendChild(infoBtn);
-      tr.appendChild(actionsTd);
 
       usersTableBody.appendChild(tr);
     });
@@ -1699,6 +1781,26 @@
   if (usersReloadBtn) {
     usersReloadBtn.addEventListener('click', async () => {
       await loadUsers({ announce: true });
+    });
+  }
+
+  if (usersSortButtons.length) {
+    usersSortButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.usersSort;
+        if (!key) {
+          return;
+        }
+        if (usersState.sort.key === key) {
+          usersState.sort.dir = usersState.sort.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          usersState.sort.key = key;
+          usersState.sort.dir = key === 'lastSeen' ? 'desc' : 'asc';
+        }
+        if (usersState.loaded) {
+          renderUsers();
+        }
+      });
     });
   }
 
