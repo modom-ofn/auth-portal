@@ -27,12 +27,11 @@ const (
 	unexpectedErrorCodeFmt   = "unexpected error code: got %q want %q"
 	unexpectedDescriptionFmt = "unexpected description: got %q want %q"
 
-	testClientID      = "client-123"
-	testClientName    = "Test App"
-	testCallbackURL   = "https://example.com/callback"
-	testTokenPath     = "/oidc/token"
-	headerContentType = "Content-Type"
-	mimeFormURLEnc    = "application/x-www-form-urlencoded"
+	testClientID    = "client-123"
+	testClientName  = "Test App"
+	testCallbackURL = "https://example.com/callback"
+	testTokenPath   = "/oidc/token"
+	mimeFormURLEnc  = "application/x-www-form-urlencoded"
 )
 
 func TestFinishAuthorizeFlowSuccess(t *testing.T) {

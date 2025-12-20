@@ -25,6 +25,7 @@ type adminUser struct {
 	MediaAccess            bool                `json:"mediaAccess"`
 	Providers              []adminUserIdentity `json:"providers,omitempty"`
 	IsAdmin                bool                `json:"isAdmin"`
+	Roles                  []string            `json:"roles,omitempty"`
 	AdminGrantedAt         *time.Time          `json:"adminGrantedAt,omitempty"`
 	AdminGrantedBy         string              `json:"adminGrantedBy,omitempty"`
 	MFAEnabled             bool                `json:"mfaEnabled"`
@@ -146,6 +147,10 @@ SELECT u.id, u.username, u.email, u.media_uuid, u.media_access, u.is_admin,
 	if err != nil {
 		return nil, err
 	}
+	roleMap, err := loadAdminUserRoles(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
 	recoveryCounts, err := loadAdminRecoveryCounts(ctx, userIDs)
 	if err != nil {
 		return nil, err
@@ -168,6 +173,7 @@ SELECT u.id, u.username, u.email, u.media_uuid, u.media_access, u.is_admin,
 				MediaAccess: u.MediaAccess,
 			}}
 		}
+		u.Roles = roleMap[u.ID]
 		if remaining, ok := recoveryCounts[u.ID]; ok && remaining > 0 {
 			u.RecoveryCodesRemaining = remaining
 		}
@@ -214,6 +220,39 @@ SELECT user_id, provider, media_uuid, media_access
 	}
 
 	return result, nil
+}
+
+func loadAdminUserRoles(ctx context.Context, userIDs []int) (map[int][]string, error) {
+	result := make(map[int][]string, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := db.QueryContext(ctx, `
+SELECT ur.user_id, r.name
+  FROM user_roles ur
+  JOIN roles r ON r.id = ur.role_id
+ WHERE ur.user_id = ANY($1)
+ ORDER BY lower(r.name)
+`, pq.Array(userIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int
+		var role string
+		if err := rows.Scan(&userID, &role); err != nil {
+			return nil, err
+		}
+		role = strings.TrimSpace(role)
+		if role == "" {
+			continue
+		}
+		result[userID] = append(result[userID], role)
+	}
+	return result, rows.Err()
 }
 
 func loadAdminRecoveryCounts(ctx context.Context, userIDs []int) (map[int]int, error) {

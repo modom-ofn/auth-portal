@@ -139,8 +139,9 @@ func setUserAdminByUsername(username string, admin bool, grantedBy string) error
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
+	var userID int
 	if admin {
-		res, err := db.ExecContext(ctx, `
+		err := db.QueryRowContext(ctx, `
 UPDATE users
    SET is_admin = TRUE,
        admin_granted_at = COALESCE(admin_granted_at, now()),
@@ -148,21 +149,19 @@ UPDATE users
        updated_at = now(),
        session_version = session_version + 1
  WHERE username = $1
-`, username, strings.TrimSpace(grantedBy))
+ RETURNING id
+`, username, strings.TrimSpace(grantedBy)).Scan(&userID)
 		if err != nil {
 			return err
 		}
-		rows, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if rows == 0 {
-			return sql.ErrNoRows
+		// Best-effort: align role mapping for legacy admin flag.
+		if roleErr := ensureUserRoleByID(ctx, userID, roleAdminName, grantedBy); roleErr != nil && !errors.Is(roleErr, sql.ErrNoRows) {
+			return roleErr
 		}
 		return nil
 	}
 
-	res, err := db.ExecContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 UPDATE users
    SET is_admin = FALSE,
        admin_granted_at = NULL,
@@ -170,16 +169,13 @@ UPDATE users
        updated_at = now(),
        session_version = session_version + 1
  WHERE username = $1
-`, username)
+ RETURNING id
+`, username).Scan(&userID)
 	if err != nil {
 		return err
 	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return sql.ErrNoRows
+	if roleErr := removeUserRoleByID(ctx, userID, roleAdminName); roleErr != nil && !errors.Is(roleErr, sql.ErrNoRows) {
+		return roleErr
 	}
 	return nil
 }
@@ -625,7 +621,11 @@ func userSessionState(uuid, username string) (bool, int64, error) {
 	uuid = strings.TrimSpace(uuid)
 	if uuid != "" {
 		if u, err := getUserByUUIDPreferred(uuid); err == nil {
-			return u.IsAdmin, u.SessionVersion, nil
+			adminFlag, adminErr := adminFlagFromUser(u)
+			if adminErr != nil {
+				return false, 0, adminErr
+			}
+			return adminFlag, u.SessionVersion, nil
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return false, 0, err
 		}
@@ -633,7 +633,11 @@ func userSessionState(uuid, username string) (bool, int64, error) {
 	username = strings.TrimSpace(username)
 	if username != "" {
 		if u, err := userByUsername(username); err == nil {
-			return u.IsAdmin, u.SessionVersion, nil
+			adminFlag, adminErr := adminFlagFromUser(u)
+			if adminErr != nil {
+				return false, 0, adminErr
+			}
+			return adminFlag, u.SessionVersion, nil
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return false, 0, err
 		}

@@ -161,6 +161,10 @@ func main() {
 	configStore, runtimeCfg = mustInitConfigStore(db)
 	applyRuntimeConfig(runtimeCfg)
 
+	if err := ensureRBACSeedData(); err != nil {
+		log.Fatalf("RBAC initialization failed: %v", err)
+	}
+
 	backupSvc = mustInitBackupService(configStore)
 	oauthService = newOAuthService()
 
@@ -431,26 +435,33 @@ func buildRouter() *mux.Router {
 	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
 	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
 
-	adminProtected := func(h http.Handler) http.Handler {
-		return authMiddleware(requireAdmin(h))
+	adminGuard := func(perms ...string) func(http.Handler) http.Handler {
+		return func(h http.Handler) http.Handler {
+			return authMiddleware(requireAdminOnly(requirePermission(perms...)(h)))
+		}
 	}
 	adminAPI := r.PathPrefix("/api/admin").Subrouter()
-	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
-	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
-	adminAPI.Handle("/config/history/{section}", adminProtected(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
-	adminAPI.Handle("/users", adminProtected(http.HandlerFunc(adminUsersListHandler))).Methods("GET")
-	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
-	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
-	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
-	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientDelete))).Methods("DELETE")
-	adminAPI.Handle("/oauth/clients/{id}/rotate-secret", adminProtected(http.HandlerFunc(adminOAuthClientRotateSecret))).Methods("POST")
-	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsListHandler))).Methods("GET")
-	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsCreateHandler))).Methods("POST")
-	adminAPI.Handle("/backups/schedule", adminProtected(http.HandlerFunc(adminBackupsScheduleUpdate))).Methods("PUT")
-	adminAPI.Handle("/backups/{name}/restore", adminProtected(http.HandlerFunc(adminBackupsRestoreHandler))).Methods("POST")
-	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
-	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
-	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
+	adminAPI.Handle("/config", adminGuard(permConfigRead)(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
+	adminAPI.Handle("/config/{section}", adminGuard(permConfigWrite)(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
+	adminAPI.Handle("/config/history/{section}", adminGuard(permConfigRead)(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/users", adminGuard(permUsersRead)(http.HandlerFunc(adminUsersListHandler))).Methods("GET")
+	adminAPI.Handle("/users/{id:[0-9]+}/roles", adminGuard(permUsersManage)(http.HandlerFunc(adminUserRoleHandler))).Methods("POST")
+	adminAPI.Handle("/oauth/clients", adminGuard(permOAuthRead)(http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
+	adminAPI.Handle("/oauth/clients", adminGuard(permOAuthManage)(http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
+	adminAPI.Handle("/oauth/clients/{id}", adminGuard(permOAuthManage)(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
+	adminAPI.Handle("/oauth/clients/{id}", adminGuard(permOAuthManage)(http.HandlerFunc(adminOAuthClientDelete))).Methods("DELETE")
+	adminAPI.Handle("/oauth/clients/{id}/rotate-secret", adminGuard(permOAuthManage)(http.HandlerFunc(adminOAuthClientRotateSecret))).Methods("POST")
+	adminAPI.Handle("/backups", adminGuard(permBackupsRead)(http.HandlerFunc(adminBackupsListHandler))).Methods("GET")
+	adminAPI.Handle("/backups", adminGuard(permBackupsManage)(http.HandlerFunc(adminBackupsCreateHandler))).Methods("POST")
+	adminAPI.Handle("/backups/schedule", adminGuard(permBackupsManage)(http.HandlerFunc(adminBackupsScheduleUpdate))).Methods("PUT")
+	adminAPI.Handle("/backups/{name}/restore", adminGuard(permBackupsManage)(http.HandlerFunc(adminBackupsRestoreHandler))).Methods("POST")
+	adminAPI.Handle("/backups/{name}", adminGuard(permBackupsRead)(http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
+	adminAPI.Handle("/backups/{name}", adminGuard(permBackupsManage)(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
+	adminAPI.Handle("/roles", adminGuard(permUsersRead)(http.HandlerFunc(adminRolesListHandler))).Methods("GET")
+	adminAPI.Handle("/roles", adminGuard(permAdminAll)(http.HandlerFunc(adminRolesCreateHandler))).Methods("POST")
+	adminAPI.Handle("/roles/{name}", adminGuard(permAdminAll)(http.HandlerFunc(adminRoleUpdateHandler))).Methods("PUT")
+	adminAPI.Handle("/roles/{name}", adminGuard(permAdminAll)(http.HandlerFunc(adminRoleDeleteHandler))).Methods("DELETE")
+	r.Handle("/admin", adminGuard(permAdminAccess)(http.HandlerFunc(adminPageHandler))).Methods("GET")
 
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
 

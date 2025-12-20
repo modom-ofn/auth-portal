@@ -65,7 +65,7 @@
                             <button type="button" id="users-reload-btn" class="ghost-btn">Refresh</button>
                         </div>
                     </div>
-                    <p class="panel-helper">Inspect every AuthPortal user, MFA coverage, admin access, and recent activity.</p>
+                    <p class="panel-helper">Inspect every AuthPortal user, MFA coverage, admin access, roles, and recent activity.</p>
                     <div class="user-summary">
                         <div class="user-stat">
                             <span class="stat-label">Total users</span>
@@ -96,12 +96,57 @@
                                 <tr>
                                     <th><button type="button" class="sort-btn" data-users-sort="user"><span>User</span><span class="sort-arrow">↕</span></button></th>
                                     <th><button type="button" class="sort-btn" data-users-sort="mfa"><span>MFA</span><span class="sort-arrow">↕</span></button></th>
-                                    <th><button type="button" class="sort-btn" data-users-sort="role"><span>Admin</span><span class="sort-arrow">↕</span></button></th>
+                                    <th><button type="button" class="sort-btn" data-users-sort="role"><span>Roles</span><span class="sort-arrow">↕</span></button></th>
                                     <th><button type="button" class="sort-btn" data-users-sort="lastSeen"><span>Last Seen</span><span class="sort-arrow">↕</span></button></th>
                                 </tr>
                             </thead>
                             <tbody id="users-rows"></tbody>
                         </table>
+                    </div>
+                    <div class="panel-subsection roles-section">
+                        <div class="roles-top">
+                            <div>
+                                <h3>Custom Roles &amp; Permissions</h3>
+                                <p class="panel-helper">Create explicit permissions for downstream apps, then assign them to authorized users.</p>
+                            </div>
+                            <div class="roles-actions">
+                                <button type="button" id="roles-help-btn" class="icon-btn" aria-label="Show roles help" title="Show roles help">?</button>
+                                <button type="button" id="roles-reload-btn" class="ghost-btn">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="roles-grid">
+                            <div class="role-list-card glass-card">
+                                <div id="roles-empty" class="muted">No roles loaded.</div>
+                                <div id="roles-list" class="roles-list" hidden></div>
+                            </div>
+                            <div class="role-form-card glass-card">
+                                <div class="role-form-header">
+                                    <div>
+                                        <p class="muted tight">Define a role name and one or more permissions.</p>
+                                        <p class="muted tight">Reserved: <code>admin:all</code>, <code>admin:access</code>.</p>
+                                    </div>
+                                </div>
+                                <form id="role-create-form" class="role-form" autocomplete="off">
+                                    <div class="form-row inline">
+                                        <label for="role-name">Role Name</label>
+                                        <input id="role-name" type="text" placeholder="analytics-viewer" required>
+                                    </div>
+                                    <div class="form-row inline">
+                                        <label for="role-description">Description</label>
+                                        <input id="role-description" type="text" placeholder="Read-only analytics dashboards">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="role-permissions">Permissions</label>
+                                        <textarea id="role-permissions" rows="2" placeholder="reports:view analytics:read" required></textarea>
+                                        <span class="field-hint">Space/comma separated. Use concise verbs/nouns for downstream checks.</span>
+                                    </div>
+                                    <div class="admin-actions">
+                                        <button id="role-create-btn" type="submit">Create Role</button>
+                                        <button id="role-cancel-btn" type="button" class="ghost-btn" hidden>Cancel</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

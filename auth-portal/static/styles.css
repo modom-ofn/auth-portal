@@ -303,6 +303,31 @@ a:hover{opacity:.9}
 .admin-actions button{padding:.7rem 1.4rem;border-radius:10px;border:1px solid var(--brand);background:var(--brand);color:#1d1200;font-weight:600;cursor:pointer;transition:opacity .2s ease,transform .2s ease;}
 .admin-actions button:disabled{opacity:.55;cursor:not-allowed;transform:none;}
 .admin-actions button:hover:not(:disabled){transform:translateY(-1px);}
+
+/* Roles & permissions */
+.roles-section{margin-top:2rem;display:flex;flex-direction:column;gap:1rem;}
+.roles-top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.roles-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.9fr);gap:1rem;}
+.glass-card{background:linear-gradient(160deg, rgba(17,24,39,.9), rgba(17,24,39,.82));border:1px solid var(--border);border-radius:12px;padding:1rem;box-shadow:0 12px 30px rgba(0,0,0,.25);}
+.roles-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.75rem;}
+.role-card{border:1px solid var(--border);border-radius:10px;padding:.85rem;background:linear-gradient(180deg, rgba(24,32,48,.9), rgba(17,24,39,.9));}
+.role-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.35rem;}
+.role-card-title{font-weight:700;letter-spacing:.2px;}
+.role-card-perms{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.35rem;}
+.roles-actions{display:flex;gap:.5rem;align-items:center;}
+.role-form-card{display:flex;flex-direction:column;gap:.75rem;}
+.role-form .form-row.inline{display:flex;flex-direction:column;}
+.role-form .form-row label{margin-bottom:.25rem;color:var(--muted);}
+.role-form .form-row input,.role-form .form-row textarea{width:100%;}
+.tight{margin:0;}
+.roles-wrap{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;}
+.role-checkbox-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.75rem;margin-top:.5rem;}
+.role-checkbox-card{border:1px solid var(--border);border-radius:10px;padding:.85rem;background:linear-gradient(180deg, rgba(16,25,40,.95), rgba(15,23,42,.9));box-shadow:0 8px 24px rgba(0,0,0,.18);}
+.role-checkbox-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem;}
+.role-checkbox-toggle{display:flex;align-items:center;gap:.5rem;font-weight:700;cursor:pointer;}
+.role-checkbox-toggle input{width:18px;height:18px;}
+.role-checkbox-perms{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.35rem;}
+.role-card-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.5rem;}
 .config-tools{display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;}
 .config-tools .ghost-btn{min-width:110px;}
 .config-tools input[type="file"]{display:none;}
