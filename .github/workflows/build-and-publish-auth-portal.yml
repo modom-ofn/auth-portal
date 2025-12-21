@@ -73,6 +73,7 @@ jobs:
 
           SHA="${GITHUB_SHA::7}"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "is_main=$([[ \"$GITHUB_REF\" == \"refs/heads/main\" ]] && echo true || echo false)" >> $GITHUB_OUTPUT
 
           VERSION_FILE="VERSION"
           VERSION=""
@@ -131,13 +132,15 @@ jobs:
           provenance: true
           sbom: true
           tags: |
-            ${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}
-            ${{ steps.vars.outputs.channel && format('{0}:{1}', env.IMAGE, steps.vars.outputs.channel) || '' }}
-            ${{ steps.vars.outputs.version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.version_tag) || '' }}
-            ${{ steps.vars.outputs.dev_version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.dev_version_tag) || '' }}
-            ${{ steps.vars.outputs.ver && format('{0}:{1}', env.IMAGE, steps.vars.outputs.ver) || '' }}
-            ${{ steps.vars.outputs.minor && format('{0}:{1}', env.IMAGE, steps.vars.outputs.minor) || '' }}
-            ${{ steps.vars.outputs.major && format('{0}:{1}', env.IMAGE, steps.vars.outputs.major) || '' }}
+            ${{ steps.vars.outputs.is_main == 'true' && steps.vars.outputs.channel && format('{0}:{1}', env.IMAGE, steps.vars.outputs.channel) || '' }}
+            ${{ steps.vars.outputs.is_main == 'true' && steps.vars.outputs.version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.version_tag) || '' }}
+            ${{ steps.vars.outputs.is_main != 'true' && format('{0}:{1}', env.IMAGE, steps.vars.outputs.sha) || '' }}
+            ${{ steps.vars.outputs.is_main != 'true' && steps.vars.outputs.channel && format('{0}:{1}', env.IMAGE, steps.vars.outputs.channel) || '' }}
+            ${{ steps.vars.outputs.is_main != 'true' && steps.vars.outputs.version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.version_tag) || '' }}
+            ${{ steps.vars.outputs.is_main != 'true' && steps.vars.outputs.dev_version_tag && format('{0}:{1}', env.IMAGE, steps.vars.outputs.dev_version_tag) || '' }}
+            ${{ steps.vars.outputs.is_main != 'true' && steps.vars.outputs.ver && format('{0}:{1}', env.IMAGE, steps.vars.outputs.ver) || '' }}
+            ${{ steps.vars.outputs.is_main != 'true' && steps.vars.outputs.minor && format('{0}:{1}', env.IMAGE, steps.vars.outputs.minor) || '' }}
+            ${{ steps.vars.outputs.is_main != 'true' && steps.vars.outputs.major && format('{0}:{1}', env.IMAGE, steps.vars.outputs.major) || '' }}
 
       - name: Install Syft
         if: github.event_name != 'pull_request'
