@@ -187,6 +187,24 @@
                                 <div class="form-row toggle-row">
                                     <label><input type="checkbox" id="ldap-starttls"> Use StartTLS</label>
                                 </div>
+                                <div class="form-row toggle-row">
+                                    <label><input type="checkbox" id="ldap-auto-sync"> Auto-sync after role/user changes</label>
+                                    <span class="field-hint">Runs in the background with a debounce window.</span>
+                                </div>
+                                <div class="form-row inline">
+                                    <label for="ldap-debounce">Change debounce</label>
+                                    <input id="ldap-debounce" type="text" placeholder="30s">
+                                    <span class="field-hint">Minimum 5s. Use Go duration format (e.g., 15s, 45s).</span>
+                                </div>
+                                <div class="form-row toggle-row">
+                                    <label><input type="checkbox" id="ldap-scheduled-enabled"> Enable fallback schedule</label>
+                                    <span class="field-hint">Runs even if no changes occur.</span>
+                                </div>
+                                <div class="form-row inline">
+                                    <label for="ldap-scheduled-interval">Fallback interval</label>
+                                    <input id="ldap-scheduled-interval" type="text" placeholder="30m">
+                                    <span class="field-hint">Minimum 5m. Use Go duration format (e.g., 15m, 30m, 1h).</span>
+                                </div>
                                 <div class="form-row">
                                     <label for="ldap-mappings-input">Group → Role mappings</label>
                                     <textarea id="ldap-mappings-input" rows="3" placeholder="media-admins: admin&#10;media-analytics: analytics-read"></textarea>
@@ -206,6 +224,7 @@
                                 <div class="ldap-status">
                                     <div class="muted" id="ldap-sync-status">Sync trigger is disabled until configured.</div>
                                     <div class="muted tight" id="ldap-sync-updated"></div>
+                                    <div class="muted tight" id="ldap-sync-next"></div>
                                 </div>
                                 <div class="ldap-notes">
                                     <p class="muted tight">Guests are never written to LDAP. Only authorized users are mapped.</p>

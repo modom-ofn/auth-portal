@@ -7,13 +7,18 @@ import (
 )
 
 type adminLDAPStatus struct {
-	OK       bool               `json:"ok"`
-	Enabled  bool               `json:"enabled"`
-	Running  bool               `json:"running"`
-	Config   ldapConfigPublic   `json:"config"`
-	Mappings []LDAPGroupMapping `json:"mappings"`
-	LastRun  *ldapSyncResult    `json:"lastRun,omitempty"`
-	Error    string             `json:"error,omitempty"`
+	OK                   bool               `json:"ok"`
+	Enabled              bool               `json:"enabled"`
+	Running              bool               `json:"running"`
+	Config               ldapConfigPublic   `json:"config"`
+	Mappings             []LDAPGroupMapping `json:"mappings"`
+	LastRun              *ldapSyncResult    `json:"lastRun,omitempty"`
+	Error                string             `json:"error,omitempty"`
+	AutoSyncOnChange     bool               `json:"autoSyncOnChange"`
+	AutoSyncDebounce     string             `json:"autoSyncDebounce,omitempty"`
+	ScheduledSyncEnabled bool               `json:"scheduledSyncEnabled"`
+	ScheduledSyncEvery   string             `json:"scheduledSyncEvery,omitempty"`
+	NextScheduledRun     *time.Time         `json:"nextScheduledRun,omitempty"`
 }
 
 type ldapConfigPublic struct {
@@ -26,10 +31,22 @@ type ldapConfigPublic struct {
 func adminLDAPStatusHandler(w http.ResponseWriter, _ *http.Request) {
 	cfg := currentRuntimeConfig().LDAP
 	status := adminLDAPStatus{
-		OK:       true,
-		Enabled:  cfg.Enabled,
-		Config:   ldapConfigPublic{Host: cfg.Host, BaseDN: cfg.BaseDN, GroupBaseDN: cfg.GroupBaseDN, StartTLS: cfg.StartTLS},
-		Mappings: cfg.GroupRoleMappings,
+		OK:                   true,
+		Enabled:              cfg.Enabled,
+		Config:               ldapConfigPublic{Host: cfg.Host, BaseDN: cfg.BaseDN, GroupBaseDN: cfg.GroupBaseDN, StartTLS: cfg.StartTLS},
+		Mappings:             cfg.GroupRoleMappings,
+		AutoSyncOnChange:     cfg.Enabled && cfg.AutoSyncOnChange,
+		AutoSyncDebounce:     cfg.AutoSyncDebounce,
+		ScheduledSyncEvery:   cfg.ScheduledSyncInterval,
+		ScheduledSyncEnabled: cfg.Enabled && cfg.ScheduledSyncEnabled,
+	}
+
+	autoOn, schedOn, _, _, next := ldapScheduleSnapshot()
+	status.AutoSyncOnChange = status.AutoSyncOnChange && autoOn
+	status.ScheduledSyncEnabled = status.ScheduledSyncEnabled && schedOn
+	if status.ScheduledSyncEnabled && !next.IsZero() {
+		nextCopy := next
+		status.NextScheduledRun = &nextCopy
 	}
 
 	ldapState.mu.Lock()
@@ -58,33 +75,40 @@ func adminLDAPSyncHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ldapState.mu.Lock()
-	if ldapState.running {
+	if !ldapMarkRunning() {
+		ldapState.mu.Lock()
 		last := ldapState.last
 		ldapState.mu.Unlock()
 		respondJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": "ldap sync already running", "lastRun": last})
 		return
 	}
-	ldapState.running = true
-	ldapState.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 
 	result := runLDAPSync(ctx, cfg)
 
-	ldapState.mu.Lock()
-	ldapState.running = false
-	ldapState.last = result
-	ldapState.mu.Unlock()
+	ldapFinishRun(result)
+	ldapScheduler.afterRun()
 
 	resp := adminLDAPStatus{
-		OK:       result.Success,
-		Enabled:  cfg.Enabled,
-		Running:  false,
-		Config:   ldapConfigPublic{Host: cfg.Host, BaseDN: cfg.BaseDN, GroupBaseDN: cfg.GroupBaseDN, StartTLS: cfg.StartTLS},
-		Mappings: cfg.GroupRoleMappings,
-		LastRun:  &result,
+		OK:                   result.Success,
+		Enabled:              cfg.Enabled,
+		Running:              false,
+		Config:               ldapConfigPublic{Host: cfg.Host, BaseDN: cfg.BaseDN, GroupBaseDN: cfg.GroupBaseDN, StartTLS: cfg.StartTLS},
+		Mappings:             cfg.GroupRoleMappings,
+		LastRun:              &result,
+		AutoSyncOnChange:     cfg.Enabled && cfg.AutoSyncOnChange,
+		AutoSyncDebounce:     cfg.AutoSyncDebounce,
+		ScheduledSyncEnabled: cfg.Enabled && cfg.ScheduledSyncEnabled,
+		ScheduledSyncEvery:   cfg.ScheduledSyncInterval,
+	}
+	autoOn, schedOn, _, _, next := ldapScheduleSnapshot()
+	resp.AutoSyncOnChange = resp.AutoSyncOnChange && autoOn
+	resp.ScheduledSyncEnabled = resp.ScheduledSyncEnabled && schedOn
+	if resp.ScheduledSyncEnabled && !next.IsZero() {
+		nextCopy := next
+		resp.NextScheduledRun = &nextCopy
 	}
 	if !result.Success {
 		resp.Error = result.Message

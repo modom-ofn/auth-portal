@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -71,14 +72,18 @@ type LDAPGroupMapping struct {
 
 // LDAPConfig captures connection and mapping settings for LDAP sync.
 type LDAPConfig struct {
-	Enabled           bool               `json:"enabled"`
-	Host              string             `json:"host"`
-	AdminDN           string             `json:"adminDn"`
-	Password          string             `json:"password,omitempty"`
-	BaseDN            string             `json:"baseDn"`
-	GroupBaseDN       string             `json:"groupBaseDn"`
-	StartTLS          bool               `json:"startTls"`
-	GroupRoleMappings []LDAPGroupMapping `json:"groupRoleMappings"`
+	Enabled               bool               `json:"enabled"`
+	Host                  string             `json:"host"`
+	AdminDN               string             `json:"adminDn"`
+	Password              string             `json:"password,omitempty"`
+	BaseDN                string             `json:"baseDn"`
+	GroupBaseDN           string             `json:"groupBaseDn"`
+	StartTLS              bool               `json:"startTls"`
+	GroupRoleMappings     []LDAPGroupMapping `json:"groupRoleMappings"`
+	AutoSyncOnChange      bool               `json:"autoSyncOnChange"`
+	AutoSyncDebounce      string             `json:"autoSyncDebounce"`
+	ScheduledSyncEnabled  bool               `json:"scheduledSyncEnabled"`
+	ScheduledSyncInterval string             `json:"scheduledSyncInterval"`
 }
 
 // RuntimeConfig represents all typed configuration sections with revision metadata.
@@ -216,14 +221,17 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 func defaultLDAPConfig() LDAPConfig {
 	mappings := parseLDAPGroupMappingsEnv(envOr("LDAP_GROUP_ROLE_MAP", ""))
 	cfg := LDAPConfig{
-		Enabled:           envBool("LDAP_ENABLED", false),
-		Host:              envOr("LDAP_HOST", "ldap://openldap:389"),
-		AdminDN:           envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local"),
-		Password:          envOr("LDAP_ADMIN_PASSWORD", ""),
-		BaseDN:            envOr("LDAP_BASE_DN", "ou=users,dc=authportal,dc=local"),
-		GroupBaseDN:       envOr("LDAP_GROUP_BASE_DN", ""),
-		StartTLS:          envBool("LDAP_STARTTLS", false),
-		GroupRoleMappings: mappings,
+		Enabled:               envBool("LDAP_ENABLED", false),
+		Host:                  envOr("LDAP_HOST", "ldap://openldap:389"),
+		AdminDN:               envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local"),
+		Password:              envOr("LDAP_ADMIN_PASSWORD", ""),
+		BaseDN:                envOr("LDAP_BASE_DN", "ou=users,dc=authportal,dc=local"),
+		GroupBaseDN:           envOr("LDAP_GROUP_BASE_DN", ""),
+		StartTLS:              envBool("LDAP_STARTTLS", false),
+		GroupRoleMappings:     mappings,
+		AutoSyncOnChange:      true,
+		AutoSyncDebounce:      defaultLDAPAutoDebounce.String(),
+		ScheduledSyncInterval: defaultLDAPScheduledEvery.String(),
 	}
 	if cfg.GroupBaseDN == "" {
 		cfg.GroupBaseDN = deriveGroupBaseDN(cfg.BaseDN)
@@ -389,6 +397,7 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		cfg.LoadedAt = time.Now().UTC()
 	}
 	runtimeConfigValue.Store(cfg)
+	ldapScheduler.Configure(cfg.LDAP)
 }
 
 func currentRuntimeConfig() RuntimeConfig {
@@ -459,6 +468,18 @@ func normalizeLDAPConfig(cfg LDAPConfig, defaults LDAPConfig) LDAPConfig {
 	if cfg.GroupBaseDN == "" && cfg.BaseDN != "" {
 		cfg.GroupBaseDN = deriveGroupBaseDN(cfg.BaseDN)
 	}
+	rawDebounce := strings.TrimSpace(cfg.AutoSyncDebounce)
+	cfg.AutoSyncDebounce = strings.TrimSpace(firstNonEmpty(rawDebounce, defaults.AutoSyncDebounce))
+	if cfg.AutoSyncDebounce == "" {
+		cfg.AutoSyncDebounce = defaultLDAPAutoDebounce.String()
+	}
+	if rawDebounce == "" && defaults.AutoSyncOnChange {
+		cfg.AutoSyncOnChange = true
+	}
+	cfg.ScheduledSyncInterval = strings.TrimSpace(firstNonEmpty(cfg.ScheduledSyncInterval, defaults.ScheduledSyncInterval))
+	if cfg.ScheduledSyncInterval == "" {
+		cfg.ScheduledSyncInterval = defaultLDAPScheduledEvery.String()
+	}
 	cfg.GroupRoleMappings = normalizeLDAPGroupMappings(cfg.GroupRoleMappings)
 	return cfg
 }
@@ -486,6 +507,25 @@ func normalizeLDAPGroupMappings(mappings []LDAPGroupMapping) []LDAPGroupMapping 
 }
 
 func validateLDAPConfig(cfg LDAPConfig) error {
+	if cfg.AutoSyncDebounce != "" {
+		d, err := time.ParseDuration(cfg.AutoSyncDebounce)
+		if err != nil {
+			return fmt.Errorf("ldap auto sync debounce must be a duration: %v", err)
+		}
+		if d < minLDAPAutoDebounce {
+			return fmt.Errorf("ldap auto sync debounce must be at least %s", minLDAPAutoDebounce)
+		}
+	}
+	if cfg.ScheduledSyncEnabled {
+		d, err := time.ParseDuration(cfg.ScheduledSyncInterval)
+		if err != nil {
+			return fmt.Errorf("ldap scheduled sync interval must be a duration: %v", err)
+		}
+		if d < minLDAPScheduledEvery {
+			return fmt.Errorf("ldap scheduled sync interval must be at least %s", minLDAPScheduledEvery)
+		}
+	}
+
 	if !cfg.Enabled {
 		return nil
 	}

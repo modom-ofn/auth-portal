@@ -96,6 +96,11 @@
   const ldapGroupBaseDnInput = document.getElementById('ldap-group-base-dn');
   const ldapStartTlsInput = document.getElementById('ldap-starttls');
   const ldapMappingsInput = document.getElementById('ldap-mappings-input');
+  const ldapAutoSyncInput = document.getElementById('ldap-auto-sync');
+  const ldapDebounceInput = document.getElementById('ldap-debounce');
+  const ldapScheduledEnabledInput = document.getElementById('ldap-scheduled-enabled');
+  const ldapScheduledIntervalInput = document.getElementById('ldap-scheduled-interval');
+  const ldapNextRun = document.getElementById('ldap-sync-next');
 
   if (
     !configForm ||
@@ -165,6 +170,9 @@
     config: null,
     configVersion: 0,
   };
+
+  const LDAP_DEFAULT_DEBOUNCE = '30s';
+  const LDAP_DEFAULT_SCHEDULE = '30m';
 
   const defaultHelpContent = {
     title: 'Configuration Help',
@@ -1644,13 +1652,23 @@
   };
 
   const setLdapInputsEnabled = (enabled) => {
-    [ldapHostInput, ldapAdminDnInput, ldapPasswordInput, ldapBaseDnInput, ldapGroupBaseDnInput, ldapStartTlsInput, ldapMappingsInput].forEach(
-      (el) => {
-        if (el) {
-          el.disabled = !enabled;
-        }
+    [
+      ldapHostInput,
+      ldapAdminDnInput,
+      ldapPasswordInput,
+      ldapBaseDnInput,
+      ldapGroupBaseDnInput,
+      ldapStartTlsInput,
+      ldapMappingsInput,
+      ldapAutoSyncInput,
+      ldapDebounceInput,
+      ldapScheduledEnabledInput,
+      ldapScheduledIntervalInput,
+    ].forEach((el) => {
+      if (el) {
+        el.disabled = !enabled;
       }
-    );
+    });
   };
 
   const fillLdapForm = () => {
@@ -1676,6 +1694,18 @@
     }
     if (ldapStartTlsInput) {
       ldapStartTlsInput.checked = Boolean(cfg.startTls);
+    }
+    if (ldapAutoSyncInput) {
+      ldapAutoSyncInput.checked = cfg.autoSyncOnChange !== false;
+    }
+    if (ldapDebounceInput) {
+      ldapDebounceInput.value = cfg.autoSyncDebounce || LDAP_DEFAULT_DEBOUNCE;
+    }
+    if (ldapScheduledEnabledInput) {
+      ldapScheduledEnabledInput.checked = Boolean(cfg.scheduledSyncEnabled);
+    }
+    if (ldapScheduledIntervalInput) {
+      ldapScheduledIntervalInput.value = cfg.scheduledSyncInterval || LDAP_DEFAULT_SCHEDULE;
     }
     if (ldapMappingsInput) {
       if (cfg.groupRoleMappings?.length) {
@@ -1713,7 +1743,10 @@
       } else if (!status.enabled) {
         ldapSyncStatus.textContent = 'LDAP sync disabled.';
       } else if (status.lastRun) {
-        ldapSyncStatus.textContent = status.lastRun.message || 'Last sync completed.';
+        const autoNote = status.autoSyncOnChange ? ' Auto-sync on change is enabled.' : '';
+        const schedNote =
+          status.scheduledSyncEnabled && status.scheduledSyncEvery ? ` Scheduled every ${status.scheduledSyncEvery}.` : '';
+        ldapSyncStatus.textContent = `${status.lastRun.message || 'Last sync completed.'}${autoNote}${schedNote}`;
       } else {
         ldapSyncStatus.textContent = 'LDAP sync ready.';
       }
@@ -1724,6 +1757,17 @@
         ldapSyncUpdated.textContent = `Last run: ${finished.toLocaleString()}`;
       } else {
         ldapSyncUpdated.textContent = '';
+      }
+    }
+    if (ldapNextRun) {
+      if (status?.scheduledSyncEnabled && status?.nextScheduledRun) {
+        const next = new Date(status.nextScheduledRun);
+        const every = status.scheduledSyncEvery ? ` (every ${status.scheduledSyncEvery})` : '';
+        ldapNextRun.textContent = `Next scheduled sync: ${next.toLocaleString()}${every}`;
+      } else if (status?.autoSyncOnChange) {
+        ldapNextRun.textContent = 'Auto-sync will run after role/user changes.';
+      } else {
+        ldapNextRun.textContent = '';
       }
     }
     if (ldapSyncBtn) {
@@ -1811,9 +1855,17 @@
       groupBaseDn: ldapGroupBaseDnInput?.value || '',
       startTls: Boolean(ldapStartTlsInput?.checked),
       groupRoleMappings: parseLdapMappingsInput(ldapMappingsInput?.value),
+      autoSyncOnChange: ldapAutoSyncInput ? Boolean(ldapAutoSyncInput.checked) : true,
+      autoSyncDebounce: (ldapDebounceInput?.value || LDAP_DEFAULT_DEBOUNCE).trim(),
+      scheduledSyncEnabled: ldapScheduledEnabledInput ? Boolean(ldapScheduledEnabledInput.checked) : false,
+      scheduledSyncInterval: (ldapScheduledIntervalInput?.value || LDAP_DEFAULT_SCHEDULE).trim(),
     };
     if (enabled && !payload.password) {
       showStatus('Admin password is required when enabling LDAP sync.', 'error');
+      return;
+    }
+    if (payload.scheduledSyncEnabled && !payload.scheduledSyncInterval) {
+      showStatus('Fallback interval is required when scheduled sync is enabled.', 'error');
       return;
     }
     try {

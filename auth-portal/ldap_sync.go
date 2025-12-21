@@ -26,16 +26,58 @@ type ldapSyncResult struct {
 }
 
 type ldapSyncState struct {
-	mu      sync.Mutex
-	running bool
-	last    ldapSyncResult
+	mu       sync.Mutex
+	running  bool
+	last     ldapSyncResult
+	next     time.Time
+	autoOn   bool
+	schedOn  bool
+	debounce time.Duration
+	interval time.Duration
 }
 
 var ldapState ldapSyncState
 
 const (
-	ldapTimeout = 10 * time.Second
+	ldapTimeout               = 10 * time.Second
+	defaultLDAPAutoDebounce   = 30 * time.Second
+	minLDAPAutoDebounce       = 5 * time.Second
+	defaultLDAPScheduledEvery = 30 * time.Minute
+	minLDAPScheduledEvery     = 5 * time.Minute
 )
+
+func ldapMarkRunning() bool {
+	ldapState.mu.Lock()
+	defer ldapState.mu.Unlock()
+	if ldapState.running {
+		return false
+	}
+	ldapState.running = true
+	return true
+}
+
+func ldapFinishRun(result ldapSyncResult) {
+	ldapState.mu.Lock()
+	ldapState.running = false
+	ldapState.last = result
+	ldapState.mu.Unlock()
+}
+
+func ldapUpdateScheduleState(autoOn, schedOn bool, debounce, interval time.Duration, next time.Time) {
+	ldapState.mu.Lock()
+	defer ldapState.mu.Unlock()
+	ldapState.autoOn = autoOn
+	ldapState.schedOn = schedOn
+	ldapState.debounce = debounce
+	ldapState.interval = interval
+	ldapState.next = next
+}
+
+func ldapScheduleSnapshot() (autoOn, schedOn bool, debounce, interval time.Duration, next time.Time) {
+	ldapState.mu.Lock()
+	defer ldapState.mu.Unlock()
+	return ldapState.autoOn, ldapState.schedOn, ldapState.debounce, ldapState.interval, ldapState.next
+}
 
 type ldapSyncUser struct {
 	Username   string

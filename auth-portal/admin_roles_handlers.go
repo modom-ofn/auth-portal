@@ -38,6 +38,7 @@ func adminRolesCreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ldapScheduler.TriggerChange("role create")
 	respondJSON(w, http.StatusCreated, adminRoleResponse{Role: role})
 }
 
@@ -79,6 +80,7 @@ func adminRoleUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	ldapScheduler.TriggerChange("role update")
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":           true,
 		"role":         role,
@@ -154,6 +156,7 @@ func adminUserRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ldapScheduler.TriggerChange("user role change")
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -176,6 +179,7 @@ func adminRoleDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	ldapScheduler.TriggerChange("role delete")
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":           true,
 		"sessionReset": len(userIDs),
