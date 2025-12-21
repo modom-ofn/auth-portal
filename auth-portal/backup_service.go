@@ -26,13 +26,15 @@ const (
 	backupEnvelopeVersion  = "enc-v1"
 
 	appSettingsSectionKey = "app-settings"
+	ldapSectionKey        = "ldap"
+	rolesSectionKey       = "roles"
 )
 
 var (
 	errUnknownBackupSection = errors.New("unknown backup section")
 )
 
-var defaultBackupSections = []string{"providers", "security", "mfa", appSettingsSectionKey}
+var defaultBackupSections = []string{"providers", "security", "mfa", appSettingsSectionKey, ldapSectionKey, rolesSectionKey}
 
 type backupService struct {
 	store *configstore.Store
@@ -81,6 +83,23 @@ type backupMetadata struct {
 	CreatedBy string    `json:"createdBy,omitempty"`
 	Sections  []string  `json:"sections"`
 	Size      int64     `json:"size"`
+}
+
+type roleBackup struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Permissions []string `json:"permissions"`
+	BuiltIn     bool     `json:"builtIn,omitempty"`
+}
+
+type roleAssignmentBackup struct {
+	Username string   `json:"username"`
+	Roles    []string `json:"roles"`
+}
+
+type roleBackupPayload struct {
+	Roles       []roleBackup           `json:"roles"`
+	Assignments []roleAssignmentBackup `json:"assignments,omitempty"`
 }
 
 func newBackupService(store *configstore.Store, dir string) (*backupService, error) {
@@ -343,17 +362,29 @@ func (s *backupService) createBackup(ctx context.Context, sections []string, aut
 	}
 
 	for _, sectionKey := range validSections {
-		storeSection, err := sectionFromKey(sectionKey)
-		if err != nil {
-			return backupMetadata{}, err
-		}
-		raw, version := s.store.Raw(storeSection, configstore.SectionDocumentKey)
-		if raw == nil {
-			raw = json.RawMessage([]byte("{}"))
-		}
-		doc.Sections[sectionKey] = backupDocumentRecord{
-			Version: version,
-			Config:  cloneRawMessage(raw),
+		switch sectionKey {
+		case rolesSectionKey:
+			rawRoles, err := exportRolesBackup(ctx)
+			if err != nil {
+				return backupMetadata{}, fmt.Errorf("export roles: %w", err)
+			}
+			doc.Sections[sectionKey] = backupDocumentRecord{
+				Version: 1,
+				Config:  rawRoles,
+			}
+		default:
+			storeSection, err := sectionFromKey(sectionKey)
+			if err != nil {
+				return backupMetadata{}, err
+			}
+			raw, version := s.store.Raw(storeSection, configstore.SectionDocumentKey)
+			if raw == nil {
+				raw = json.RawMessage([]byte("{}"))
+			}
+			doc.Sections[sectionKey] = backupDocumentRecord{
+				Version: version,
+				Config:  cloneRawMessage(raw),
+			}
 		}
 	}
 
@@ -497,12 +528,20 @@ func (s *backupService) RestoreBackup(ctx context.Context, name, actor string) (
 	}
 
 	for key, record := range doc.Sections {
+		if record.Config == nil {
+			continue
+		}
+
+		if key == rolesSectionKey {
+			if err := restoreRolesBackup(ctx, record.Config, actor); err != nil {
+				return RuntimeConfig{}, err
+			}
+			continue
+		}
+
 		storeSection, err := sectionFromKey(key)
 		if err != nil {
 			return RuntimeConfig{}, err
-		}
-		if record.Config == nil {
-			continue
 		}
 
 		payload, err := decodeSectionPayload(key, record.Config)
@@ -532,6 +571,8 @@ func decodeSectionPayload(key string, raw json.RawMessage) (any, error) {
 		"security":            func(r json.RawMessage) (any, error) { return parseSecurityPayload(r) },
 		"mfa":                 func(r json.RawMessage) (any, error) { return parseMFAPayload(r) },
 		appSettingsSectionKey: func(r json.RawMessage) (any, error) { return parseAppSettingsPayload(r) },
+		ldapSectionKey:        func(r json.RawMessage) (any, error) { return parseLDAPPayload(r) },
+		rolesSectionKey:       func(r json.RawMessage) (any, error) { return decodeRolesPayload(r) },
 	}
 	decoder, ok := decoders[key]
 	if !ok {
@@ -541,6 +582,149 @@ func decodeSectionPayload(key string, raw json.RawMessage) (any, error) {
 		raw = json.RawMessage([]byte("{}"))
 	}
 	return decoder(raw)
+}
+
+func exportRolesBackup(ctx context.Context) (json.RawMessage, error) {
+	roles, err := listRoles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	assignments, err := loadRoleAssignments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := roleBackupPayload{
+		Roles:       make([]roleBackup, 0, len(roles)),
+		Assignments: make([]roleAssignmentBackup, 0, len(assignments)),
+	}
+
+	for _, r := range roles {
+		payload.Roles = append(payload.Roles, roleBackup{
+			Name:        r.Name,
+			Description: r.Description,
+			Permissions: append([]string(nil), r.Permissions...),
+			BuiltIn:     r.BuiltIn,
+		})
+	}
+
+	for username, roleList := range assignments {
+		if len(roleList) == 0 {
+			continue
+		}
+		sort.Strings(roleList)
+		payload.Assignments = append(payload.Assignments, roleAssignmentBackup{
+			Username: username,
+			Roles:    append([]string(nil), roleList...),
+		})
+	}
+	sort.Slice(payload.Assignments, func(i, j int) bool {
+		return strings.ToLower(payload.Assignments[i].Username) < strings.ToLower(payload.Assignments[j].Username)
+	})
+
+	return json.Marshal(payload)
+}
+
+func decodeRolesPayload(raw json.RawMessage) (roleBackupPayload, error) {
+	if len(raw) == 0 {
+		return roleBackupPayload{}, errors.New("empty roles payload")
+	}
+	var payload roleBackupPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return roleBackupPayload{}, err
+	}
+	return payload, nil
+}
+
+func restoreRolesBackup(ctx context.Context, raw json.RawMessage, actor string) error {
+	payload, err := decodeRolesPayload(raw)
+	if err != nil {
+		return err
+	}
+	if actor = strings.TrimSpace(actor); actor == "" {
+		actor = "admin"
+	}
+
+	for _, r := range payload.Roles {
+		name := strings.ToLower(strings.TrimSpace(r.Name))
+		if name == "" {
+			continue
+		}
+		if isBuiltInRole(name) {
+			continue
+		}
+		perms := normalizePermissions(r.Permissions)
+		desc := strings.TrimSpace(r.Description)
+
+		if _, err := roleIDByName(ctx, name); err != nil {
+			if errors.Is(err, ErrRoleNotFound) {
+				if _, createErr := createCustomRole(name, desc, perms, actor); createErr != nil {
+					return fmt.Errorf("create role %s: %w", name, createErr)
+				}
+			} else {
+				return err
+			}
+		} else {
+			if _, _, updateErr := updateRole(name, desc, perms); updateErr != nil {
+				return fmt.Errorf("update role %s: %w", name, updateErr)
+			}
+		}
+	}
+
+	for _, assignment := range payload.Assignments {
+		username := strings.TrimSpace(assignment.Username)
+		if username == "" {
+			continue
+		}
+		for _, roleName := range normalizePermissions(assignment.Roles) {
+			if roleName == "" {
+				continue
+			}
+			if err := ensureUserRoleByUsername(username, roleName, actor); err != nil && !errors.Is(err, ErrRoleNotFound) {
+				return fmt.Errorf("assign role %s to %s: %w", roleName, username, err)
+			}
+		}
+	}
+	return nil
+}
+
+func loadRoleAssignments(ctx context.Context) (map[string][]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(ctx, `
+SELECT lower(u.username) AS username, lower(r.name) AS role
+  FROM user_roles ur
+  JOIN users u ON u.id = ur.user_id
+  JOIN roles r ON r.id = ur.role_id
+ ORDER BY lower(u.username), lower(r.name)
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]string)
+	for rows.Next() {
+		var username, role string
+		if scanErr := rows.Scan(&username, &role); scanErr != nil {
+			return nil, scanErr
+		}
+		username = strings.TrimSpace(username)
+		role = strings.TrimSpace(role)
+		if username == "" || role == "" {
+			continue
+		}
+		result[username] = append(result[username], role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for user, roles := range result {
+		result[user] = normalizePermissions(roles)
+	}
+	return result, nil
 }
 
 func defaultBackupSchedule() backupSchedule {
@@ -647,7 +831,7 @@ func normalizeBackupSections(sections []string) []string {
 	for _, section := range sections {
 		key := strings.ToLower(strings.TrimSpace(section))
 		switch key {
-		case "providers", "security", "mfa", appSettingsSectionKey:
+		case "providers", "security", "mfa", appSettingsSectionKey, ldapSectionKey, rolesSectionKey:
 			set[key] = struct{}{}
 		}
 	}

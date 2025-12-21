@@ -450,7 +450,7 @@
     }
   };
 
-  const backupDefaultSections = ['providers', 'security', 'mfa', 'app-settings'];
+  const backupDefaultSections = ['providers', 'security', 'mfa', 'app-settings', 'ldap', 'roles'];
 
   const getSelectedBackupSections = () => {
     if (!backupSectionCheckboxes.length) {
