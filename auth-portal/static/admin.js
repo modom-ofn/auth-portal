@@ -82,6 +82,20 @@
   const roleCreateBtn = document.getElementById('role-create-btn');
   const roleCancelBtn = document.getElementById('role-cancel-btn');
   const rolesHelpBtn = document.getElementById('roles-help-btn');
+  const ldapSyncBtn = document.getElementById('ldap-sync-run');
+  const ldapSyncStatus = document.getElementById('ldap-sync-status');
+  const ldapSyncUpdated = document.getElementById('ldap-sync-updated');
+  const ldapMappingList = document.getElementById('ldap-mapping-list');
+  const ldapMappingEmpty = document.getElementById('ldap-mapping-empty');
+  const ldapConfigForm = document.getElementById('ldap-config-form');
+  const ldapEnabledInput = document.getElementById('ldap-enabled');
+  const ldapHostInput = document.getElementById('ldap-host');
+  const ldapAdminDnInput = document.getElementById('ldap-admin-dn');
+  const ldapPasswordInput = document.getElementById('ldap-password');
+  const ldapBaseDnInput = document.getElementById('ldap-base-dn');
+  const ldapGroupBaseDnInput = document.getElementById('ldap-group-base-dn');
+  const ldapStartTlsInput = document.getElementById('ldap-starttls');
+  const ldapMappingsInput = document.getElementById('ldap-mappings-input');
 
   if (
     !configForm ||
@@ -143,6 +157,13 @@
     roles: [],
     editing: false,
     editingName: '',
+  };
+
+  const ldapState = {
+    loading: false,
+    status: null,
+    config: null,
+    configVersion: 0,
   };
 
   const defaultHelpContent = {
@@ -1622,6 +1643,234 @@
     }
   };
 
+  const setLdapInputsEnabled = (enabled) => {
+    [ldapHostInput, ldapAdminDnInput, ldapPasswordInput, ldapBaseDnInput, ldapGroupBaseDnInput, ldapStartTlsInput, ldapMappingsInput].forEach(
+      (el) => {
+        if (el) {
+          el.disabled = !enabled;
+        }
+      }
+    );
+  };
+
+  const fillLdapForm = () => {
+    const cfg = ldapState.config || {};
+    if (ldapEnabledInput) {
+      ldapEnabledInput.checked = Boolean(cfg.enabled);
+    }
+    if (ldapHostInput) {
+      ldapHostInput.value = cfg.host || '';
+    }
+    if (ldapAdminDnInput) {
+      ldapAdminDnInput.value = cfg.adminDn || '';
+    }
+    if (ldapPasswordInput) {
+      ldapPasswordInput.value = '';
+      ldapPasswordInput.placeholder = cfg.enabled ? 'Required when saving' : 'Optional';
+    }
+    if (ldapBaseDnInput) {
+      ldapBaseDnInput.value = cfg.baseDn || '';
+    }
+    if (ldapGroupBaseDnInput) {
+      ldapGroupBaseDnInput.value = cfg.groupBaseDn || '';
+    }
+    if (ldapStartTlsInput) {
+      ldapStartTlsInput.checked = Boolean(cfg.startTls);
+    }
+    if (ldapMappingsInput) {
+      if (cfg.groupRoleMappings?.length) {
+        ldapMappingsInput.value = cfg.groupRoleMappings.map((m) => `${m.groupCn}: ${m.role}`).join('\n');
+      } else {
+        ldapMappingsInput.value = '';
+      }
+    }
+    setLdapInputsEnabled(Boolean(cfg.enabled));
+  };
+
+  const renderLdapStatus = () => {
+    const status = ldapState.status;
+    const mappings = status?.mappings || [];
+    if (ldapMappingList && ldapMappingEmpty) {
+      ldapMappingList.innerHTML = '';
+      if (!mappings.length) {
+        ldapMappingEmpty.hidden = false;
+        ldapMappingList.hidden = true;
+      } else {
+        ldapMappingEmpty.hidden = true;
+        ldapMappingList.hidden = false;
+        mappings.forEach((m) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<code>${m.groupCn}</code> → <code>${m.role}</code>`;
+          ldapMappingList.appendChild(li);
+        });
+      }
+    }
+    if (ldapSyncStatus) {
+      if (!status) {
+        ldapSyncStatus.textContent = 'LDAP not configured.';
+      } else if (ldapState.loading || status.running) {
+        ldapSyncStatus.textContent = 'LDAP sync running...';
+      } else if (!status.enabled) {
+        ldapSyncStatus.textContent = 'LDAP sync disabled.';
+      } else if (status.lastRun) {
+        ldapSyncStatus.textContent = status.lastRun.message || 'Last sync completed.';
+      } else {
+        ldapSyncStatus.textContent = 'LDAP sync ready.';
+      }
+    }
+    if (ldapSyncUpdated) {
+      if (status?.lastRun?.finishedAt) {
+        const finished = new Date(status.lastRun.finishedAt);
+        ldapSyncUpdated.textContent = `Last run: ${finished.toLocaleString()}`;
+      } else {
+        ldapSyncUpdated.textContent = '';
+      }
+    }
+    if (ldapSyncBtn) {
+      const disabled = ldapState.loading || status?.running || !status?.enabled;
+      ldapSyncBtn.disabled = Boolean(disabled);
+    }
+  };
+
+  const loadLdapStatus = async () => {
+    if (ldapState.loading) {
+      return;
+    }
+    ldapState.loading = true;
+    renderLdapStatus();
+    try {
+      const res = await fetch('/api/admin/ldap/status', { credentials: 'same-origin' });
+      if (!res.ok) {
+        throw new Error(`Status failed (${res.status})`);
+      }
+      const json = await res.json();
+      ldapState.status = json;
+    } catch (err) {
+      ldapState.status = { enabled: false, running: false, lastRun: null, mappings: [] };
+      if (ldapSyncStatus) {
+        ldapSyncStatus.textContent = err.message || 'LDAP status failed';
+      }
+    } finally {
+      ldapState.loading = false;
+      renderLdapStatus();
+    }
+  };
+
+  const parseLdapMappingsInput = (value) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((m) => ({ groupCn: String(m.groupCn || '').trim(), role: String(m.role || '').trim().toLowerCase() }))
+            .filter((m) => m.groupCn && m.role);
+        }
+      } catch {
+        // fall through to line parsing
+      }
+    }
+    return trimmed
+      .split(/\r?\n+/)
+      .map((line) => line.split(':'))
+      .map((parts) => ({ groupCn: String(parts[0] || '').trim(), role: String(parts[1] || '').trim().toLowerCase() }))
+      .filter((m) => m.groupCn && m.role);
+  };
+
+  const loadLdapConfig = async () => {
+    try {
+      const res = await fetch('/api/admin/config', { credentials: 'same-origin' });
+      if (!res.ok) {
+        throw new Error(`LDAP config fetch failed (${res.status})`);
+      }
+      const json = await res.json();
+      const cfg = json?.ldap?.config || {};
+      ldapState.config = cfg;
+      ldapState.configVersion = json?.ldap?.version || 0;
+      fillLdapForm();
+      renderLdapStatus();
+    } catch (err) {
+      showStatus(err.message || 'LDAP config load failed', 'error');
+    }
+  };
+
+  const saveLdapConfig = async () => {
+    if (!ldapConfigForm) {
+      return;
+    }
+    const enabled = Boolean(ldapEnabledInput?.checked);
+    const payload = {
+      enabled,
+      host: ldapHostInput?.value || '',
+      adminDn: ldapAdminDnInput?.value || '',
+      password: ldapPasswordInput?.value || '',
+      baseDn: ldapBaseDnInput?.value || '',
+      groupBaseDn: ldapGroupBaseDnInput?.value || '',
+      startTls: Boolean(ldapStartTlsInput?.checked),
+      groupRoleMappings: parseLdapMappingsInput(ldapMappingsInput?.value),
+    };
+    if (enabled && !payload.password) {
+      showStatus('Admin password is required when enabling LDAP sync.', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/config/ldap', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: ldapState.configVersion, config: payload }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Save failed (${res.status})`);
+      }
+      const json = await res.json();
+      ldapState.config = json?.ldap?.config || payload;
+      ldapState.configVersion = json?.ldap?.version || ldapState.configVersion;
+      fillLdapForm();
+      await loadLdapStatus();
+      showStatus('LDAP settings saved.', 'success');
+    } catch (err) {
+      showStatus(err.message || 'LDAP save failed', 'error');
+    }
+  };
+
+  const triggerLdapSync = async () => {
+    if (ldapState.loading) {
+      return;
+    }
+    ldapState.loading = true;
+    renderLdapStatus();
+    try {
+      const res = await fetch('/api/admin/ldap/sync', {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Sync failed (${res.status})`);
+      }
+      const json = await res.json();
+      ldapState.status = json;
+      if (json?.error) {
+        showStatus(json.error, 'error');
+      } else if (json?.lastRun?.message) {
+        showStatus(json.lastRun.message, json.lastRun.success ? 'success' : 'error');
+      } else {
+        showStatus('LDAP sync completed.', 'success');
+      }
+    } catch (err) {
+      ldapState.status = ldapState.status || {};
+      showStatus(err.message || 'LDAP sync failed', 'error');
+    } finally {
+      ldapState.loading = false;
+      renderLdapStatus();
+    }
+  };
+
   const createRole = async (payload) => {
     const res = await fetch('/api/admin/roles', {
       method: 'POST',
@@ -2087,6 +2336,8 @@
       if (!usersState.loaded) {
         tasks.push(loadUsers());
       }
+      tasks.push(loadLdapStatus());
+      tasks.push(loadLdapConfig());
       if (tasks.length) {
         await Promise.all(tasks);
       }
@@ -2356,6 +2607,25 @@
 
   if (rolesHelpBtn) {
     rolesHelpBtn.addEventListener('click', () => openHelpModal('roles'));
+  }
+
+  if (ldapSyncBtn) {
+    ldapSyncBtn.addEventListener('click', async () => {
+      await triggerLdapSync();
+    });
+  }
+
+  if (ldapEnabledInput) {
+    ldapEnabledInput.addEventListener('change', () => {
+      setLdapInputsEnabled(ldapEnabledInput.checked);
+    });
+  }
+
+  if (ldapConfigForm) {
+    ldapConfigForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await saveLdapConfig();
+    });
   }
 
   if (usersReloadBtn) {

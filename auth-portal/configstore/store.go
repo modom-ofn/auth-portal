@@ -21,6 +21,7 @@ const (
 	SectionMFA         Section = "mfa"
 	SectionAppSettings Section = "app-settings"
 	SectionBackups     Section = "backups"
+	SectionLDAP        Section = "ldap"
 
 	// SectionDocumentKey is the default key used to persist a full section document.
 	SectionDocumentKey = "__doc"

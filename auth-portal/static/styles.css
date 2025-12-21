@@ -328,6 +328,17 @@ a:hover{opacity:.9}
 .role-checkbox-toggle input{width:18px;height:18px;}
 .role-checkbox-perms{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.35rem;}
 .role-card-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.5rem;}
+.ldap-section{margin-top:2rem;display:flex;flex-direction:column;gap:1rem;}
+.ldap-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.ldap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;}
+.ldap-card{display:flex;flex-direction:column;gap:.5rem;}
+.ldap-form{gap:.65rem;}
+.ldap-list{margin:.25rem 0 0 .85rem;color:var(--muted);line-height:1.4;}
+.ldap-list code{color:#e2e8f0;}
+.ldap-mapping-preview pre{margin:0;background:#0b1220;border:1px solid var(--border);border-radius:10px;padding:.75rem;color:#e2e8f0;}
+.ldap-status{margin-top:.35rem;}
+.ldap-notes{border-top:1px solid var(--border);padding-top:.5rem;margin-top:.35rem;}
+.toggle-row{display:flex;flex-direction:column;gap:.35rem;}
 .config-tools{display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;}
 .config-tools .ghost-btn{min-width:110px;}
 .config-tools input[type="file"]{display:none;}

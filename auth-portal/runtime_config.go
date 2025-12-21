@@ -64,6 +64,23 @@ type AppSettingsConfig struct {
 	UnauthRequestSubject string `json:"unauthRequestSubject"`
 }
 
+type LDAPGroupMapping struct {
+	GroupCN string `json:"groupCn"`
+	Role    string `json:"role"`
+}
+
+// LDAPConfig captures connection and mapping settings for LDAP sync.
+type LDAPConfig struct {
+	Enabled           bool               `json:"enabled"`
+	Host              string             `json:"host"`
+	AdminDN           string             `json:"adminDn"`
+	Password          string             `json:"password,omitempty"`
+	BaseDN            string             `json:"baseDn"`
+	GroupBaseDN       string             `json:"groupBaseDn"`
+	StartTLS          bool               `json:"startTls"`
+	GroupRoleMappings []LDAPGroupMapping `json:"groupRoleMappings"`
+}
+
 // RuntimeConfig represents all typed configuration sections with revision metadata.
 type RuntimeConfig struct {
 	Providers        ProvidersConfig
@@ -78,13 +95,16 @@ type RuntimeConfig struct {
 	AppSettings        AppSettingsConfig
 	AppSettingsVersion int64
 
+	LDAP        LDAPConfig
+	LDAPVersion int64
+
 	LoadedAt time.Time
 }
 
 var runtimeConfigValue atomic.Value
 
 func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
-	defaults := make(map[configstore.Section]json.RawMessage, 4)
+	defaults := make(map[configstore.Section]json.RawMessage, 5)
 
 	rawProviders, err := json.Marshal(defaultProvidersConfig())
 	if err != nil {
@@ -109,6 +129,12 @@ func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
 		return nil, err
 	}
 	defaults[configstore.SectionAppSettings] = rawAppSettings
+
+	rawLDAP, err := json.Marshal(defaultLDAPConfig())
+	if err != nil {
+		return nil, err
+	}
+	defaults[configstore.SectionLDAP] = rawLDAP
 
 	return defaults, nil
 }
@@ -187,6 +213,24 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	return cfg
 }
 
+func defaultLDAPConfig() LDAPConfig {
+	mappings := parseLDAPGroupMappingsEnv(envOr("LDAP_GROUP_ROLE_MAP", ""))
+	cfg := LDAPConfig{
+		Enabled:           envBool("LDAP_ENABLED", false),
+		Host:              envOr("LDAP_HOST", "ldap://openldap:389"),
+		AdminDN:           envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local"),
+		Password:          envOr("LDAP_ADMIN_PASSWORD", ""),
+		BaseDN:            envOr("LDAP_BASE_DN", "ou=users,dc=authportal,dc=local"),
+		GroupBaseDN:       envOr("LDAP_GROUP_BASE_DN", ""),
+		StartTLS:          envBool("LDAP_STARTTLS", false),
+		GroupRoleMappings: mappings,
+	}
+	if cfg.GroupBaseDN == "" {
+		cfg.GroupBaseDN = deriveGroupBaseDN(cfg.BaseDN)
+	}
+	return cfg
+}
+
 func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 	return loadRuntimeConfigInternal(store, false)
 }
@@ -224,6 +268,12 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 		return RuntimeConfig{}, err
 	}
 
+	var ldap LDAPConfig
+	lVersion, err := store.Section(configstore.SectionLDAP, &ldap)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+
 	rc.Providers = providers
 	rc.ProvidersVersion = pVersion
 	rc.Security = security
@@ -232,6 +282,8 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 	rc.MFAVersion = mVersion
 	rc.AppSettings = app
 	rc.AppSettingsVersion = aVersion
+	rc.LDAP = normalizeLDAPConfig(ldap, defaultLDAPConfig())
+	rc.LDAPVersion = lVersion
 
 	snap := store.Snapshot()
 	if !snap.LoadedAt.IsZero() {
@@ -240,7 +292,7 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 		rc.LoadedAt = time.Now().UTC()
 	}
 
-	missing := detectMissingSections(pVersion, sVersion, mVersion, aVersion)
+	missing := detectMissingSections(pVersion, sVersion, mVersion, aVersion, lVersion)
 	if len(missing) > 0 && !retried {
 		if err := persistInitialSections(store, rc, missing); err != nil {
 			return RuntimeConfig{}, err
@@ -257,6 +309,7 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		Security:    defaultSecurityConfig(),
 		MFA:         defaultMFAConfig(),
 		AppSettings: defaultAppSettingsConfig(),
+		LDAP:        defaultLDAPConfig(),
 	}
 
 	selectedProvider := strings.TrimSpace(cfg.Providers.Active)
@@ -330,6 +383,8 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	}
 	cfg.AppSettings.UnauthRequestSubject = unauthRequestSubject
 
+	cfg.LDAP = normalizeLDAPConfig(cfg.LDAP, defaults.LDAP)
+
 	if cfg.LoadedAt.IsZero() {
 		cfg.LoadedAt = time.Now().UTC()
 	}
@@ -347,6 +402,7 @@ func currentRuntimeConfig() RuntimeConfig {
 		Security:    defaultSecurityConfig(),
 		MFA:         defaultMFAConfig(),
 		AppSettings: defaultAppSettingsConfig(),
+		LDAP:        defaultLDAPConfig(),
 		LoadedAt:    time.Now().UTC(),
 	}
 }
@@ -394,7 +450,94 @@ func ensureMFAConsistency() {
 	}
 }
 
-func detectMissingSections(pVersion, sVersion, mVersion, aVersion int64) []configstore.Section {
+func normalizeLDAPConfig(cfg LDAPConfig, defaults LDAPConfig) LDAPConfig {
+	cfg.Host = strings.TrimSpace(firstNonEmpty(cfg.Host, defaults.Host))
+	cfg.AdminDN = strings.TrimSpace(firstNonEmpty(cfg.AdminDN, defaults.AdminDN))
+	cfg.Password = strings.TrimSpace(firstNonEmpty(cfg.Password, defaults.Password))
+	cfg.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.BaseDN, defaults.BaseDN))
+	cfg.GroupBaseDN = strings.TrimSpace(firstNonEmpty(cfg.GroupBaseDN, defaults.GroupBaseDN))
+	if cfg.GroupBaseDN == "" && cfg.BaseDN != "" {
+		cfg.GroupBaseDN = deriveGroupBaseDN(cfg.BaseDN)
+	}
+	cfg.GroupRoleMappings = normalizeLDAPGroupMappings(cfg.GroupRoleMappings)
+	return cfg
+}
+
+func normalizeLDAPGroupMappings(mappings []LDAPGroupMapping) []LDAPGroupMapping {
+	out := make([]LDAPGroupMapping, 0, len(mappings))
+	seen := make(map[string]struct{})
+	for _, m := range mappings {
+		group := strings.TrimSpace(m.GroupCN)
+		role := strings.TrimSpace(strings.ToLower(m.Role))
+		if group == "" || role == "" {
+			continue
+		}
+		key := strings.ToLower(group) + "::" + role
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, LDAPGroupMapping{
+			GroupCN: group,
+			Role:    role,
+		})
+	}
+	return out
+}
+
+func validateLDAPConfig(cfg LDAPConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if cfg.Host == "" {
+		return errors.New("ldap host is required when enabled")
+	}
+	if cfg.AdminDN == "" {
+		return errors.New("ldap admin dn is required when enabled")
+	}
+	if cfg.Password == "" {
+		return errors.New("ldap admin password is required when enabled")
+	}
+	if cfg.BaseDN == "" {
+		return errors.New("ldap base dn is required when enabled")
+	}
+	for _, m := range cfg.GroupRoleMappings {
+		if strings.TrimSpace(m.GroupCN) == "" || strings.TrimSpace(m.Role) == "" {
+			return errors.New("ldap group mappings require both groupCn and role")
+		}
+	}
+	return nil
+}
+
+func deriveGroupBaseDN(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return ""
+	}
+	parts := strings.SplitN(base, ",", 2)
+	if len(parts) == 2 {
+		root := strings.TrimSpace(parts[1])
+		if root != "" {
+			return "ou=groups," + root
+		}
+	}
+	return "ou=groups," + base
+}
+
+func parseLDAPGroupMappingsEnv(raw string) []LDAPGroupMapping {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var mappings []LDAPGroupMapping
+	if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
+		log.Printf("ldap group mapping env parse failed: %v", err)
+		return nil
+	}
+	return normalizeLDAPGroupMappings(mappings)
+}
+
+func detectMissingSections(pVersion, sVersion, mVersion, aVersion, lVersion int64) []configstore.Section {
 	var sections []configstore.Section
 	if pVersion == 0 {
 		sections = append(sections, configstore.SectionProviders)
@@ -407,6 +550,9 @@ func detectMissingSections(pVersion, sVersion, mVersion, aVersion int64) []confi
 	}
 	if aVersion == 0 {
 		sections = append(sections, configstore.SectionAppSettings)
+	}
+	if lVersion == 0 {
+		sections = append(sections, configstore.SectionLDAP)
 	}
 	return sections
 }
@@ -424,6 +570,8 @@ func persistInitialSections(store *configstore.Store, cfg RuntimeConfig, section
 			payload = cfg.MFA
 		case configstore.SectionAppSettings:
 			payload = cfg.AppSettings
+		case configstore.SectionLDAP:
+			payload = cfg.LDAP
 		default:
 			continue
 		}

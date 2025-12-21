@@ -461,6 +461,8 @@ func buildRouter() *mux.Router {
 	adminAPI.Handle("/roles", adminGuard(permAdminAll)(http.HandlerFunc(adminRolesCreateHandler))).Methods("POST")
 	adminAPI.Handle("/roles/{name}", adminGuard(permAdminAll)(http.HandlerFunc(adminRoleUpdateHandler))).Methods("PUT")
 	adminAPI.Handle("/roles/{name}", adminGuard(permAdminAll)(http.HandlerFunc(adminRoleDeleteHandler))).Methods("DELETE")
+	adminAPI.Handle("/ldap/status", adminGuard(permAdminAll)(http.HandlerFunc(adminLDAPStatusHandler))).Methods("GET")
+	adminAPI.Handle("/ldap/sync", adminGuard(permAdminAll)(http.HandlerFunc(adminLDAPSyncHandler))).Methods("POST")
 	r.Handle("/admin", adminGuard(permAdminAccess)(http.HandlerFunc(adminPageHandler))).Methods("GET")
 
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")

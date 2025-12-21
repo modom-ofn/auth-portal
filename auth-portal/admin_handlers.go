@@ -44,12 +44,18 @@ type adminConfigSectionAppSettings struct {
 	Config  AppSettingsConfig `json:"config"`
 }
 
+type adminConfigSectionLDAP struct {
+	Version int64      `json:"version"`
+	Config  LDAPConfig `json:"config"`
+}
+
 type adminConfigResponse struct {
 	OK          bool                          `json:"ok"`
 	Providers   adminConfigSectionProviders   `json:"providers"`
 	Security    adminConfigSectionSecurity    `json:"security"`
 	MFA         adminConfigSectionMFA         `json:"mfa"`
 	AppSettings adminConfigSectionAppSettings `json:"appSettings"`
+	LDAP        adminConfigSectionLDAP        `json:"ldap"`
 	LoadedAt    time.Time                     `json:"loadedAt"`
 }
 
@@ -188,6 +194,8 @@ func buildConfigPayload(section configstore.Section, raw json.RawMessage) (any, 
 		return parseMFAPayload(raw)
 	case configstore.SectionAppSettings:
 		return parseAppSettingsPayload(raw)
+	case configstore.SectionLDAP:
+		return parseLDAPPayload(raw)
 	default:
 		return nil, errors.New("unsupported section")
 	}
@@ -236,6 +244,18 @@ func parseAppSettingsPayload(raw json.RawMessage) (AppSettingsConfig, error) {
 	}
 	normalizeAppSettingsConfig(&cfg)
 	if err := validateAppSettingsConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func parseLDAPPayload(raw json.RawMessage) (LDAPConfig, error) {
+	var cfg LDAPConfig
+	if json.Unmarshal(raw, &cfg) != nil {
+		return cfg, errors.New("invalid ldap config")
+	}
+	cfg = normalizeLDAPConfig(cfg, defaultLDAPConfig())
+	if err := validateLDAPConfig(cfg); err != nil {
 		return cfg, err
 	}
 	return cfg, nil
@@ -442,6 +462,9 @@ func adminPageHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func buildAdminConfigResponse(cfg RuntimeConfig) adminConfigResponse {
+	ldapCfg := cfg.LDAP
+	ldapCfg.Password = ""
+
 	return adminConfigResponse{
 		OK: true,
 		Providers: adminConfigSectionProviders{
@@ -460,6 +483,10 @@ func buildAdminConfigResponse(cfg RuntimeConfig) adminConfigResponse {
 			Version: cfg.AppSettingsVersion,
 			Config:  cfg.AppSettings,
 		},
+		LDAP: adminConfigSectionLDAP{
+			Version: cfg.LDAPVersion,
+			Config:  ldapCfg,
+		},
 		LoadedAt: cfg.loadedAt(),
 	}
 }
@@ -474,6 +501,8 @@ func sectionFromKey(key string) (configstore.Section, error) {
 		return configstore.SectionMFA, nil
 	case "app-settings":
 		return configstore.SectionAppSettings, nil
+	case "ldap":
+		return configstore.SectionLDAP, nil
 	default:
 		return "", errors.New("unknown section")
 	}

@@ -148,6 +148,72 @@
                             </div>
                         </div>
                     </div>
+                    <div class="panel-subsection ldap-section">
+                        <div class="ldap-header">
+                            <div>
+                                <h3>LDAP Group Mapping</h3>
+                                <p class="panel-helper">Enable optional LDAP sync for authorized users and map groups to roles.</p>
+                            </div>
+                            <div class="ldap-actions">
+                                <button type="button" id="ldap-sync-run" class="ghost-btn" title="Trigger ldap sync">Run Sync</button>
+                            </div>
+                        </div>
+                        <div class="ldap-grid">
+                            <form id="ldap-config-form" class="glass-card ldap-card ldap-form" autocomplete="off">
+                                <div class="form-row toggle-row">
+                                    <label><input type="checkbox" id="ldap-enabled"> Enable LDAP sync</label>
+                                    <span class="muted">Disabled by default. Toggle on to configure connection.</span>
+                                </div>
+                                <div class="form-row inline">
+                                    <label for="ldap-host">LDAP Host</label>
+                                    <input id="ldap-host" type="text" placeholder="ldap://openldap:389">
+                                </div>
+                                <div class="form-row inline">
+                                    <label for="ldap-admin-dn">Admin DN</label>
+                                    <input id="ldap-admin-dn" type="text" placeholder="cn=admin,dc=authportal,dc=local">
+                                </div>
+                                <div class="form-row inline">
+                                    <label for="ldap-password">Admin Password</label>
+                                    <input id="ldap-password" type="password" placeholder="Required when enabling sync">
+                                </div>
+                                <div class="form-row inline">
+                                    <label for="ldap-base-dn">User Base DN</label>
+                                    <input id="ldap-base-dn" type="text" placeholder="ou=users,dc=authportal,dc=local">
+                                </div>
+                                <div class="form-row inline">
+                                    <label for="ldap-group-base-dn">Group Base DN</label>
+                                    <input id="ldap-group-base-dn" type="text" placeholder="ou=groups,dc=authportal,dc=local">
+                                </div>
+                                <div class="form-row toggle-row">
+                                    <label><input type="checkbox" id="ldap-starttls"> Use StartTLS</label>
+                                </div>
+                                <div class="form-row">
+                                    <label for="ldap-mappings-input">Group → Role mappings</label>
+                                    <textarea id="ldap-mappings-input" rows="3" placeholder="media-admins: admin&#10;media-analytics: analytics-read"></textarea>
+                                    <span class="field-hint">One mapping per line (<code>groupCn: role</code>) or JSON array.</span>
+                                </div>
+                                <div class="admin-actions">
+                                    <button type="submit" id="ldap-config-save">Save LDAP Settings</button>
+                                </div>
+                            </form>
+                            <div class="glass-card ldap-card">
+                                <h4>Current mappings</h4>
+                                <p class="muted tight">Only authorized users are synced; guests are never written to LDAP.</p>
+                                <div id="ldap-mapping-empty" class="muted">No LDAP mappings configured.</div>
+                                <ul class="ldap-list" id="ldap-mapping-list"></ul>
+                                <h4>Sync status</h4>
+                                <p class="muted tight">Status reflects the built-in ldap-sync integration.</p>
+                                <div class="ldap-status">
+                                    <div class="muted" id="ldap-sync-status">Sync trigger is disabled until configured.</div>
+                                    <div class="muted tight" id="ldap-sync-updated"></div>
+                                </div>
+                                <div class="ldap-notes">
+                                    <p class="muted tight">Guests are never written to LDAP. Only authorized users are mapped.</p>
+                                    <p class="muted tight">Ensure your LDAP credentials are valid. Updating settings requires re-entering the admin password.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="oauth-panel" class="panel" hidden>
