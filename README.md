@@ -84,7 +84,7 @@ Admin console showing OAuth clients and backups tab with scheduled runs and rete
 ## Table of Contents
 
 - [Features](#features)
-- [What's New in v2.0.3](#whats-new-in-v203)
+- [What's New in v2.0.4](#whats-new-in-v204)
 - [ldap-sync](#ldap-sync)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
@@ -108,23 +108,25 @@ Admin console showing OAuth clients and backups tab with scheduled runs and rete
 - [Security scans and code analysis](#security-scans-and-code-analysis)
 - [Contributing](#contributing)
 - [License](#license)
-- [Upgrade Guide (from < v2.0.2)](#upgrade-guide-from--v202)
+- [Upgrade Guide (from < v2.0.4)](#upgrade-guide-from--v204)
 
 ---
 
-## What's New in v2.0.3
+## What's New in v2.0.4
 
-- **Runtime config store + admin console:** JSON-backed providers/security/MFA configuration with optimistic concurrency, history audit, and inline editing from `/admin`. Bootstrap admin accounts via `ADMIN_BOOTSTRAP_USERS`.
-- **OAuth 2.1 / OIDC authorization server:** Authorization-code + refresh grants with PKCE, signed ID tokens, consent tracking, and optional `offline_access` refresh rotation. Includes discovery, JWKS, token, and userinfo endpoints.
-- **Admin OAuth client management:** List/create/update/delete clients, rotate secrets, and expose new secrets in the UI. All backed by new `/api/admin/oauth/*` routes.
+- **Unified UI tokens & utilities:** Shared spacing, radii, and layout utilities in `static/styles.css` now drive portal + MFA layout consistency.
+- **Standardized components:** Buttons and inputs are unified across templates, replacing per-page inline styles and local `<style>` blocks.
+- **Inline-style guard:** Added a `no-inline-styles` pre-commit hook to keep templates aligned with the shared design system and future React component mapping.
 
 ---
 
 ## ldap-sync
 
 > [!NOTE]
-> - ldap-sync has been moved to its own repository.  
-> - You can now find it at: https://github.com/modom-ofn/ldap-sync
+> - ldap-sync was originally moved to its own repository.  
+> - You can find it at: https://github.com/modom-ofn/ldap-sync
+> - Since then, it has been integrated with Auth-Portal.
+> - The ldap-sync tool at modom-ofn/ldap-sync will no longer be maintained.
 
 ---
 
@@ -195,7 +197,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.3
+EMBY_APP_VERSION=2.0.4
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -204,7 +206,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.3
+JELLYFIN_APP_VERSION=2.0.4
 ```
 
 
@@ -258,7 +260,7 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.3
+    image: modomofn/auth-portal:v2.0.4
     ports:
       - "8089:8080"
     environment:
@@ -300,12 +302,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.3}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.4}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.3}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.4}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -345,40 +347,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks: [authnet]
-
-  ldap-sync:
-    image: modomofn/ldap-sync:latest
-    profiles: ["ldap"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      openldap:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
-      LDAP_HOST: ldap://openldap:389
-      LDAP_ADMIN_DN: cn=admin,dc=authportal,dc=local
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      BASE_DN: ou=users,dc=authportal,dc=local
-      # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
-      TZ: ${TZ:-UTC}
-    restart: "no"
-    networks: [authnet]
-
-  phpldapadmin:
-    image: osixia/phpldapadmin:0.9.0
-    profiles: ["ldap"]
-    environment:
-      PHPLDAPADMIN_LDAP_HOSTS: openldap
-      PHPLDAPADMIN_HTTPS: "false"
-      TZ: ${TZ:-UTC}
-    ports:
-      - "8087:80"
-    depends_on:
-      openldap:
-        condition: service_healthy
-    restart: unless-stopped
     networks: [authnet]
 
 volumes:
@@ -498,7 +466,7 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 ## Security Notes
 
 - Token sealing: tokens are encrypted with `DATA_KEY` before DB insert/update. Unseal on read; failures clear the in-memory token.
-- Cookies: Session and pending-MFA cookies honour `SESSION_COOKIE_DOMAIN`; they are HTTP-only, SameSite=Lax, and rotate after successful MFA. `Secure` is automatic when `APP_BASE_URL` is HTTPS, or force it with `FORCE_SECURE_COOKIE=1`.
+- Cookies: Session and pending-MFA cookies honor `SESSION_COOKIE_DOMAIN`; they are HTTP-only, SameSite=Lax, and rotate after successful MFA. `Secure` is automatic when `APP_BASE_URL` is HTTPS, or force it with `FORCE_SECURE_COOKIE=1`.
 - Rate limits: login endpoints share a per-IP limiter (burst 5, ~10 req/min); MFA enrollment/challenge use a tighter burst 3, ~5 req/min (tune in `main.go`).
 - CSRF-lite: POST routes require same-origin via Origin/Referer.
 - Headers:
@@ -641,6 +609,13 @@ DEBUG plex: resources match via machine id
   - If the popup is closed/blocked, falls back to full-page nav.
   - Binds via `id="auth-signin"` / `[data-auth-signin]` / `.auth-signin`
 
+### UI Tokens & Component Mapping
+
+- **Design tokens**: `static/styles.css` defines shared spacing, radii, and color tokens under `:root`. Use these for any new UI work.
+- **Component classes**: prefer `.btn`, `.btn.ghost`, `.btn.primary`, `.auth-btn`, `.input`, `.card`, plus layout utilities like `.stack`, `.cluster`, `.center-row`.
+- **No inline styles**: templates should not include `style=` or `<style>` blocks. The pre-commit hook `no-inline-styles` enforces this so React components can map 1:1 with these classes later.
+- **React pre-work**: beginning phased approach to swap UI to ReactJS.
+
 ---
 
 ## How it works
@@ -679,6 +654,7 @@ DEBUG plex: resources match via machine id
 - Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).
 - If the portal is only used for same-origin apps, switch to SESSION_SAMESITE=strict; the fallback logic keeps you safe when Secure cookies aren’t yet possible (main.go:379-407).
 - Keep rate limits aligned with your threat model; newIPRateLimiter accepts tighter limits if you need to clamp brute force attempts (rate_limiter.go:10-74).
+- Personally, I have a 'Cloudflare WAF/Tunnel -> NGINX -> AuthPortal' setup that is protected with Crowdsec. I also enforce MFA and keep session_samesite=strict.
 
 ---
 
@@ -705,6 +681,8 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+This also runs the inline-style guard for HTML templates (`no-inline-styles`).
+
 ---
 
 ## Contributing
@@ -724,14 +702,15 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ---
 
-## Upgrade Guide (from < v2.0.2)
+## Upgrade Guide (from < v2.0.4)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.3` so you pick up Go 1.25.5 plus the patched OpenSSL 3.3.5 / BusyBox layers.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.4`.
 2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
 3) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.
    - Flip `MFA_ENFORCE=1` if everyone must pass MFA on login; keep `MFA_ENABLE=1` in that case.
-4) Verify end-to-end:
+4) If you customize templates, replace any inline styles with shared classes in `static/styles.css`; the `no-inline-styles` pre-commit hook will block new inline styles.
+5) Verify end-to-end:
    - Existing users can log in, enroll, and download recovery codes.
    - Enforced logins reach `/mfa/challenge` and succeed with both TOTP codes and a recovery code.
    - Repeated bad logins or code attempts return HTTP 429 from the per-IP rate limiters.

@@ -20,7 +20,7 @@
         <p class="muted">You’ve signed in with {{.ProviderName}}, but you’re not yet authorized on this server.</p>
       </div>
 
-      <div style="display:flex;justify-content:center;gap:12px;margin-top:10px">
+      <div class="cluster center mt-sm">
         <span class="badge warn">{{.ProviderName}} Not Authorized</span>
         <!-- Optional: a CTA to request access -->
         {{- if .RequestEmail }}
@@ -28,7 +28,7 @@
         {{- end }}
       </div>
 
-      <form action="/logout" method="post" style="margin-top:16px;text-align:center">
+      <form action="/logout" method="post" class="mt-md text-center">
         <button class="btn ghost" type="submit">Log out</button>
       </form>
     </section>

@@ -20,15 +20,15 @@
         <p class="muted">You are authorized on this server.</p>
       </div>
 
-      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:10px">
+      <div class="stack center mt-sm">
         {{- if .ExtraLinkURL }}
-        <a class="badge ok" style="text-decoration:none" href="{{ .ExtraLinkURL }}">{{ .ExtraLinkText }}</a>
+        <a class="badge ok link" href="{{ .ExtraLinkURL }}">{{ .ExtraLinkText }}</a>
         {{- end }}
       </div>
 
-      <div style="height:10px"></div>
+      <div class="spacer-sm"></div>
 
-      <div style="display:flex;justify-content:center;gap:12px;margin-top:16px">
+      <div class="cluster center mt-md">
         <form action="/logout" method="post">
           <button class="btn ghost" type="submit">Log out</button>
         </form>

@@ -22,7 +22,7 @@
         <p class="muted">Sign in with your {{.ProviderName}} account to continue.</p>
       </div>
 
-      <div style="display: flex; justify-content: center; align-items: center">
+      <div class="center-row">
 		  <button id="auth-signin" class="auth-btn {{.ProviderKey}}-btn" data-provider="{{.ProviderKey}}">
 			{{ if eq .ProviderKey "plex" }}
 			  <!-- Use a masked span so we can force pure black -->

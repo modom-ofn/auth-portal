@@ -1,5 +1,17 @@
 # AuthPortal Changelog
 
+## v2.0.4
+
+### Highlights
+- Unified portal + MFA styling around shared UI tokens, utilities, and component classes in `static/styles.css`.
+- Removed per-template inline styles and local `<style>` blocks for consistent spacing, buttons, and inputs.
+- Added a `no-inline-styles` pre-commit hook to keep templates aligned with the shared design system.
+
+### Upgrade Notes
+- No database migrations required for this release.
+- If you maintain custom templates, replace any inline styles with shared classes from `static/styles.css`.
+- Install the pre-commit hooks (`pre-commit install`) if you want local enforcement of the inline-style guard.
+
 ## v2.0.3
 
 ### Highlights

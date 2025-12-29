@@ -4,3 +4,10 @@ repos:
     hooks:
       - id: gitleaks
         args: [--staged, --redact]
+  - repo: local
+    hooks:
+      - id: no-inline-styles
+        name: Disallow inline styles in templates
+        entry: python scripts/check_inline_styles.py
+        language: python
+        files: ^auth-portal/templates/.*\.html$
