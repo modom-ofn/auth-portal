@@ -84,6 +84,7 @@ Admin console showing OAuth clients and backups tab with scheduled runs and rete
 ## Table of Contents
 
 - [Features](#features)
+- [User Guide](#user-guide)
 - [What's New in v2.0.4](#whats-new-in-v204)
 - [ldap-sync](#ldap-sync)
 - [Quick Start](#quick-start)
@@ -109,6 +110,12 @@ Admin console showing OAuth clients and backups tab with scheduled runs and rete
 - [Contributing](#contributing)
 - [License](#license)
 - [Upgrade Guide (from < v2.0.4)](#upgrade-guide-from--v204)
+
+---
+
+## User Guide
+
+See `USERGUIDE.md` for all user/admin how-to guides.
 
 ---
 
