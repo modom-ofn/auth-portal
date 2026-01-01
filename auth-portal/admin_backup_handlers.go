@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -116,6 +117,12 @@ func adminBackupsCreateHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "failed to create backup"})
 		return
 	}
+	if err := writeBackupAuditEvent(r.Context(), "backups.create", usernameFrom(r.Context()), map[string]any{
+		"backup": mapBackupFileResponse(meta),
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
+		return
+	}
 
 	respondJSON(w, http.StatusCreated, map[string]any{
 		"ok":     true,
@@ -159,9 +166,18 @@ func adminBackupsScheduleUpdate(w http.ResponseWriter, r *http.Request) {
 		actor = "admin"
 	}
 
+	before, beforeNext := backupSvc.ScheduleSnapshot()
 	updated, next, err := backupSvc.UpdateSchedule(r.Context(), schedule, actor)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+
+	if err := writeBackupAuditEvent(r.Context(), "backups.schedule.update", actor, map[string]any{
+		"before": mapScheduleResponse(before, beforeNext),
+		"after":  mapScheduleResponse(updated, next),
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
 		return
 	}
 
@@ -185,6 +201,12 @@ func adminBackupsDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	if err := writeBackupAuditEvent(r.Context(), "backups.delete", usernameFrom(r.Context()), map[string]any{
+		"name": name,
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
+		return
+	}
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -202,6 +224,12 @@ func adminBackupsRestoreHandler(w http.ResponseWriter, r *http.Request) {
 	cfg, err := backupSvc.RestoreBackup(r.Context(), name, usernameFrom(r.Context()))
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	if err := writeBackupAuditEvent(r.Context(), "backups.restore", usernameFrom(r.Context()), map[string]any{
+		"name": name,
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]any{
@@ -279,4 +307,21 @@ func mapBackupFileResponse(meta backupMetadata) adminBackupFileResponse {
 		Sections:  append([]string(nil), meta.Sections...),
 		Size:      meta.Size,
 	}
+}
+
+func writeBackupAuditEvent(ctx context.Context, action, actor string, metadata map[string]any) error {
+	if strings.TrimSpace(action) == "" {
+		return errors.New("audit action required")
+	}
+	meta, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+	_, err = db.ExecContext(ctx, `
+INSERT INTO admin_audit_events (action, target_type, target_label, actor, metadata)
+VALUES ($1, $2, $3, $4, $5)
+`, action, "backups", "schedule", strings.TrimSpace(actor), meta)
+	return err
 }

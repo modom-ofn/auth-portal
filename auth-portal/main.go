@@ -64,6 +64,7 @@ var (
 	// Unauthorized-page "Request Access" mailto link (optional)
 	unauthRequestEmail   = envOr("UNAUTH_REQUEST_EMAIL", "admin@example.com")
 	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
+	guestBulkDeleteMinAge = parseDurationOr(envOr("GUEST_BULK_DELETE_MIN_AGE", "24h"), 24*time.Hour)
 
 	// Provider selected at startup (plex default; emby and jellyfin are distinct)
 	currentProvider providers.MediaProvider
@@ -323,6 +324,7 @@ func buildRouter() *mux.Router {
 	loginLimiter := newIPRateLimiter(rate.Every(6*time.Second), 5, 15*time.Minute)
 	mfaLimiter := newIPRateLimiter(rate.Every(12*time.Second), 3, 15*time.Minute)
 	plexPollLimiter := newIPRateLimiter(rate.Every(1*time.Second), 6, 10*time.Minute)
+	adminBulkDeleteLimiter := newIPRateLimiter(rate.Every(30*time.Second), 1, 15*time.Minute)
 
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
@@ -445,7 +447,10 @@ func buildRouter() *mux.Router {
 	adminAPI.Handle("/config/{section}", adminGuard(permConfigWrite)(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
 	adminAPI.Handle("/config/history/{section}", adminGuard(permConfigRead)(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
 	adminAPI.Handle("/users", adminGuard(permUsersRead)(http.HandlerFunc(adminUsersListHandler))).Methods("GET")
+	adminAPI.Handle("/users/unauthorized", adminGuard(permUsersManage)(rateLimitMiddleware(adminBulkDeleteLimiter, http.HandlerFunc(adminUsersBulkDeleteHandler)))).Methods("DELETE")
+	adminAPI.Handle("/users/{id:[0-9]+}", adminGuard(permUsersManage)(http.HandlerFunc(adminUserDeleteHandler))).Methods("DELETE")
 	adminAPI.Handle("/users/{id:[0-9]+}/roles", adminGuard(permUsersManage)(http.HandlerFunc(adminUserRoleHandler))).Methods("POST")
+	adminAPI.Handle("/audit", adminGuard(permAdminAll)(http.HandlerFunc(adminAuditListHandler))).Methods("GET")
 	adminAPI.Handle("/oauth/clients", adminGuard(permOAuthRead)(http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
 	adminAPI.Handle("/oauth/clients", adminGuard(permOAuthManage)(http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
 	adminAPI.Handle("/oauth/clients/{id}", adminGuard(permOAuthManage)(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")

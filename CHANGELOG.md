@@ -8,12 +8,15 @@
 - Added a `no-inline-styles` pre-commit hook to keep templates aligned with the shared design system.
 - Introduced RBAC with roles/permissions tables, seeded `admin`/`user` roles, and middleware enforcement for fine-grained access control.
 - Integrated LDAP group mapping and sync controls directly into the admin portal via the `ldap-sync` integration.
+- Added admin audit logging with an Audit Logs UI to review admin actions and metadata snapshots.
+- Added guest cleanup controls, including single-user delete and bulk delete for unauthorized users.
 
 ### Upgrade Notes
 - No database migrations required for this release.
 - If you maintain custom templates, replace any inline styles with shared classes from `static/styles.css`.
 - Install the pre-commit hooks (`pre-commit install`) if you want local enforcement of the inline-style guard.
 - RBAC + LDAP group mapping require the latest database schema; run the app once to apply automatic migrations.
+- Bulk guest deletion is rate-limited and respects `GUEST_BULK_DELETE_MIN_AGE` (default `24h`).
 
 ## v2.0.3
 

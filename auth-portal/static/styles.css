@@ -481,6 +481,9 @@ a:hover{opacity:.9}
 .user-stat .stat-label{display:block;color:var(--muted);font-size:.85rem;}
 .user-stat .stat-value{display:block;font-size:1.4rem;font-weight:700;}
 .user-filters{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin:1rem 0;}
+.users-bulk-actions{display:flex;flex-direction:column;gap:.5rem;margin:1rem 0;}
+.users-bulk-row{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;}
+.users-bulk-row .input{min-width:260px;flex:1;}
 .users-table-wrapper{width:100%;overflow-x:auto;margin-top:1rem;}
 .users-table{width:100%;border-collapse:collapse;min-width:760px;table-layout:fixed;}
 .users-table th,.users-table td{padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;}
@@ -516,7 +519,18 @@ a:hover{opacity:.9}
 .modal-dialog{position:relative;background:var(--card);border:1px solid var(--border);border-radius:18px;max-width:720px;width:100%;padding:2.5rem 2.25rem 2.25rem;box-shadow:0 28px 52px rgba(0,0,0,.55);}
 .modal h3{margin-top:0;color:var(--brand);}
 .modal-dialog:focus{outline:none;}
+.user-info-actions{display:flex;flex-direction:column;gap:.65rem;margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border);}
 .modal-body{max-height:60vh;overflow:auto;line-height:1.5;color:var(--text);padding-right:.4rem;}
+
+.audit-header-actions{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;}
+#audit-search{background:#0b1220;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:.55rem .8rem;min-width:260px;}
+.audit-table-wrapper{width:100%;overflow-x:auto;margin-top:1rem;}
+.audit-table{width:100%;border-collapse:collapse;min-width:760px;table-layout:fixed;}
+.audit-table th,.audit-table td{padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;}
+.audit-table th{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+.audit-detail{margin-top:1.5rem;padding:1rem;border:1px solid var(--border);border-radius:12px;background:rgba(148,163,184,.08);}
+.audit-detail h3{margin:0 0 .75rem;}
+.audit-detail-body{background:#0b1220;border:1px solid var(--border);border-radius:10px;padding:1rem;max-height:260px;overflow:auto;font-size:.85rem;}
 .modal-body::-webkit-scrollbar{width:10px;}
 .modal-body::-webkit-scrollbar-track{background:rgba(148,163,184,.12);border-radius:12px;}
 .modal-body::-webkit-scrollbar-thumb{background:rgba(148,163,184,.4);border-radius:12px;}

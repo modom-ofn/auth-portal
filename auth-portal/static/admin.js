@@ -61,6 +61,8 @@
   const usersSearchInput = document.getElementById('users-search');
   const usersFilterMFA = document.getElementById('users-filter-mfa');
   const usersFilterAdmin = document.getElementById('users-filter-admin');
+  const usersBulkReason = document.getElementById('users-bulk-reason');
+  const usersBulkDeleteBtn = document.getElementById('users-bulk-delete-btn');
   const usersCountEl = document.getElementById('users-count');
   const usersMfaCountEl = document.getElementById('users-mfa-count');
   const usersAdminCountEl = document.getElementById('users-admin-count');
@@ -71,6 +73,7 @@
   const userInfoBody = document.getElementById('user-info-body');
   const userInfoTitle = document.getElementById('user-info-title');
   const userInfoClose = document.getElementById('user-info-close');
+  const userInfoActions = document.getElementById('user-info-actions');
   const appTimeZone = document.body?.dataset?.appTimezone || 'UTC';
   const rolesList = document.getElementById('roles-list');
   const rolesEmpty = document.getElementById('roles-empty');
@@ -101,6 +104,13 @@
   const ldapScheduledEnabledInput = document.getElementById('ldap-scheduled-enabled');
   const ldapScheduledIntervalInput = document.getElementById('ldap-scheduled-interval');
   const ldapNextRun = document.getElementById('ldap-sync-next');
+  const auditPanel = document.getElementById('audit-panel');
+  const auditReloadBtn = document.getElementById('audit-reload-btn');
+  const auditSearchInput = document.getElementById('audit-search');
+  const auditTableWrapper = document.getElementById('audit-table-wrapper');
+  const auditTableBody = document.getElementById('audit-rows');
+  const auditEmptyState = document.getElementById('audit-empty');
+  const auditDetailBody = document.getElementById('audit-detail-body');
 
   if (
     !configForm ||
@@ -122,6 +132,10 @@
     security: 'Security',
     mfa: 'MFA',
     'app-settings': 'App Settings',
+    oauth: 'OAuth Clients',
+    backups: 'Backups',
+    users: 'Users',
+    audit: 'Audit Logs',
   };
   let currentSection = 'providers';
 
@@ -143,6 +157,12 @@
     runningBackup: false,
     schedule: null,
     backups: [],
+  };
+
+  const auditState = {
+    loading: false,
+    loaded: false,
+    events: [],
   };
 
   const usersState = {
@@ -388,11 +408,14 @@
     if (usersPanel) {
       usersPanel.hidden = true;
     }
+    if (auditPanel) {
+      auditPanel.hidden = true;
+    }
   };
 
   const showOAuthPanel = () => {
     configForm.hidden = true;
-    historyPanel.hidden = true;
+    historyPanel.hidden = false;
     if (oauthPanel) {
       oauthPanel.hidden = false;
     }
@@ -402,11 +425,14 @@
     if (usersPanel) {
       usersPanel.hidden = true;
     }
+    if (auditPanel) {
+      auditPanel.hidden = true;
+    }
   };
 
   const showBackupsPanel = () => {
     configForm.hidden = true;
-    historyPanel.hidden = true;
+    historyPanel.hidden = false;
     if (oauthPanel) {
       oauthPanel.hidden = true;
     }
@@ -416,11 +442,14 @@
     if (usersPanel) {
       usersPanel.hidden = true;
     }
+    if (auditPanel) {
+      auditPanel.hidden = true;
+    }
   };
 
   const showUsersPanel = () => {
     configForm.hidden = true;
-    historyPanel.hidden = true;
+    historyPanel.hidden = false;
     if (oauthPanel) {
       oauthPanel.hidden = true;
     }
@@ -429,6 +458,26 @@
     }
     if (usersPanel) {
       usersPanel.hidden = false;
+    }
+    if (auditPanel) {
+      auditPanel.hidden = true;
+    }
+  };
+
+  const showAuditPanel = () => {
+    configForm.hidden = true;
+    historyPanel.hidden = false;
+    if (oauthPanel) {
+      oauthPanel.hidden = true;
+    }
+    if (backupsPanel) {
+      backupsPanel.hidden = true;
+    }
+    if (usersPanel) {
+      usersPanel.hidden = true;
+    }
+    if (auditPanel) {
+      auditPanel.hidden = false;
     }
   };
 
@@ -919,6 +968,51 @@
     });
   };
 
+  const renderAuditHistory = (section) => {
+    if (!historyList) {
+      return;
+    }
+    const events = auditState.events || [];
+    const filters = {
+      users: (event) => {
+        const action = String(event.action || '');
+        return (
+          action.startsWith('user.') ||
+          action.startsWith('roles.') ||
+          action === 'config.update.ldap'
+        );
+      },
+      oauth: (event) => String(event.action || '').startsWith('oauth.'),
+      backups: (event) => String(event.action || '').startsWith('backups.'),
+      audit: () => true,
+    };
+    const filter = filters[section] || (() => false);
+    const entries = events.filter(filter).slice(0, 25);
+    if (!entries.length) {
+      const label = labels[section] || section || 'this section';
+      historyList.innerHTML = `<li>No recent changes for ${label}.</li>`;
+      return;
+    }
+    historyList.innerHTML = '';
+    entries.forEach((event) => {
+      const li = document.createElement('li');
+      const when = event.createdAt ? new Date(event.createdAt).toLocaleString() : 'unknown time';
+      const who = event.actor || 'system';
+      const target = event.targetLabel || event.targetType || 'target';
+      const reason = event.reason ? ` - ${event.reason}` : '';
+      li.textContent = `${event.action} @ ${when} by ${who} (${target})${reason}`;
+      historyList.appendChild(li);
+    });
+  };
+
+  const renderHistoryPlaceholder = (section) => {
+    if (!historyList) {
+      return;
+    }
+    const label = labels[section] || section || 'this section';
+    historyList.innerHTML = `<li>No recent changes for ${label}.</li>`;
+  };
+
   const fetchConfig = async () => {
     const res = await fetch('/api/admin/config', { credentials: 'same-origin' });
     if (!res.ok) {
@@ -1305,11 +1399,89 @@
     }
     setUserInfoTitle('User Details');
     userInfoBody.innerHTML = buildUserDetails(user);
+    renderUserActions(user);
     userInfoModal.hidden = false;
     document.body.classList.add('modal-open');
     if (userInfoClose) {
       userInfoClose.focus();
     }
+  };
+
+  const renderUserActions = (user) => {
+    if (!userInfoActions) {
+      return;
+    }
+    userInfoActions.innerHTML = '';
+    userInfoActions.hidden = true;
+
+    if (!user || user.mediaAccess !== false || user.isAdmin) {
+      return;
+    }
+
+    const warning = document.createElement('p');
+    warning.className = 'muted';
+    warning.textContent = 'This user is unauthorized. You can delete the guest record and related data.';
+
+    const label = document.createElement('label');
+    label.className = 'muted';
+    label.textContent = 'Delete reason (required for audit trail)';
+
+    const reasonInput = document.createElement('input');
+    reasonInput.type = 'text';
+    reasonInput.className = 'input';
+    reasonInput.placeholder = 'e.g., Access denied - cleanup guest record';
+    reasonInput.maxLength = 240;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'danger-btn';
+    deleteBtn.textContent = 'Delete Guest User';
+
+    deleteBtn.addEventListener('click', async () => {
+      const reason = String(reasonInput.value || '').trim();
+      if (!reason) {
+        showStatus('Delete reason is required.', 'error');
+        reasonInput.focus();
+        return;
+      }
+      const confirmed = window.confirm(
+        `Delete guest user "${user.username || 'unknown'}"? This removes the user record and related data.`
+      );
+      if (!confirmed) {
+        return;
+      }
+      deleteBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `User delete failed (${res.status})`);
+        }
+        const json = await res.json().catch(() => ({}));
+        if (json?.ok === false) {
+          throw new Error(json?.error || 'User delete failed');
+        }
+        usersState.users = usersState.users.filter((entry) => entry.id !== user.id);
+        renderUsers();
+        showStatus(`Deleted guest user "${user.username || 'unknown'}".`, 'success');
+        closeUserInfoModal();
+      } catch (err) {
+        showStatus(err.message || 'User delete failed', 'error');
+      } finally {
+        deleteBtn.disabled = false;
+      }
+    });
+
+    userInfoActions.appendChild(warning);
+    userInfoActions.appendChild(label);
+    userInfoActions.appendChild(reasonInput);
+    userInfoActions.appendChild(deleteBtn);
+    userInfoActions.hidden = false;
   };
 
   const shortenId = (value, max = 22) => {
@@ -1435,6 +1607,192 @@
 
       usersTableBody.appendChild(tr);
     });
+  };
+
+  const renderAuditEvents = () => {
+    if (!auditTableBody || !auditEmptyState) {
+      return;
+    }
+    const query = String(auditSearchInput?.value || '').toLowerCase();
+    const events = auditState.events || [];
+    const filtered = query
+      ? events.filter((event) => {
+          const haystack = [
+            event.action,
+            event.targetType,
+            event.targetLabel,
+            event.actor,
+            event.reason,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return haystack.includes(query);
+        })
+      : events;
+
+    auditTableBody.innerHTML = '';
+    if (!filtered.length) {
+      if (auditTableWrapper) {
+        auditTableWrapper.hidden = true;
+      }
+      auditEmptyState.hidden = false;
+      auditEmptyState.textContent = auditState.loaded ? 'No audit events found.' : 'No audit events loaded.';
+      return;
+    }
+
+    auditEmptyState.hidden = true;
+    if (auditTableWrapper) {
+      auditTableWrapper.hidden = false;
+    }
+
+    filtered.forEach((event) => {
+      const tr = document.createElement('tr');
+
+      const timeTd = document.createElement('td');
+      timeTd.textContent = formatDate(event.createdAt);
+      tr.appendChild(timeTd);
+
+      const actionTd = document.createElement('td');
+      actionTd.textContent = event.action || '-';
+      tr.appendChild(actionTd);
+
+      const targetTd = document.createElement('td');
+      const targetLabel = event.targetLabel || event.targetType || '-';
+      targetTd.textContent = targetLabel;
+      tr.appendChild(targetTd);
+
+      const actorTd = document.createElement('td');
+      actorTd.textContent = event.actor || 'system';
+      tr.appendChild(actorTd);
+
+      const reasonTd = document.createElement('td');
+      reasonTd.textContent = event.reason || '-';
+      tr.appendChild(reasonTd);
+
+      const detailsTd = document.createElement('td');
+      const viewBtn = document.createElement('button');
+      viewBtn.type = 'button';
+      viewBtn.className = 'ghost-btn';
+      viewBtn.textContent = 'View';
+      viewBtn.addEventListener('click', () => {
+        if (!auditDetailBody) {
+          return;
+        }
+        const body = event.metadata
+          ? JSON.stringify(event.metadata, null, 2)
+          : 'No metadata recorded for this event.';
+        auditDetailBody.textContent = body;
+      });
+      detailsTd.appendChild(viewBtn);
+      tr.appendChild(detailsTd);
+
+      auditTableBody.appendChild(tr);
+    });
+  };
+
+  const loadAuditEvents = async (options = {}) => {
+    if (!auditPanel || auditState.loading) {
+      return;
+    }
+    auditState.loading = true;
+    if (auditReloadBtn) {
+      auditReloadBtn.disabled = true;
+    }
+    if (auditDetailBody) {
+      auditDetailBody.textContent = 'Select an event to view metadata.';
+    }
+    if (auditEmptyState) {
+      auditEmptyState.hidden = false;
+      auditEmptyState.textContent = 'Loading audit events...';
+    }
+    try {
+      const res = await fetch('/api/admin/audit?limit=100', { credentials: 'same-origin' });
+      if (!res.ok) {
+        throw new Error(`Audit fetch failed (${res.status})`);
+      }
+      const json = await res.json();
+      if (!(json?.ok)) {
+        throw new Error(json?.error || 'Audit fetch failed');
+      }
+      auditState.events = Array.isArray(json.events) ? json.events : [];
+      auditState.loaded = true;
+      renderAuditEvents();
+      if (!isConfigSection(currentSection)) {
+        renderAuditHistory(currentSection);
+      }
+      if (options.announce) {
+        showStatus('Audit logs refreshed.', 'success');
+      }
+    } catch (err) {
+      renderAuditEvents();
+      showStatus(err.message || 'Audit fetch failed', 'error');
+    } finally {
+      auditState.loading = false;
+      if (auditReloadBtn) {
+        auditReloadBtn.disabled = false;
+      }
+    }
+  };
+
+  const countUnauthorizedUsers = () =>
+    usersState.users.filter((user) => user.mediaAccess === false && !user.isAdmin).length;
+
+  const deleteAllUnauthorizedUsers = async () => {
+    if (!usersBulkReason || !usersBulkDeleteBtn) {
+      return;
+    }
+    const reason = String(usersBulkReason.value || '').trim();
+    if (!reason) {
+      showStatus('Delete reason is required.', 'error');
+      usersBulkReason.focus();
+      return;
+    }
+    const count = countUnauthorizedUsers();
+    if (!count) {
+      showStatus('No unauthorized users to delete.', 'info');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Delete ${count} unauthorized user${count === 1 ? '' : 's'}? This removes user records and related data.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    usersBulkDeleteBtn.disabled = true;
+    try {
+      const res = await fetch('/api/admin/users/unauthorized', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Bulk delete failed (${res.status})`);
+      }
+      const json = await res.json().catch(() => ({}));
+      if (json?.ok === false) {
+        throw new Error(json?.error || 'Bulk delete failed');
+      }
+      const deletedCount = Number(json?.deletedCount ?? count);
+      const eligibleCount = Number(json?.eligibleCount ?? deletedCount);
+      usersState.users = usersState.users.filter((user) => user.mediaAccess !== false || user.isAdmin);
+      renderUsers();
+      usersBulkReason.value = '';
+      const suffix =
+        eligibleCount && deletedCount < eligibleCount
+          ? ` (${eligibleCount - deletedCount} skipped due to age guard)`
+          : '';
+      showStatus(
+        `Deleted ${deletedCount} unauthorized user${deletedCount === 1 ? '' : 's'}${suffix}.`,
+        'success'
+      );
+    } catch (err) {
+      showStatus(err.message || 'Bulk delete failed', 'error');
+    } finally {
+      usersBulkDeleteBtn.disabled = false;
+    }
   };
 
   const loadUsers = async (options = {}) => {
@@ -1963,6 +2321,10 @@
     if (!user || !userInfoModal || !userInfoBody) {
       return;
     }
+    if (userInfoActions) {
+      userInfoActions.innerHTML = '';
+      userInfoActions.hidden = true;
+    }
     if (user.mediaAccess === false) {
       showStatus('Cannot assign roles to unauthorized/guest users.', 'warn');
       return;
@@ -2376,11 +2738,15 @@
     }
     if (section === 'oauth' && oauthPanel) {
       showOAuthPanel();
+      await loadAuditEvents();
+      renderAuditHistory(section);
       await loadOAuthClients();
       return;
     }
     if (section === 'users' && usersPanel) {
       showUsersPanel();
+      await loadAuditEvents();
+      renderAuditHistory(section);
       const tasks = [];
       if (!rolesState.loaded) {
         tasks.push(loadRoles());
@@ -2401,11 +2767,19 @@
     if (section === 'backups' && backupsPanel) {
       showBackupsPanel();
       clearSecretBanner();
+      await loadAuditEvents();
+      renderAuditHistory(section);
       if (backupState.loaded) {
         renderBackups();
         return;
       }
       await loadBackups();
+      return;
+    }
+    if (section === 'audit' && auditPanel) {
+      showAuditPanel();
+      await loadAuditEvents();
+      renderAuditHistory(section);
     }
   };
 
@@ -2685,6 +3059,25 @@
       await loadUsers({ announce: true });
     });
   }
+  if (usersBulkDeleteBtn) {
+    usersBulkDeleteBtn.addEventListener('click', async () => {
+      await deleteAllUnauthorizedUsers();
+    });
+  }
+
+  if (auditReloadBtn) {
+    auditReloadBtn.addEventListener('click', async () => {
+      await loadAuditEvents({ announce: true });
+    });
+  }
+
+  if (auditSearchInput) {
+    auditSearchInput.addEventListener('input', () => {
+      if (auditState.loaded) {
+        renderAuditEvents();
+      }
+    });
+  }
 
   if (usersSortButtons.length) {
     usersSortButtons.forEach((btn) => {
@@ -2725,6 +3118,10 @@
     userInfoModal.hidden = true;
     document.body.classList.remove('modal-open');
     setUserInfoTitle('User Details');
+    if (userInfoActions) {
+      userInfoActions.innerHTML = '';
+      userInfoActions.hidden = true;
+    }
   };
 
   if (userInfoClose) {

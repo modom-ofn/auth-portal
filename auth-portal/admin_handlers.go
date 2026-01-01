@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -169,6 +170,15 @@ func adminConfigUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		runtimeCfg.LoadedAt = snap.LoadedAt
 	}
 	applyRuntimeConfig(runtimeCfg)
+
+	action := "config.update." + sectionKey
+	if err := writeAdminAuditEvent(r.Context(), action, "config", 0, sectionKey, sanitizeAdminReason(req.Reason), map[string]any{
+		"section": sectionKey,
+		"version": snap.Version,
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
+		return
+	}
 
 	respondJSON(w, http.StatusOK, buildAdminConfigResponse(runtimeCfg))
 }
@@ -361,6 +371,12 @@ func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client create failed"})
 		return
 	}
+	if err := writeAdminAuditEvent(r.Context(), "oauth.create", "oauth", 0, client.ClientID, "", map[string]any{
+		"client": mapOAuthClient(client),
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
+		return
+	}
 	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
 		OK:           true,
 		Client:       mapOAuthClient(client),
@@ -398,6 +414,12 @@ func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client update failed"})
 		return
 	}
+	if err := writeAdminAuditEvent(r.Context(), "oauth.update", "oauth", 0, client.ClientID, "", map[string]any{
+		"client": mapOAuthClient(client),
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
+		return
+	}
 	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
 		OK:     true,
 		Client: mapOAuthClient(client),
@@ -424,6 +446,12 @@ func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "secret rotation failed"})
 		return
 	}
+	if err := writeAdminAuditEvent(r.Context(), "oauth.rotate_secret", "oauth", 0, clientID, "", map[string]any{
+		"clientId": clientID,
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
+		return
+	}
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":           true,
 		"clientSecret": secret,
@@ -447,6 +475,12 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Printf("admin oauth delete: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client delete failed"})
+		return
+	}
+	if err := writeAdminAuditEvent(r.Context(), "oauth.delete", "oauth", 0, clientID, "", map[string]any{
+		"clientId": clientID,
+	}); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "audit write failed"})
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -565,6 +599,35 @@ func normalizeAdminStringList(values []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func writeAdminAuditEvent(ctx context.Context, action, targetType string, targetID int, targetLabel, reason string, metadata map[string]any) error {
+	if strings.TrimSpace(action) == "" {
+		return errors.New("audit action required")
+	}
+	actor := strings.TrimSpace(usernameFrom(ctx))
+	if actor == "" {
+		actor = strings.TrimSpace(uuidFrom(ctx))
+	}
+
+	meta, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	var targetIDVal any
+	if targetID > 0 {
+		targetIDVal = targetID
+	}
+
+	_, err = db.ExecContext(ctx, `
+INSERT INTO admin_audit_events (action, target_type, target_id, target_label, actor, reason, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`, strings.TrimSpace(action), strings.TrimSpace(targetType), targetIDVal, strings.TrimSpace(targetLabel), actor, strings.TrimSpace(reason), meta)
+	return err
 }
 
 func normalizeProvidersConfig(cfg *ProvidersConfig) {
