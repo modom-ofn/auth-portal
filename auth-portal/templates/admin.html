@@ -25,6 +25,7 @@
             <button type="button" class="admin-tab" data-section="users">Users</button>
             <button type="button" class="admin-tab" data-section="oauth">OAuth Clients</button>
             <button type="button" class="admin-tab" data-section="backups">Backups</button>
+            <button type="button" class="admin-tab" data-section="audit">Audit Logs</button>
         </aside>
 
         <section class="admin-content">
@@ -50,13 +51,7 @@
                     </div>
                 </form>
 
-                <div id="history-panel" class="panel history-panel">
-                    <h3>Recent Changes</h3>
-                    <ul id="history-list" class="history-list">
-                        <li>Loading…</li>
-                    </ul>
-                </div>
-
+                
                 <div id="users-panel" class="panel" hidden>
                     <div class="panel-header">
                         <h2>Users</h2>
@@ -88,6 +83,14 @@
                         <label><input type="checkbox" id="users-filter-mfa"> MFA enabled</label>
                         <label><input type="checkbox" id="users-filter-admin"> Admins only</label>
                         <span class="muted" id="users-loaded-at">Not loaded</span>
+                    </div>
+                    <div class="users-bulk-actions">
+                        <label for="users-bulk-reason" class="muted">Delete reason (required to delete all unauthorized users)</label>
+                        <div class="users-bulk-row">
+                            <input id="users-bulk-reason" type="text" class="input" placeholder="e.g., Weekly guest cleanup" maxlength="240">
+                            <button type="button" id="users-bulk-delete-btn" class="danger-btn">Delete All Guests</button>
+                        </div>
+                        <span class="muted">Bulk delete skips recent guests and is rate-limited.</span>
                     </div>
                     <div id="users-empty" class="muted">Loading users...</div>
                     <div id="users-table-wrapper" class="users-table-wrapper" hidden>
@@ -235,6 +238,37 @@
                     </div>
                 </div>
 
+                <div id="audit-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <h2>Audit Logs</h2>
+                        <div class="audit-header-actions">
+                            <input type="search" id="audit-search" placeholder="Search action, target, actor, or reason" aria-label="Search audit logs">
+                            <button type="button" id="audit-reload-btn" class="ghost-btn">Refresh</button>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Review admin activity across user, role, backup, and configuration changes.</p>
+                    <div id="audit-empty" class="muted">Loading audit events...</div>
+                    <div id="audit-table-wrapper" class="audit-table-wrapper" hidden>
+                        <table class="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Action</th>
+                                    <th>Target</th>
+                                    <th>Actor</th>
+                                    <th>Reason</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-rows"></tbody>
+                        </table>
+                    </div>
+                    <div class="audit-detail">
+                        <h3>Event Details</h3>
+                        <pre id="audit-detail-body" class="audit-detail-body">Select an event to view metadata.</pre>
+                    </div>
+                </div>
+
                 <div id="oauth-panel" class="panel" hidden>
                     <div class="panel-header">
                         <h2>OAuth Clients</h2>
@@ -364,6 +398,13 @@
                         </table>
                     </div>
                 </div>
+
+                <div id="history-panel" class="panel history-panel">
+                    <h3>Recent Changes</h3>
+                    <ul id="history-list" class="history-list">
+                        <li>Loading.</li>
+                    </ul>
+                </div>
             </div>
         </section>
     </main>
@@ -383,6 +424,7 @@
             <button type="button" id="user-info-close" class="icon-btn close-btn" aria-label="Close user details" title="Close">x</button>
             <h3 id="user-info-title">User Details</h3>
             <div id="user-info-body" class="modal-body user-info-body"></div>
+            <div id="user-info-actions" class="modal-body user-info-actions" hidden></div>
         </div>
     </dialog>
 

@@ -36,6 +36,20 @@ AuthPortal's OAuth/OIDC server currently issues standard identity claims only:
 
 Custom roles and permissions are not included in ID tokens, access tokens, or userinfo responses in v2.0.4. If a downstream app needs role-based authorization, use LDAP group mappings.
 
+### Delete unauthorized/guest users
+
+1) Open `/admin` and click a user name to view details.
+2) For unauthorized users, enter a delete reason and click **Delete Guest User**.
+3) The user record and related data are removed, and the action is recorded in the audit trail.
+4) To remove all unauthorized users at once, use **Delete All Guests** in the Users section and supply a reason.
+5) Bulk delete skips recent guests based on `GUEST_BULK_DELETE_MIN_AGE` (default `24h`).
+
+### Review the audit log
+
+1) Open `/admin` and select **Audit Logs**.
+2) Use search or refresh to find events.
+3) Click **View** on any row to inspect the stored metadata snapshot.
+
 ## User How-Tos
 
 ### Sign in and complete MFA
@@ -43,4 +57,3 @@ Custom roles and permissions are not included in ID tokens, access tokens, or us
 1) Sign in via the provider buttons on the login page.
 2) If MFA is required, complete the challenge at `/mfa/challenge`.
 3) If prompted, enroll MFA at `/mfa/enroll`.
-

@@ -124,6 +124,9 @@ See `USERGUIDE.md` for all user/admin how-to guides.
 - **Unified UI tokens & utilities:** Shared spacing, radii, and layout utilities in `static/styles.css` now drive portal + MFA layout consistency.
 - **Standardized components:** Buttons and inputs are unified across templates, replacing per-page inline styles and local `<style>` blocks.
 - **Inline-style guard:** Added a `no-inline-styles` pre-commit hook to keep templates aligned with the shared design system and future React component mapping.
+- **RBAC (roles & permissions):** Introduced roles/permissions support with built-in seed roles, user-role assignments, and middleware enforcement.
+- **LDAP sync integration:** Integrated `ldap-sync` directly into AuthPortal with admin UI controls for mappings and sync.
+- **RBAC schema additions:** Added roles, permissions, role-permissions, and user-roles tables to support fine-grained access control.
 
 ---
 

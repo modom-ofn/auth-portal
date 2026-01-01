@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -35,6 +36,13 @@ func adminRolesCreateHandler(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusForbidden
 		}
 		http.Error(w, err.Error(), status)
+		return
+	}
+
+	if err := writeRoleAuditEvent(r.Context(), "roles.create", "role", 0, role.Name, map[string]any{
+		"role": role,
+	}); err != nil {
+		http.Error(w, "audit write failed", http.StatusInternalServerError)
 		return
 	}
 
@@ -78,6 +86,13 @@ func adminRoleUpdateHandler(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusForbidden
 		}
 		http.Error(w, err.Error(), status)
+		return
+	}
+	if err := writeRoleAuditEvent(r.Context(), "roles.update", "role", 0, role.Name, map[string]any{
+		"role":         role,
+		"sessionReset": len(userIDs),
+	}); err != nil {
+		http.Error(w, "audit write failed", http.StatusInternalServerError)
 		return
 	}
 	ldapScheduler.TriggerChange("role update")
@@ -142,6 +157,14 @@ func adminUserRoleHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to assign role", http.StatusInternalServerError)
 			return
 		}
+		if err := writeRoleAuditEvent(r.Context(), "roles.user.add", "user", userID, user.Username, map[string]any{
+			"userId":   userID,
+			"username": user.Username,
+			"role":     role,
+		}); err != nil {
+			http.Error(w, "audit write failed", http.StatusInternalServerError)
+			return
+		}
 	case "remove", "delete":
 		if err := removeUserRoleByID(ctx, userID, role); err != nil {
 			if errors.Is(err, ErrRoleNotFound) {
@@ -149,6 +172,14 @@ func adminUserRoleHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			http.Error(w, "failed to remove role", http.StatusInternalServerError)
+			return
+		}
+		if err := writeRoleAuditEvent(r.Context(), "roles.user.remove", "user", userID, user.Username, map[string]any{
+			"userId":   userID,
+			"username": user.Username,
+			"role":     role,
+		}); err != nil {
+			http.Error(w, "audit write failed", http.StatusInternalServerError)
 			return
 		}
 	default:
@@ -179,9 +210,45 @@ func adminRoleDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	if err := writeRoleAuditEvent(r.Context(), "roles.delete", "role", 0, name, map[string]any{
+		"role":         name,
+		"sessionReset": len(userIDs),
+	}); err != nil {
+		http.Error(w, "audit write failed", http.StatusInternalServerError)
+		return
+	}
 	ldapScheduler.TriggerChange("role delete")
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":           true,
 		"sessionReset": len(userIDs),
 	})
+}
+
+func writeRoleAuditEvent(ctx context.Context, action, targetType string, targetID int, targetLabel string, metadata map[string]any) error {
+	if strings.TrimSpace(action) == "" {
+		return errors.New("audit action required")
+	}
+	actor := strings.TrimSpace(usernameFrom(ctx))
+	if actor == "" {
+		actor = strings.TrimSpace(uuidFrom(ctx))
+	}
+
+	meta, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	var targetIDVal any
+	if targetID > 0 {
+		targetIDVal = targetID
+	}
+
+	_, err = db.ExecContext(ctx, `
+INSERT INTO admin_audit_events (action, target_type, target_id, target_label, actor, metadata)
+VALUES ($1, $2, $3, $4, $5, $6)
+`, strings.TrimSpace(action), strings.TrimSpace(targetType), targetIDVal, strings.TrimSpace(targetLabel), actor, meta)
+	return err
 }

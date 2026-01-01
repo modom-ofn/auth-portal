@@ -105,6 +105,22 @@ CREATE TABLE IF NOT EXISTS user_roles (
 CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles (role_id);
 `,
 		`
+CREATE TABLE IF NOT EXISTS admin_audit_events (
+  id          BIGSERIAL PRIMARY KEY,
+  action      TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id   BIGINT,
+  target_label TEXT,
+  actor       TEXT,
+  reason      TEXT,
+  metadata    JSONB,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_action ON admin_audit_events (action);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit_events (target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_events (created_at DESC);
+`,
+		`
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ
 `,
