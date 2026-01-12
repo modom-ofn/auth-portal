@@ -488,10 +488,13 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 
 func adminPageHandler(w http.ResponseWriter, _ *http.Request) {
 	cfg := currentRuntimeConfig()
+	adminJS, adminCSS := adminAssetPaths()
 	render(w, "admin.html", map[string]any{
 		"ProviderDisplay": mediaProviderDisplay,
 		"ConfigLoadedAt":  cfg.loadedAt().Format(time.RFC3339),
 		"AppTimeZone":     appTimeZone,
+		"AdminJS":         adminJS,
+		"AdminCSS":        adminCSS,
 	})
 }
 
