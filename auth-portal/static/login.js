@@ -2,6 +2,29 @@
 (() => {
   let lastAuthRedirect = "/home";
 
+  function safeRedirect(path) {
+    try {
+      const dest = new URL(String(path || ""), globalThis.location.origin);
+      if (dest.origin !== globalThis.location.origin) return null;
+      if (dest.protocol !== "http:" && dest.protocol !== "https:") return null;
+      return dest.pathname + dest.search + dest.hash;
+    } catch {
+      return null;
+    }
+  }
+
+  function continueTargetFromLocation() {
+    try {
+      const params = new URLSearchParams(globalThis.location.search || "");
+      const next = params.get("next");
+      const safe = safeRedirect(next);
+      if (!safe || !safe.startsWith("/oidc/authorize")) return null;
+      return safe;
+    } catch {
+      return null;
+    }
+  }
+
   function openPopup(url) {
     const w = 600, h = 700;
     const y = (globalThis.top?.outerHeight || 800) / 2 + (globalThis.top?.screenY || 0) - h / 2;
@@ -14,17 +37,28 @@
   }
 
   function finalizeNavigation(redirect, needsMFA) {
-    const safeRedirect = (path) => {
+    const continueTarget = continueTargetFromLocation();
+    let target = safeRedirect(redirect) || (needsMFA ? "/mfa/challenge" : "/home");
+
+    if (!needsMFA && continueTarget) {
       try {
-        const dest = new URL(String(path || ""), globalThis.location.origin);
-        if (dest.origin !== globalThis.location.origin) return null;
-        if (dest.protocol !== "http:" && dest.protocol !== "https:") return null;
-        return dest.pathname + dest.search + dest.hash;
-      } catch {
-        return null;
-      }
-    };
-    const target = safeRedirect(redirect) || (needsMFA ? "/mfa/challenge" : "/home");
+        const parsed = new URL(target, globalThis.location.origin);
+        if (parsed.pathname === "/home") {
+          target = continueTarget;
+        }
+      } catch {}
+    }
+
+    if (continueTarget) {
+      try {
+        const parsed = new URL(target, globalThis.location.origin);
+        if (parsed.pathname === "/mfa/challenge" && !parsed.searchParams.has("next")) {
+          parsed.searchParams.set("next", continueTarget);
+          target = parsed.pathname + (parsed.search ? parsed.search : "");
+        }
+      } catch {}
+    }
+
     lastAuthRedirect = target;
     globalThis.location.assign(target);
   }

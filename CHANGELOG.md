@@ -9,6 +9,8 @@
 - Normalized time handling by introducing `APP_TIMEZONE`/`TZ`; backup schedules, last/next run timestamps, and the admin UI now display in your configured zone instead of UTC-only.
 - Hardened popup completion flows by removing inline scripts and finishing the `window.opener` handoff inside `login.js`, keeping the stricter `script-src 'self'` CSP while preserving the Plex/Emby/Jellyfin sign-in UX.
 - CI/CD now runs an Aqua Trivy scan immediately after multi-arch image builds to block CRITICAL/HIGH vulnerabilities before publishing Docker tags or GitHub releases.
+- Fixed OIDC continuation so unauthenticated `/oidc/authorize` requests are resumed after login and MFA instead of dropping users at `/home`.
+- Corrected OIDC redirect error behavior to return standards-compliant callback redirects for valid absolute `redirect_uri` values.
 
 ### Upgrade Notes
 - Define at least one bootstrap administrator with `ADMIN_BOOTSTRAP_USERS` (`username:email` pairs). Additional admins can be granted through the console later.
@@ -17,6 +19,8 @@
 - The OAuth token endpoint now issues refresh tokens only when `offline_access` is requested; update downstream clients if they previously assumed implicit refresh support.
 - Set `APP_TIMEZONE` (plus matching `TZ` in Docker) to keep scheduled backups and admin timestamps consistent with your locality; the compose/README samples now include these vars.
 - Rebuild or pull the v2.0.3 image so you pick up the CSP-safe popup flow—older binaries with inline scripts will be blocked by modern browsers when `script-src 'self'` is enforced.
+- For OIDC clients, ensure each `redirect_uri` exactly matches one of the registered client redirect URIs (including path/prefix and trailing slash).
+- Optional: set `TRUSTED_REDIRECT_HOSTS` to an explicit allow-list if you want to restrict absolute OIDC callback hosts beyond per-client registration.
 
 ## v2.0.2
 

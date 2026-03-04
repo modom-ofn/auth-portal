@@ -177,6 +177,9 @@ ADMIN_BOOTSTRAP_USERS=admin:admin@example.com
 OIDC_SIGNING_KEY_PATH=/run/secrets/oidc_signing_key.pem
 OIDC_SIGNING_KEY=
 OIDC_ISSUER=https://auth.example.com
+# Optional allow-list for absolute OIDC redirect_uri hosts (comma/semicolon separated).
+# If unset, AuthPortal trusts hosts from each client's registered redirect URIs.
+TRUSTED_REDIRECT_HOSTS=
 
 # Logging # DEBUG | INFO | WARN | ERROR
 LOG_LEVEL=INFO
@@ -415,6 +418,7 @@ docker compose --profile ldap up -d --build
 - `FORCE_HSTS`  set to `1` to always emit Strict-Transport-Security even if `APP_BASE_URL` is http (use when TLS terminates upstream).
 - `APP_TIMEZONE`  IANA timezone (e.g., `America/New_York`) used for backup scheduling and admin timestamps; set `TZ` to the same value in Docker to keep the container clock aligned.
 - `TRUSTED_PROXY_CIDRS`  comma-separated CIDR ranges of proxies allowed to supply `X-Forwarded-For`/`X-Real-IP`; leave empty to rely on `RemoteAddr`.
+- `TRUSTED_REDIRECT_HOSTS`  optional comma/semicolon-separated host allow-list for absolute OIDC `redirect_uri` values; if unset, allowed hosts derive from each client's registered redirect URIs.
 - `LOGIN_EXTRA_LINK_URL`  external URL on authorized page.
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
@@ -441,6 +445,9 @@ docker compose --profile ldap up -d --build
 
 - Discovery endpoint `/.well-known/openid-configuration` advertises JWKS (`/oidc/jwks.json`), authorize (`/oidc/authorize`), token (`/oidc/token`), and userinfo (`/oidc/userinfo`) URLs.
 - `/oidc/authorize` implements the authorization-code grant with PKCE. User consent is recorded per client/scope, supports `prompt=consent`, and returns `consent_required` when `prompt=none` is requested without prior approval.
+- If a portal session is missing, `/oidc/authorize` is resumed after login (and MFA when required) using a validated local `next` continuation.
+- Client `redirect_uri` validation is exact-string against the registered redirect URI list (scheme/host/path/query must match exactly).
+- OAuth error responses redirect back to valid absolute callback URLs (`http`/`https`) with standard `error` query parameters.
 - `/oidc/token` handles `authorization_code` and `refresh_token` grants. Refresh tokens rotate on every use and are only issued when the `offline_access` scope is granted.
 - `/oidc/userinfo` returns `sub`, `preferred_username`, and optional email claims based on granted scopes. ID tokens are RS256-signed and echo the incoming `nonce`.
 - Provide signing material with `OIDC_SIGNING_KEY_PATH` (PEM on disk) or inline `OIDC_SIGNING_KEY`; override the advertised issuer with `OIDC_ISSUER` when running behind a reverse proxy.
@@ -593,7 +600,7 @@ DEBUG plex: resources match via machine id
 
 - **Multi-factor authentication**
   - `GET /mfa/challenge`  HTML challenge page shown when MFA is required.
-  - `POST /mfa/challenge/verify`  JSON `{ ok, redirect, recoveryUsed, remainingRecoveryCodes }`; rotates the session cookie on success.
+  - `POST /mfa/challenge/verify`  JSON `{ ok, redirect, recoveryUsed, remainingRecoveryCodes }`; accepts optional `next` for OIDC continuation and rotates the session cookie on success.
   - `GET /mfa/enroll`  HTML enrollment UI for authenticated users.
   - `GET /mfa/enroll/status`  JSON summary of enrollment state (enabled/pending timestamps, remaining recovery codes).
   - `POST /mfa/enroll/start`  JSON `{ ok, secret, otpauth, digits, period, drift, enforced, previouslyEnabled }` to seed authenticator apps.
@@ -602,7 +609,7 @@ DEBUG plex: resources match via machine id
 - **OAuth 2.1 / OIDC**
   - `GET /.well-known/openid-configuration`  discovery document.
   - `GET /oidc/jwks.json`  JWKS for RS256 validation.
-  - `GET /oidc/authorize`  authorization-code endpoint (requires authenticated portal session).
+  - `GET /oidc/authorize`  authorization-code endpoint; if not authenticated, redirects to login and resumes via `next`.
   - `POST /oidc/authorize/decision`  consent form postback (`allow`/`deny`).
   - `POST /oidc/token`  token exchange for authorization code + refresh grants.
   - `GET /oidc/userinfo`  userinfo endpoint (bearer token required).
@@ -650,9 +657,10 @@ DEBUG plex: resources match via machine id
    - If the user is already authenticated with the provider, the popup returns immediately.
 2. Server completes provider-specific auth, seals/stores the media token, and decides authorization.
 3. If MFA is required (enforcement on or the user has enabled it), the app issues a pending-MFA cookie and redirects to `/mfa/challenge`; otherwise it sends the user directly to `/home`.
-4. The MFA challenge verifies a TOTP or recovery code, rotates the JWT, clears the pending cookie, and redirects back to the portal.
-5. Session cookie TTL defaults to 24h for authorized users and 5m for unauthorized; authorized user profiles are stored in Postgres.
-6. The opener page updates based on authorization, showing the authorized or restricted home experience and optional extra links.
+4. If login originated from `/oidc/authorize`, AuthPortal preserves that request and resumes it after login; MFA challenge completion also resumes the same authorize URL.
+5. The MFA challenge verifies a TOTP or recovery code, rotates the JWT, clears the pending cookie, and redirects to the validated continuation target (or `/home`).
+6. Session cookie TTL defaults to 24h for authorized users and 5m for unauthorized; authorized user profiles are stored in Postgres.
+7. The opener page updates based on authorization, showing the authorized or restricted home experience and optional extra links.
 
 ---
 
