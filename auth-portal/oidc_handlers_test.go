@@ -31,8 +31,8 @@ const (
 	testClientName    = "Test App"
 	testCallbackURL   = "https://example.com/callback"
 	testTokenPath     = "/oidc/token"
-	headerContentType = "Content-Type"
-	mimeFormURLEnc    = "application/x-www-form-urlencoded"
+	testHeaderContentType = "Content-Type"
+	mimeFormURLEnc        = "application/x-www-form-urlencoded"
 )
 
 func TestFinishAuthorizeFlowSuccess(t *testing.T) {
@@ -235,7 +235,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	form.Set("client_id", testClientID)
 
 	req := httptest.NewRequest(http.MethodPost, testTokenPath, strings.NewReader(form.Encode()))
-	req.Header.Set(headerContentType, mimeFormURLEnc)
+	req.Header.Set(testHeaderContentType, mimeFormURLEnc)
 
 	rr := httptest.NewRecorder()
 	oidcTokenHandler(rr, req)
@@ -308,7 +308,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	form.Set("client_id", testClientID)
 
 	req := httptest.NewRequest(http.MethodPost, testTokenPath, strings.NewReader(form.Encode()))
-	req.Header.Set(headerContentType, mimeFormURLEnc)
+	req.Header.Set(testHeaderContentType, mimeFormURLEnc)
 
 	rr := httptest.NewRecorder()
 	oidcTokenHandler(rr, req)
@@ -382,7 +382,7 @@ SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, respo
 	form.Set("client_id", testClientID)
 
 	req := httptest.NewRequest(http.MethodPost, testTokenPath, strings.NewReader(form.Encode()))
-	req.Header.Set(headerContentType, mimeFormURLEnc)
+	req.Header.Set(testHeaderContentType, mimeFormURLEnc)
 
 	rr := httptest.NewRecorder()
 	oidcTokenHandler(rr, req)

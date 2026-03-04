@@ -3,6 +3,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const codeInput = document.getElementById('mfa-code');
   const submitBtn = document.getElementById('mfa-submit');
   const errorBox = document.getElementById('mfa-error');
+  const searchParams = new URLSearchParams(globalThis.location.search || '');
+  const next = (searchParams.get('next') || '').trim();
 
   if (codeInput) {
     setTimeout(() => codeInput.focus({ preventScroll: true }), 50);
@@ -42,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, next }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.ok) {

@@ -304,12 +304,12 @@ func initProviderDeps() {
 		SetUserAdminByUsername: func(username string, admin bool) error {
 			return setUserAdminByUsername(username, admin, "jellyfin")
 		},
-		FinalizeLogin:                finalizeLoginSession,
-		SetSessionCookie:             setSessionCookie,
-		SetTempSessionCookie:         setTempSessionCookie,
-		SealToken:                    SealToken,
-		Debugf:                       Debugf,
-		Warnf:                        Warnf,
+		FinalizeLogin:        finalizeLoginSession,
+		SetSessionCookie:     setSessionCookie,
+		SetTempSessionCookie: setTempSessionCookie,
+		SealToken:            SealToken,
+		Debugf:               Debugf,
+		Warnf:                Warnf,
 	})
 }
 
@@ -815,7 +815,7 @@ func authMiddleware(next http.Handler) http.Handler {
 		c, err := r.Cookie(sessionCookie)
 
 		if err != nil || c.Value == "" {
-			http.Redirect(w, r, "/", http.StatusFound)
+			http.Redirect(w, r, loginRedirectTarget(r), http.StatusFound)
 			return
 		}
 
@@ -825,7 +825,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 		if err != nil || !token.Valid {
 			clearSessionCookie(w)
-			http.Redirect(w, r, "/", http.StatusFound)
+			http.Redirect(w, r, loginRedirectTarget(r), http.StatusFound)
 			return
 		}
 
@@ -837,12 +837,28 @@ func authMiddleware(next http.Handler) http.Handler {
 				r = r.WithContext(ctx)
 			} else {
 				clearSessionCookie(w)
-				http.Redirect(w, r, "/", http.StatusFound)
+				http.Redirect(w, r, loginRedirectTarget(r), http.StatusFound)
 				return
 			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func loginRedirectTarget(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return "/"
+	}
+	if r.Method != http.MethodGet || strings.TrimSpace(r.URL.Path) != "/oidc/authorize" {
+		return "/"
+	}
+	next := strings.TrimSpace(r.URL.RequestURI())
+	if !strings.HasPrefix(next, "/oidc/authorize") {
+		return "/"
+	}
+	q := url.Values{}
+	q.Set("next", next)
+	return "/?" + q.Encode()
 }
 
 func hasValidSession(r *http.Request) bool {
