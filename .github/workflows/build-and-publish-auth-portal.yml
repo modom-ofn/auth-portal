@@ -194,7 +194,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
         with:
-          trivy-version: v0.69.3
+          version: v0.69.3
           scan-type: image
           image-ref: ${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}
           vuln-type: 'os,library'
