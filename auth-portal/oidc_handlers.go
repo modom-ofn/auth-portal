@@ -645,8 +645,14 @@ func writeOIDCRedirectError(w http.ResponseWriter, r *http.Request, redirectURI,
 		writeOIDCError(w, http.StatusBadRequest, code, description)
 		return
 	}
-	if host := strings.TrimSpace(u.Hostname()); host != "" {
-		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "unsafe redirect_uri: must be a relative URL")
+	if u.IsAbs() {
+		scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+		if (scheme != "https" && scheme != "http") || strings.TrimSpace(u.Hostname()) == "" {
+			writeOIDCError(w, http.StatusBadRequest, "invalid_request", "invalid redirect_uri")
+			return
+		}
+	} else if !(strings.HasPrefix(redirectURI, "/") && (len(redirectURI) == 1 || (redirectURI[1] != '/' && redirectURI[1] != '\\'))) {
+		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "invalid redirect_uri")
 		return
 	}
 	q := u.Query()

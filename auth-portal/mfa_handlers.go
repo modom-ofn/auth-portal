@@ -43,6 +43,7 @@ type mfaVerifyResponse struct {
 
 type mfaChallengeVerifyRequest struct {
 	Code string `json:"code"`
+	Next string `json:"next,omitempty"`
 }
 
 type mfaChallengeVerifyResponse struct {
@@ -372,7 +373,7 @@ func mfaChallengeVerifyHandler(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, mfaChallengeVerifyResponse{
 		OK:                     true,
-		Redirect:               "/home",
+		Redirect:               sanitizeOIDCContinueTarget(req.Next),
 		RecoveryUsed:           recoveryUsed,
 		RemainingRecoveryCodes: remaining,
 	})
@@ -384,6 +385,30 @@ func normalizeMFACode(code string) string {
 	cleaned = strings.ReplaceAll(cleaned, "-", "")
 	cleaned = strings.ReplaceAll(cleaned, "_", "")
 	return cleaned
+}
+
+func sanitizeOIDCContinueTarget(raw string) string {
+	next := strings.TrimSpace(raw)
+	if next == "" {
+		return "/home"
+	}
+	next = strings.ReplaceAll(next, "\\", "/")
+	if !strings.HasPrefix(next, "/oidc/authorize") {
+		return "/home"
+	}
+	parsed, err := url.Parse(next)
+	if err != nil || parsed.String() == "" || parsed.IsAbs() || parsed.Fragment != "" {
+		return "/home"
+	}
+	if !(strings.HasPrefix(next, "/") && (len(next) == 1 || (next[1] != '/' && next[1] != '\\'))) {
+		return "/home"
+	}
+	return parsed.Path + func() string {
+		if parsed.RawQuery == "" {
+			return ""
+		}
+		return "?" + parsed.RawQuery
+	}()
 }
 
 func respondJSON(w http.ResponseWriter, status int, payload any) {
