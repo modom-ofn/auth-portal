@@ -13,9 +13,13 @@
 - Simplified portal styling model to secure color-only controls (background + modal), removed custom image upload/mode paths, and cleaned related dead UI/API/backend code.
 - Improved Plex web-login resilience under rate limiting (429 poll responses) to reduce false `Auth failed` outcomes during provider callback flow.
 - Hardened container runtime base image from standard Alpine to `dhi.io/alpine-base:3.23-alpine3.23-dev`, and updated compose/dev defaults to build and run the hardened image path.
+- Mitigated BusyBox CVE coverage gaps by enforcing `busybox>=1.37.0-r27` in both Docker build and runtime stages.
+- Reduced backend cognitive complexity in high-traffic auth/router handlers (routing assembly, MFA verification/challenge, OIDC token grant, and provider forward flows) by extracting focused helper functions without behavior changes.
+- Improved SonarQube maintainability posture by centralizing repeated auth literals (post-login redirects/messages, OIDC error codes/messages, MFA error payloads) and removing unnecessary temporary variables in conditional paths.
 
 ### Upgrade Notes
 - Bump image tags/config references to `v2.0.4` and rebuild so you pick up the modular admin UX + hardened runtime image changes.
+- Rebuild images after upgrading to ensure the BusyBox minimum (`>=1.37.0-r27`) is present in both builder and runtime layers.
 - If you maintained portal background image settings in prior versions, note that `v2.0.4` enforces color-only portal styling; use `portalBackgroundColor` and `portalModalColor`.
 - For local full-stack compose usage, the dev compose file now builds AuthPortal locally by default (`AUTH_PORTAL_IMAGE` can override the output tag).
 - No manual database migration steps are required beyond normal startup migrations.

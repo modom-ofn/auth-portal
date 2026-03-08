@@ -202,9 +202,9 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	completeEmbyForwardSession(w, auth, authorized)
 
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
-		Message:  "Signed in - you can close this window.",
+		Message:  PostAuthMessageSignedIn,
 		Provider: "emby-auth",
-		Redirect: "/home",
+		Redirect: PostAuthRedirectHome,
 	})
 }
 
@@ -222,11 +222,10 @@ func (EmbyProvider) IsAuthorized(uuid, _ string) (bool, error) {
 	if EmbyAPIKey != "" && u.MediaUUID != "" {
 		id := strings.TrimPrefix(u.MediaUUID, "emby-")
 		if detail, derr := embyGetUserDetail(EmbyServerURL, EmbyAPIKey, id); derr == nil {
-			ok := !detail.Policy.IsDisabled
 			if SetUserMediaAccessByUsername != nil {
-				_ = SetUserMediaAccessByUsername(u.Username, ok)
+				_ = SetUserMediaAccessByUsername(u.Username, !detail.Policy.IsDisabled)
 			}
-			return ok, nil
+			return !detail.Policy.IsDisabled, nil
 		}
 	}
 	return false, nil

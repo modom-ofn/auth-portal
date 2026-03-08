@@ -156,6 +156,13 @@ type AuthCompletePageOptions struct {
 	RequiresMFA bool
 }
 
+const (
+	PostAuthRedirectHome         = "/home"
+	PostAuthRedirectMFAChallenge = "/mfa/challenge"
+	PostAuthMessageSignedIn      = "Signed in - you can close this window."
+	PostAuthMessageContinueMFA   = "Continue in the main window to finish multi-factor authentication."
+)
+
 // Functions and hooks provided by the main application.
 var (
 	UpsertUser                   func(u User) error
@@ -268,7 +275,7 @@ func Init(d ProviderDeps) {
 func WriteAuthCompletePage(w http.ResponseWriter, opts AuthCompletePageOptions) {
 	message := strings.TrimSpace(opts.Message)
 	if message == "" {
-		message = "Signed in — you can close this window."
+		message = PostAuthMessageSignedIn
 	}
 	provider := strings.TrimSpace(opts.Provider)
 	if provider == "" {
@@ -276,7 +283,7 @@ func WriteAuthCompletePage(w http.ResponseWriter, opts AuthCompletePageOptions) 
 	}
 	redirect := strings.TrimSpace(opts.Redirect)
 	if redirect == "" {
-		redirect = "/home"
+		redirect = PostAuthRedirectHome
 	}
 	mfaFlag := "false"
 	if opts.RequiresMFA {

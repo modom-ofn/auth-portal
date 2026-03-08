@@ -596,11 +596,11 @@ func (PlexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirect := "/home"
-	message := "Signed in - you can close this window."
+	redirect := PostAuthRedirectHome
+	message := PostAuthMessageSignedIn
 	if requiresMFA {
-		redirect = "/mfa/challenge"
-		message = "Continue in the main window to finish multi-factor authentication."
+		redirect = PostAuthRedirectMFAChallenge
+		message = PostAuthMessageContinueMFA
 	}
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
 		Message:     message,
@@ -636,9 +636,9 @@ func PlexPoll(w http.ResponseWriter, r *http.Request) {
 	if Debugf != nil {
 		Debugf("plex poll success: user=%s authorized=%t", data.username, data.authorized)
 	}
-	redirect := "/home"
+	redirect := PostAuthRedirectHome
 	if requiresMFA {
-		redirect = "/mfa/challenge"
+		redirect = PostAuthRedirectMFAChallenge
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "redirect": redirect, "mfa": requiresMFA})
 }
@@ -660,8 +660,7 @@ func (PlexProvider) IsAuthorized(uuid, _ string) (bool, error) {
 		return false, nil
 	}
 
-	authorized := plexTokenAuthorized(userToken)
-	if authorized {
+	if plexTokenAuthorized(userToken) {
 		plexSetUserMediaAccess(u.Username, true)
 		return true, nil
 	}

@@ -224,9 +224,9 @@ func (JellyfinProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	jellyfinSetSession(w, mediaUUID, auth.User.Name, authz.authorized)
 
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
-		Message:  "Signed in - you can close this window.",
+		Message:  PostAuthMessageSignedIn,
 		Provider: "jellyfin-auth",
-		Redirect: "/home",
+		Redirect: PostAuthRedirectHome,
 	})
 }
 
@@ -244,13 +244,12 @@ func (JellyfinProvider) IsAuthorized(uuid, _ string) (bool, error) {
 	if JellyfinAPIKey != "" && u.MediaUUID != "" {
 		id := strings.TrimPrefix(u.MediaUUID, jellyfinMediaPrefix)
 		if detail, derr := jellyfinGetUserDetail(JellyfinServerURL, JellyfinAPIKey, id); derr == nil {
-			ok := !detail.Policy.IsDisabled
 			if SetUserMediaAccessByUsername != nil {
-				if setErr := SetUserMediaAccessByUsername(u.Username, ok); setErr != nil && Warnf != nil {
+				if setErr := SetUserMediaAccessByUsername(u.Username, !detail.Policy.IsDisabled); setErr != nil && Warnf != nil {
 					Warnf("jellyfin set media access failed for %s: %v", u.Username, setErr)
 				}
 			}
-			return ok, nil
+			return !detail.Policy.IsDisabled, nil
 		}
 	}
 	return false, nil

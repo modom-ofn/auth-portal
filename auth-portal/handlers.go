@@ -1,6 +1,7 @@
 package main
 
 import (
+	"auth-portal/providers"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -272,7 +273,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/home", http.StatusFound)
+	http.Redirect(w, r, providers.PostAuthRedirectHome, http.StatusFound)
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {
@@ -489,7 +490,7 @@ func mfaChallengePage(w http.ResponseWriter, r *http.Request) {
 func mfaEnrollPage(w http.ResponseWriter, r *http.Request) {
 	uname := strings.TrimSpace(usernameFrom(r.Context()))
 	if uname == "" {
-		http.Redirect(w, r, "/home", http.StatusFound)
+		http.Redirect(w, r, providers.PostAuthRedirectHome, http.StatusFound)
 		return
 	}
 	render(w, "mfa_enroll.html", map[string]any{

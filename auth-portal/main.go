@@ -389,9 +389,9 @@ func finalizeProviderOutcomeSession(w http.ResponseWriter, out providers.AuthOut
 
 func completePageMessageAndRedirect(requiresMFA bool) (string, string) {
 	if requiresMFA {
-		return "Continue in the main window to finish multi-factor authentication.", "/mfa/challenge"
+		return providers.PostAuthMessageContinueMFA, providers.PostAuthRedirectMFAChallenge
 	}
-	return "Signed in - you can close this window.", "/home"
+	return providers.PostAuthMessageSignedIn, providers.PostAuthRedirectHome
 }
 
 func handleOutcomeProviderForward(w http.ResponseWriter, r *http.Request, v2 providers.MediaProviderV2, op providers.OutcomeProvider) bool {
