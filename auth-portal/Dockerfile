@@ -3,7 +3,7 @@ FROM golang:1.26.1-alpine3.23 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
-RUN apk upgrade --no-cache busybox && \
+RUN apk add --no-cache "busybox>=1.37.0-r27" && \
     apk add --no-cache ca-certificates git openssl && update-ca-certificates
 
 # 1) Prime module cache (copies go.mod/go.sum if present)
@@ -31,7 +31,7 @@ RUN mkdir -p /out && \
 FROM dhi.io/alpine-base:3.23-alpine3.23-dev
 WORKDIR /app
 
-RUN apk upgrade --no-cache busybox && \
+RUN apk add --no-cache "busybox>=1.37.0-r27" && \
     apk add --no-cache ca-certificates openssl tzdata && \
     apk --no-cache upgrade musl && update-ca-certificates
 
