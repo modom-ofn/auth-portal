@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:15
@@ -34,7 +32,7 @@ services:
             ;;
         esac
         # IMPORTANT: call the official entrypoint so initdb still runs on first boot
-        exec docker-entrypoint.sh postgres $EXTRA
+        exec docker-entrypoint.sh postgres $$EXTRA
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -45,7 +43,10 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.3
+    image: ${AUTH_PORTAL_IMAGE:-auth-portal:hardened-local}
+    build:
+      context: ./auth-portal
+      dockerfile: Dockerfile
     ports:
       - "8089:8080"
     environment:

@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="bg">
+<body class="bg {{.HeroBackgroundMode}}" style="--portal-bg-color: {{.HeroBackgroundColor}};">
   <main class="center">
-    <section class="card">
+    <section class="card {{.PortalCardMode}}" style="--portal-card-color: {{.PortalCardColor}};">
       <div class="brand">
         <svg viewBox="0 0 24 24" aria-hidden="true" class="logo">
           <rect x="3" y="3" width="18" height="18" rx="3" fill="#111827"/>
@@ -20,20 +20,24 @@
         <p class="muted">You are authorized on this server.</p>
       </div>
 
-      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:10px">
-        {{- if .ExtraLinkURL }}
-        <a class="badge ok" style="text-decoration:none" href="{{ .ExtraLinkURL }}">{{ .ExtraLinkText }}</a>
+      <div class="portal-service-links">
+        {{- range .ServiceLinks }}
+        {{- if .Color }}
+        <a class="primary-btn portal-service-btn" style="background:{{ .Color }};border-color:{{ .Color }};color:{{ .TextColor }};" href="{{ .URL }}">{{ .Text }}</a>
+        {{- else }}
+        <a class="success-btn portal-service-btn" href="{{ .URL }}">{{ .Text }}</a>
+        {{- end }}
         {{- end }}
       </div>
 
       <div style="height:10px"></div>
 
-      <div style="display:flex;justify-content:center;gap:12px;margin-top:16px">
+      <div class="portal-actions">
         <form action="/logout" method="post">
-          <button class="btn ghost" type="submit">Log out</button>
+          <button class="danger-btn" type="submit">Log out</button>
         </form>
         <form action="/mfa/enroll" method="get">
-          <button class="btn ghost" type="submit">Manage MFA</button>
+          <button class="ghost-btn" type="submit">Manage MFA</button>
         </form>
       </div>
     </section>
