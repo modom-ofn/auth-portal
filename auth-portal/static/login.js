@@ -195,30 +195,60 @@
 
       // Fallback for Plex: poll backend to finish PIN flow if Plex doesn't redirect to /auth/forward
       let pollTimer = null;
+      let stopPlexPolling = () => {};
       if (provider === "plex") {
-        pollTimer = setInterval(async () => {
+        let pollStopped = false;
+        let pollInFlight = false;
+        const schedulePoll = (delayMs) => {
+          if (pollStopped) return;
+          pollTimer = setTimeout(runPollOnce, delayMs);
+        };
+        const stopPolling = () => {
+          pollStopped = true;
+          if (pollTimer) {
+            clearTimeout(pollTimer);
+            pollTimer = null;
+          }
+        };
+        stopPlexPolling = stopPolling;
+        const runPollOnce = async () => {
+          if (pollStopped || pollInFlight) {
+            schedulePoll(2500);
+            return;
+          }
+          pollInFlight = true;
           try {
             const r = await fetch("/auth/poll", {
               method: "GET",
               credentials: "same-origin",
               headers: { "Accept": "application/json" }
             });
-            if (!r.ok) return;
+            if (!r.ok) {
+              schedulePoll(3000);
+              return;
+            }
             const j = await r.json().catch(() => ({}));
             if (j?.ok) {
-              clearInterval(pollTimer);
+              stopPolling();
               try { if (popup && !popup.closed) popup.close(); } catch {}
               finalizeNavigation(j.redirect, !!j.mfa);
+              return;
             }
-          } catch {}
-        }, 1200);
+            schedulePoll(2500);
+          } catch {
+            schedulePoll(3000);
+          } finally {
+            pollInFlight = false;
+          }
+        };
+        schedulePoll(2200);
       }
 
       // If user closes the popup, head to /home
       const iv = setInterval(() => {
         if (!popup || popup.closed) {
           clearInterval(iv);
-          if (pollTimer) clearInterval(pollTimer);
+          stopPlexPolling();
           globalThis.location.assign(lastAuthRedirect);
         }
       }, 1200);

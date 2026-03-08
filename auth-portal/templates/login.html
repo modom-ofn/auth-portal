@@ -7,9 +7,9 @@
   <meta name="app-base-url" content="{{ .BaseURL }}">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="bg">
+<body class="bg {{.HeroBackgroundMode}}" style="--portal-bg-color: {{.HeroBackgroundColor}};">
   <main class="center">
-    <section class="card">
+    <section class="card {{.PortalCardMode}}" style="--portal-card-color: {{.PortalCardColor}};">
       <div class="brand">
         <!-- You can swap this for your logo -->
 		<svg viewBox="0 0 24 24" aria-hidden="true" class="logo">

@@ -56,10 +56,16 @@ func TestNormalizeAdminStringList(t *testing.T) {
 
 func TestValidateAppSettingsConfig(t *testing.T) {
 	cfg := AppSettingsConfig{
-		LoginExtraLinkURL:    "/docs",
-		LoginExtraLinkText:   "Docs",
-		UnauthRequestEmail:   "admin@example.com",
-		UnauthRequestSubject: "Need Access",
+		LoginExtraLinkURL:     "/docs",
+		LoginExtraLinkText:    "Docs",
+		UnauthRequestEmail:    "admin@example.com",
+		UnauthRequestSubject:  "Need Access",
+		PortalBackgroundColor: "#0b1020",
+		PortalModalColor:      "#111827",
+		ServiceLinks: []AppServiceLink{
+			{Name: "Home", URL: "/home", Color: "#0a5a35"},
+			{Name: "Library", URL: "https://library.example.com", Color: "#1d4ed8"},
+		},
 	}
 	normalizeAppSettingsConfig(&cfg)
 	if err := validateAppSettingsConfig(cfg); err != nil {
@@ -69,9 +75,30 @@ func TestValidateAppSettingsConfig(t *testing.T) {
 	invalid := AppSettingsConfig{
 		LoginExtraLinkURL:  "ht!tp://bad",
 		UnauthRequestEmail: "not-an-email",
+		ServiceLinks: []AppServiceLink{
+			{Name: "Bad", URL: "javascript:alert(1)"},
+		},
 	}
 	normalizeAppSettingsConfig(&invalid)
 	if validateAppSettingsConfig(invalid) == nil {
 		t.Fatalf("expected validation error for invalid config")
+	}
+
+	invalidColor := AppSettingsConfig{
+		ServiceLinks: []AppServiceLink{
+			{Name: "Home", URL: "/home", Color: "green"},
+		},
+	}
+	normalizeAppSettingsConfig(&invalidColor)
+	if validateAppSettingsConfig(invalidColor) == nil {
+		t.Fatalf("expected validation error for invalid service link color")
+	}
+
+	invalidBg := AppSettingsConfig{
+		PortalBackgroundColor: "blue",
+	}
+	normalizeAppSettingsConfig(&invalidBg)
+	if validateAppSettingsConfig(invalidBg) == nil {
+		t.Fatalf("expected validation error for invalid portal background color")
 	}
 }

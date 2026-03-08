@@ -1,5 +1,32 @@
 # AuthPortal Changelog
 
+## v2.0.4
+
+### Highlights
+- Refactored the admin UX into modular tab controllers so tab state/actions are isolated; fixes regressions where editing one tab could break others.
+- Standardized Recent Changes into a shared module and aligned behavior/layout across config tabs and Backups, including reason capture for backup schedule updates.
+- Replaced ad-hoc config JSON editing with structured form-driven editing in Admin for key sections, while preserving import/export JSON compatibility.
+- Reworked OAuth client management UI from table rows to card-based presentation with detail modal workflows; retained edit, rotate-secret, and delete actions.
+- Unified button interaction tokens/styles across admin and portal surfaces, with consistent action coloring and improved modal close-button interactions.
+- Removed legacy help `?` popups and moved guidance into per-field hover help/tooltips for Providers, Security, MFA, and App Settings.
+- Expanded Authorized User service buttons: add/remove/edit entries, per-button color selection, and removed legacy single-link behavior from both config and portal rendering.
+- Simplified portal styling model to secure color-only controls (background + modal), removed custom image upload/mode paths, and cleaned related dead UI/API/backend code.
+- Improved Plex web-login resilience under rate limiting (429 poll responses) to reduce false `Auth failed` outcomes during provider callback flow.
+- Hardened container runtime base image from standard Alpine to `dhi.io/alpine-base:3.23-alpine3.23-dev`, and updated compose/dev defaults to build and run the hardened image path.
+
+### Upgrade Notes
+- Bump image tags/config references to `v2.0.4` and rebuild so you pick up the modular admin UX + hardened runtime image changes.
+- If you maintained portal background image settings in prior versions, note that `v2.0.4` enforces color-only portal styling; use `portalBackgroundColor` and `portalModalColor`.
+- For local full-stack compose usage, the dev compose file now builds AuthPortal locally by default (`AUTH_PORTAL_IMAGE` can override the output tag).
+- No manual database migration steps are required beyond normal startup migrations.
+
+### Pre-release Scan Summary
+- Image scanned: local hardened build (`auth-portal:hardened-test`), plus Go 1.26.1 validation image (`auth-portal:go1261-test`).
+- Docker Scout: `0` HIGH/CRITICAL findings.
+- Trivy: `0` HIGH/CRITICAL findings; after Go 1.26.1 bump, `0` findings across all severities.
+- Grype: `0` findings (HIGH/CRITICAL and all-severity pass).
+- Artifacts generated locally during validation: `scout-auth-portal.sarif`, `trivy-auth-portal*.json`, `grype-auth-portal*.json`.
+
 ## v2.0.3
 
 ### Highlights

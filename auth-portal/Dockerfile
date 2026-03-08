@@ -1,5 +1,5 @@
 # ---- builder ----
-FROM golang:1.25.7-alpine3.22 AS build
+FROM golang:1.26.1-alpine3.23 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
@@ -20,7 +20,7 @@ COPY configstore ./configstore
 COPY health ./health
 COPY static ./static
 COPY templates ./templates
-RUN go mod tidy -compat=1.25
+RUN go mod tidy -compat=1.26
 
 # 3) Build static binary (verbose, no VCS scan)
 RUN mkdir -p /out && \
@@ -28,11 +28,11 @@ RUN mkdir -p /out && \
     go build -v -x -buildvcs=false -trimpath -ldflags="-s -w" -o /out/auth-portal .
 
 # ---- runtime ----
-FROM alpine:3.21
+FROM dhi.io/alpine-base:3.23-alpine3.23-dev
 WORKDIR /app
 
 RUN apk upgrade --no-cache busybox && \
-    apk add --no-cache ca-certificates openssl=3.3.6-r0 tzdata && \
+    apk add --no-cache ca-certificates openssl tzdata && \
     apk --no-cache upgrade musl && update-ca-certificates
 
 COPY --from=build /out/auth-portal /app/auth-portal

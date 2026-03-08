@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -132,7 +133,6 @@ func adminConfigUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-
 	username := usernameFrom(r.Context())
 	if username == "" {
 		username = "admin"
@@ -576,6 +576,41 @@ func normalizeAppSettingsConfig(cfg *AppSettingsConfig) {
 	cfg.LoginExtraLinkText = strings.TrimSpace(firstNonEmpty(cfg.LoginExtraLinkText, defaults.LoginExtraLinkText))
 	cfg.UnauthRequestEmail = strings.TrimSpace(firstNonEmpty(cfg.UnauthRequestEmail, defaults.UnauthRequestEmail))
 	cfg.UnauthRequestSubject = strings.TrimSpace(firstNonEmpty(cfg.UnauthRequestSubject, defaults.UnauthRequestSubject))
+	cfg.PortalBackgroundColor = strings.TrimSpace(firstNonEmpty(cfg.PortalBackgroundColor, defaults.PortalBackgroundColor))
+	cfg.PortalModalColor = strings.TrimSpace(firstNonEmpty(cfg.PortalModalColor, defaults.PortalModalColor))
+	cfg.ServiceLinks = normalizeServiceLinks(cfg.ServiceLinks)
+}
+
+func normalizeServiceLinks(links []AppServiceLink) []AppServiceLink {
+	if len(links) == 0 {
+		return nil
+	}
+	normalized := make([]AppServiceLink, 0, len(links))
+	seen := make(map[string]struct{}, len(links))
+	for _, link := range links {
+		name := strings.TrimSpace(link.Name)
+		rawURL := strings.TrimSpace(link.URL)
+		if name == "" || rawURL == "" {
+			continue
+		}
+		key := strings.ToLower(name) + "|" + rawURL
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, AppServiceLink{
+			Name:  name,
+			URL:   rawURL,
+			Color: strings.TrimSpace(link.Color),
+		})
+		if len(normalized) >= 20 {
+			break
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func validateProvidersConfig(cfg ProvidersConfig) error {
@@ -625,11 +660,8 @@ func validateMFAConfig(cfg MFAConfig) error {
 
 func validateAppSettingsConfig(cfg AppSettingsConfig) error {
 	link := strings.TrimSpace(cfg.LoginExtraLinkURL)
-	if link != "" && !strings.HasPrefix(link, "/") {
-		u, err := url.Parse(link)
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			return errors.New("login extra link URL must be a relative path or absolute URL")
-		}
+	if link != "" && !isValidPortalLinkURL(link) {
+		return errors.New("login extra link URL must be a relative path or absolute URL")
 	}
 	email := strings.TrimSpace(cfg.UnauthRequestEmail)
 	if email != "" {
@@ -637,5 +669,52 @@ func validateAppSettingsConfig(cfg AppSettingsConfig) error {
 			return fmt.Errorf("invalid unauth request email: %v", err)
 		}
 	}
+	if color := strings.TrimSpace(cfg.PortalBackgroundColor); color != "" && !isValidServiceLinkColor(color) {
+		return errors.New("portal background color must be a #RRGGBB value")
+	}
+	if color := strings.TrimSpace(cfg.PortalModalColor); color != "" && !isValidServiceLinkColor(color) {
+		return errors.New("portal modal color must be a #RRGGBB value")
+	}
+
+	for idx, item := range cfg.ServiceLinks {
+		if strings.TrimSpace(item.Name) == "" {
+			return fmt.Errorf("service link %d name is required", idx+1)
+		}
+		if len(item.Name) > 64 {
+			return fmt.Errorf("service link %d name exceeds 64 characters", idx+1)
+		}
+		if !isValidPortalLinkURL(item.URL) {
+			return fmt.Errorf("service link %d URL must be a relative path or absolute http(s) URL", idx+1)
+		}
+		if color := strings.TrimSpace(item.Color); color != "" && !isValidServiceLinkColor(color) {
+			return fmt.Errorf("service link %d color must be a #RRGGBB value", idx+1)
+		}
+	}
 	return nil
+}
+
+var serviceLinkColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+
+func isValidServiceLinkColor(raw string) bool {
+	return serviceLinkColorPattern.MatchString(strings.TrimSpace(raw))
+}
+
+func isValidPortalLinkURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+	case "http", "https":
+		return true
+	default:
+		return false
+	}
 }
