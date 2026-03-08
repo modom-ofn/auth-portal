@@ -34,8 +34,8 @@ func providerUI() (key, display string) {
 	if display == "" {
 		display = mediaProviderDisplay
 	}
-	if key == "" && currentProvider != nil {
-		key = currentProvider.Name()
+	if key == "" {
+		key = activeProvider().Name()
 	}
 	if key == "" {
 		key = "plex"
@@ -324,7 +324,7 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 	out.Expiry = ident.Expiry
 	out.Admin = ident.Admin || adminFrom(r.Context())
 
-	if authorized, err := currentProvider.IsAuthorized(ident.UUID, ident.Username); err != nil {
+	if authorized, err := activeProvider().IsAuthorized(ident.UUID, ident.Username); err != nil {
 		log.Printf("whoami authz check failed for %s (%s): %v", ident.Username, ident.UUID, err)
 	} else {
 		out.MediaAccess = authorized
@@ -403,7 +403,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	if uname == "" && uid == "" {
 		log.Printf("home: no username/uuid in session; treating as not authorized")
 	} else {
-		authorized, err = currentProvider.IsAuthorized(uid, uname)
+		authorized, err = activeProvider().IsAuthorized(uid, uname)
 		if err != nil {
 			log.Printf("home authz check failed for %s (%s): %v", uname, uid, err)
 		}

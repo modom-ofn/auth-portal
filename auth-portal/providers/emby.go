@@ -111,7 +111,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusSeeOther, Header: hdr}, nil
 	}
 
-	auth, _, authorized, err := processEmbyLogin(username, password)
+	auth, detail, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
@@ -122,7 +122,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
-	return finalizeEmbyOutcome(auth, authorized), nil, nil
+	return finalizeEmbyOutcome(auth, detail, authorized), nil, nil
 }
 
 // StartWeb: tell the client to open our own login form popup (/auth/forward?emby=1)
@@ -175,6 +175,25 @@ func completeEmbyForwardSession(w http.ResponseWriter, auth mediaAuthResp, autho
 	}
 }
 
+func isEmbyAdmin(username, userID string, detail embyUserDetail) bool {
+	if owner := strings.TrimSpace(EmbyOwnerUsername); owner != "" && strings.EqualFold(username, owner) {
+		return true
+	}
+	if ownerID := strings.TrimSpace(EmbyOwnerID); ownerID != "" && userID == ownerID {
+		return true
+	}
+	return detail.ID != "" && !detail.Policy.IsDisabled && (detail.Policy.IsAdministrator || detail.Policy.IsAdmin)
+}
+
+func embySyncAdminAccess(username string, admin bool) {
+	if SetUserAdminByUsername == nil {
+		return
+	}
+	if err := SetUserAdminByUsername(username, admin); err != nil && Warnf != nil {
+		Warnf("emby admin sync failed for %s: %v", username, err)
+	}
+}
+
 func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		renderEmbyForwardLogin(w, http.StatusOK, "", "")
@@ -186,7 +205,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, _, authorized, err := processEmbyLogin(username, password)
+	auth, detail, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
@@ -199,6 +218,7 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		Debugf("emby/auth success userID=%s", auth.User.ID)
 	}
 	logEmbyTokenValidation(username, auth.AccessToken)
+	embySyncAdminAccess(auth.User.Name, isEmbyAdmin(auth.User.Name, auth.User.ID, detail))
 	completeEmbyForwardSession(w, auth, authorized)
 
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
@@ -293,7 +313,8 @@ func saveEmbyUser(auth mediaAuthResp, authorized bool) (sealedToken string, medi
 	return sealedToken, mediaUUID
 }
 
-func finalizeEmbyOutcome(auth mediaAuthResp, authorized bool) AuthOutcome {
+func finalizeEmbyOutcome(auth mediaAuthResp, detail embyUserDetail, authorized bool) AuthOutcome {
+	embySyncAdminAccess(auth.User.Name, isEmbyAdmin(auth.User.Name, auth.User.ID, detail))
 	sealedToken, mediaUUID := saveEmbyUser(auth, authorized)
 	return AuthOutcome{
 		Provider:    "emby",

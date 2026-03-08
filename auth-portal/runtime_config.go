@@ -289,6 +289,7 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	}
 	mediaServerSelection = selectedProvider
 	mediaProviderKey, mediaProviderDisplay = resolveProviderSelection(mediaServerSelection)
+	setCurrentProvider(pickProvider(mediaProviderKey))
 	cfg.Providers.Active = mediaServerSelection
 
 	plexOwnerToken = strings.TrimSpace(firstNonEmpty(cfg.Providers.Plex.OwnerToken, defaults.Providers.Plex.OwnerToken))
@@ -353,6 +354,11 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		unauthRequestSubject = defaults.AppSettings.UnauthRequestSubject
 	}
 	cfg.AppSettings.UnauthRequestSubject = unauthRequestSubject
+
+	// Keep provider package configuration in sync with live runtime settings.
+	// Without this, switching providers in Admin can leave auth flows using stale
+	// URLs/API keys initialized at process startup.
+	initProviderDeps()
 
 	if cfg.LoadedAt.IsZero() {
 		cfg.LoadedAt = time.Now().UTC()

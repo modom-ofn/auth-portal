@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -65,8 +66,8 @@ var (
 	unauthRequestEmail   = envOr("UNAUTH_REQUEST_EMAIL", "admin@example.com")
 	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
 
-	// Provider selected at startup (plex default; emby and jellyfin are distinct)
-	currentProvider providers.MediaProvider
+	// Active provider is runtime-configurable and accessed per request.
+	currentProvider atomic.Value // stores providers.MediaProvider
 
 	// Session TTLs & flags
 	sessionSameSite              = parseSameSite(os.Getenv("SESSION_SAMESITE"), http.SameSiteLaxMode)
@@ -77,6 +78,10 @@ var (
 	forceHSTS                    = os.Getenv("FORCE_HSTS") == "1"
 	appLocation                  = time.UTC
 )
+
+type providerState struct {
+	provider providers.MediaProvider
+}
 
 func envOr(k, d string) string {
 	if v := os.Getenv(k); v != "" {
@@ -141,6 +146,22 @@ func pickProvider(selection string) providers.MediaProvider {
 	}
 }
 
+func setCurrentProvider(p providers.MediaProvider) {
+	if p == nil {
+		return
+	}
+	currentProvider.Store(providerState{provider: p})
+}
+
+func activeProvider() providers.MediaProvider {
+	if v := currentProvider.Load(); v != nil {
+		if state, ok := v.(providerState); ok && state.provider != nil {
+			return state.provider
+		}
+	}
+	return pickProvider(mediaProviderKey)
+}
+
 // --- Health check helpers (minimal, local to main.go) ---
 func dbChecker(db *sql.DB) health.Checker {
 	return func(ctx context.Context) error {
@@ -172,8 +193,8 @@ func main() {
 	logConfigSnapshot(configStore)
 
 	initProviderDeps()
-	currentProvider = pickProvider(mediaProviderKey)
-	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
+	setCurrentProvider(pickProvider(mediaProviderKey))
+	log.Printf("AuthPortal using provider: %s", activeProvider().Name())
 
 	router := buildRouter()
 	startServer(router)
@@ -302,7 +323,7 @@ func initProviderDeps() {
 		},
 		SetUserMediaAccessByUsername: setUserMediaAccessByUsername,
 		SetUserAdminByUsername: func(username string, admin bool) error {
-			return setUserAdminByUsername(username, admin, "jellyfin")
+			return setUserAdminByUsername(username, admin, "provider-sync")
 		},
 		FinalizeLogin:        finalizeLoginSession,
 		SetSessionCookie:     setSessionCookie,
@@ -366,13 +387,28 @@ func maybeUpsertProviderOutcomeUser(out providers.AuthOutcome) {
 	if providers.UpsertUser == nil {
 		return
 	}
-	_ = providers.UpsertUser(providers.User{
+	provider := strings.TrimSpace(out.Provider)
+	if provider == "" {
+		// Fallback for older providers that might omit the field.
+		switch {
+		case strings.HasPrefix(strings.TrimSpace(out.MediaUUID), "plex-"):
+			provider = "plex"
+		case strings.HasPrefix(strings.TrimSpace(out.MediaUUID), "emby-"):
+			provider = "emby"
+		case strings.HasPrefix(strings.TrimSpace(out.MediaUUID), "jellyfin-"):
+			provider = "jellyfin"
+		}
+	}
+	if err := providers.UpsertUser(providers.User{
 		Username:    out.Username,
 		Email:       out.Email,
 		MediaUUID:   out.MediaUUID,
 		MediaToken:  out.SealedToken,
 		MediaAccess: out.Authorized,
-	})
+		Provider:    provider,
+	}); err != nil {
+		log.Printf("provider outcome upsert failed for %s (%s): %v", out.Username, out.MediaUUID, err)
+	}
 }
 
 func finalizeProviderOutcomeSession(w http.ResponseWriter, out providers.AuthOutcome) (bool, error) {
@@ -423,8 +459,9 @@ func handleOutcomeProviderForward(w http.ResponseWriter, r *http.Request, v2 pro
 	return true
 }
 
-func buildProviderStartHandler(v2 providers.MediaProviderV2) http.Handler {
+func buildProviderStartHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v2 := providers.AdaptV2(activeProvider())
 		res, err := v2.Start(r.Context(), r)
 		if err != nil {
 			log.Printf("provider start error: %v", err)
@@ -433,9 +470,11 @@ func buildProviderStartHandler(v2 providers.MediaProviderV2) http.Handler {
 	})
 }
 
-func buildProviderForwardHandler(v2 providers.MediaProviderV2) http.Handler {
+func buildProviderForwardHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if op, ok := currentProvider.(providers.OutcomeProvider); ok {
+		provider := activeProvider()
+		v2 := providers.AdaptV2(provider)
+		if op, ok := provider.(providers.OutcomeProvider); ok {
 			if handled := handleOutcomeProviderForward(w, r, v2, op); handled {
 				return
 			}
@@ -450,16 +489,16 @@ func buildProviderForwardHandler(v2 providers.MediaProviderV2) http.Handler {
 }
 
 func registerProviderRoutes(r *mux.Router, lim routeLimiters) {
-	v2 := providers.AdaptV2(currentProvider)
+	v2 := providers.AdaptV2(activeProvider())
 	if err := v2.Health(); err != nil {
 		log.Printf("Provider health warning: %v", err)
 	}
 
-	startWebLimited := rateLimitMiddleware(lim.login, buildProviderStartHandler(v2))
+	startWebLimited := rateLimitMiddleware(lim.login, buildProviderStartHandler())
 	r.Handle("/auth/start-web", startWebLimited).Methods("GET")
 	r.Handle("/auth/start-web", requireSameOrigin(startWebLimited)).Methods("POST")
 
-	forwardLimited := rateLimitMiddleware(lim.login, buildProviderForwardHandler(v2))
+	forwardLimited := rateLimitMiddleware(lim.login, buildProviderForwardHandler())
 	r.Handle("/auth/forward", forwardLimited).Methods("GET")
 	r.Handle("/auth/forward", requireSameOrigin(forwardLimited)).Methods("POST")
 
@@ -838,8 +877,9 @@ func sessionStateFromRequest(w http.ResponseWriter, r *http.Request) sessionStat
 		state.uuid = strings.TrimSpace(claims.UUID)
 		state.admin = adminFlag
 		state.authorized = adminFlag
-		if !adminFlag && currentProvider != nil && state.uuid != "" {
-			if ok, authErr := currentProvider.IsAuthorized(state.uuid, state.username); authErr == nil {
+		provider := activeProvider()
+		if !adminFlag && provider != nil && state.uuid != "" {
+			if ok, authErr := provider.IsAuthorized(state.uuid, state.username); authErr == nil {
 				state.authorized = ok
 			} else {
 				log.Printf("requireSessionOrPending: authorization check failed for %s (%s): %v", state.username, state.uuid, authErr)
