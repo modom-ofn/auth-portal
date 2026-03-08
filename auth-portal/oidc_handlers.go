@@ -415,78 +415,100 @@ func oidcTokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client oauth.Client) {
-	code := strings.TrimSpace(r.PostFormValue("code"))
-	redirectURI := strings.TrimSpace(r.PostFormValue("redirect_uri"))
-	codeVerifier := strings.TrimSpace(r.PostFormValue("code_verifier"))
+type authorizationCodeGrantInput struct {
+	code         string
+	redirectURI  string
+	codeVerifier string
+}
 
-	if code == "" || redirectURI == "" {
+var errAuthorizationCodeUserNotFound = errors.New("authorization code user not found")
+
+func parseAuthorizationCodeGrantInput(w http.ResponseWriter, r *http.Request, client oauth.Client) (authorizationCodeGrantInput, bool) {
+	input := authorizationCodeGrantInput{
+		code:         strings.TrimSpace(r.PostFormValue("code")),
+		redirectURI:  strings.TrimSpace(r.PostFormValue("redirect_uri")),
+		codeVerifier: strings.TrimSpace(r.PostFormValue("code_verifier")),
+	}
+
+	if input.code == "" || input.redirectURI == "" {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_request", "code and redirect_uri required")
-		return
+		return authorizationCodeGrantInput{}, false
 	}
-	if !clientAllowsRedirect(client, redirectURI) {
+	if !clientAllowsRedirect(client, input.redirectURI) {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri mismatch")
-		return
+		return authorizationCodeGrantInput{}, false
 	}
+	return input, true
+}
 
-	authCode, err := oauthService.ConsumeAuthCode(r.Context(), code)
+func consumeAndValidateAuthorizationCode(
+	w http.ResponseWriter,
+	ctx context.Context,
+	client oauth.Client,
+	input authorizationCodeGrantInput,
+) (oauth.AuthCode, bool) {
+	authCode, err := oauthService.ConsumeAuthCode(ctx, input.code)
 	if err != nil {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "authorization code invalid or expired")
-		return
+		return oauth.AuthCode{}, false
 	}
 	if authCode.ClientID != client.ClientID {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "client mismatch")
-		return
+		return oauth.AuthCode{}, false
 	}
-	if authCode.RedirectURI != redirectURI {
+	if authCode.RedirectURI != input.redirectURI {
 		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri mismatch")
-		return
+		return oauth.AuthCode{}, false
 	}
 	if authCode.CodeChallenge.Valid {
-		if codeVerifier == "" {
+		if input.codeVerifier == "" {
 			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", "code_verifier required")
-			return
+			return oauth.AuthCode{}, false
 		}
-		if !verifyCodeChallenge(authCode.CodeMethod.String, authCode.CodeChallenge.String, codeVerifier) {
+		if !verifyCodeChallenge(authCode.CodeMethod.String, authCode.CodeChallenge.String, input.codeVerifier) {
 			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errCodeVerifierMismatch)
-			return
+			return oauth.AuthCode{}, false
 		}
 	}
+	return authCode, true
+}
 
+func issueAuthCodeGrantTokens(
+	ctx context.Context,
+	client oauth.Client,
+	authCode oauth.AuthCode,
+) (oauth.AccessToken, string, time.Time, string, error) {
 	user, err := userByID(int(authCode.UserID))
 	if err != nil {
-		writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errUserNotFound)
-		return
+		return oauth.AccessToken{}, "", time.Time{}, "", errAuthorizationCodeUserNotFound
 	}
 
-	access, err := oauthService.CreateAccessToken(r.Context(), client.ClientID, authCode.UserID, authCode.Scopes)
+	access, err := oauthService.CreateAccessToken(ctx, client.ClientID, authCode.UserID, authCode.Scopes)
 	if err != nil {
 		log.Printf("oidc token: access token create failed: %v", err)
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
-		return
+		return oauth.AccessToken{}, "", time.Time{}, "", err
 	}
 
-	var (
-		refresh       string
-		refreshExpiry time.Time
-	)
+	refresh := ""
+	refreshExpiry := time.Time{}
 	if containsScope(authCode.Scopes, "offline_access") {
-		var err error
-		refresh, refreshExpiry, err = oauthService.CreateRefreshToken(r.Context(), access.TokenID, client.ClientID, authCode.UserID, authCode.Scopes)
+		refresh, refreshExpiry, err = oauthService.CreateRefreshToken(ctx, access.TokenID, client.ClientID, authCode.UserID, authCode.Scopes)
 		if err != nil {
 			log.Printf("oidc token: refresh token create failed: %v", err)
-			writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
-			return
+			return oauth.AccessToken{}, "", time.Time{}, "", err
 		}
 	}
 
 	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt, authCode.Nonce.String)
 	if err != nil {
 		log.Printf("oidc token: id token mint failed: %v", err)
-		writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
-		return
+		return oauth.AccessToken{}, "", time.Time{}, "", err
 	}
 
+	return access, refresh, refreshExpiry, idToken, nil
+}
+
+func writeOIDCTokenSuccessResponse(w http.ResponseWriter, access oauth.AccessToken, scopes []string, idToken, refresh string, refreshExpiry time.Time) {
 	now := time.Now()
 	expiresIn := int(access.ExpiresAt.Sub(now).Seconds())
 	if expiresIn < 0 {
@@ -498,7 +520,7 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 		"token_type":   "Bearer",
 		"expires_in":   expiresIn,
 		"id_token":     idToken,
-		"scope":        strings.Join(authCode.Scopes, " "),
+		"scope":        strings.Join(scopes, " "),
 	}
 	if refresh != "" {
 		refreshIn := int(refreshExpiry.Sub(now).Seconds())
@@ -513,6 +535,30 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client
 	w.Header().Set(oidcHeaderCache, oidcCacheNoStore)
 	w.Header().Set(oidcHeaderPragma, oidcCacheNoPragma)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, client oauth.Client) {
+	input, ok := parseAuthorizationCodeGrantInput(w, r, client)
+	if !ok {
+		return
+	}
+
+	authCode, ok := consumeAndValidateAuthorizationCode(w, r.Context(), client, input)
+	if !ok {
+		return
+	}
+
+	access, refresh, refreshExpiry, idToken, err := issueAuthCodeGrantTokens(r.Context(), client, authCode)
+	if err != nil {
+		if errors.Is(err, errAuthorizationCodeUserNotFound) {
+			writeOIDCError(w, http.StatusBadRequest, "invalid_grant", errUserNotFound)
+			return
+		}
+		writeOIDCError(w, http.StatusInternalServerError, "server_error", errTokenIssuanceFailed)
+		return
+	}
+
+	writeOIDCTokenSuccessResponse(w, access, authCode.Scopes, idToken, refresh, refreshExpiry)
 }
 func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oauth.Client) {
 	refreshToken := strings.TrimSpace(r.PostFormValue("refresh_token"))

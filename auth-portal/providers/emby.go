@@ -134,24 +134,55 @@ func (EmbyProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		w.Header().Set(embyHeaderContent, embyContentTypeHTML)
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write(embyLoginPageHTML("", "")); err != nil {
-			log.Printf("emby login write failed: %v", err)
-		}
-		return
+func renderEmbyForwardLogin(w http.ResponseWriter, status int, username, message string) {
+	w.Header().Set(embyHeaderContent, embyContentTypeHTML)
+	w.WriteHeader(status)
+	if _, err := w.Write(embyLoginPageHTML(username, message)); err != nil {
+		log.Printf("emby login write failed: %v", err)
 	}
+}
 
+func parseEmbyForwardCredentials(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
+		return "", "", false
 	}
 	username := strings.TrimSpace(r.Form.Get("username"))
 	password := r.Form.Get("password")
 	if username == "" || password == "" {
 		http.Redirect(w, r, embyForwardAuthPath, http.StatusSeeOther)
+		return "", "", false
+	}
+	return username, password, true
+}
+
+func logEmbyTokenValidation(username, token string) {
+	if ok, terr := embyTokenStillValid(EmbyServerURL, token); terr == nil && ok && Debugf != nil {
+		Debugf("emby/auth token valid for %s", username)
+	}
+}
+
+func completeEmbyForwardSession(w http.ResponseWriter, auth mediaAuthResp, authorized bool) {
+	_, mediaUUID := saveEmbyUser(auth, authorized)
+	if authorized {
+		if SetSessionCookie != nil {
+			_ = SetSessionCookie(w, mediaUUID, auth.User.Name)
+		}
+		return
+	}
+	if SetTempSessionCookie != nil {
+		_ = SetTempSessionCookie(w, mediaUUID, auth.User.Name)
+	}
+}
+
+func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		renderEmbyForwardLogin(w, http.StatusOK, "", "")
+		return
+	}
+
+	username, password, ok := parseEmbyForwardCredentials(w, r)
+	if !ok {
 		return
 	}
 
@@ -160,34 +191,15 @@ func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
 		}
-		w.Header().Set(embyHeaderContent, embyContentTypeHTML)
-		w.WriteHeader(http.StatusUnauthorized)
-		if _, writeErr := w.Write(embyLoginPageHTML(username, "Login failed; please try again.")); writeErr != nil {
-			log.Printf("emby login write failed: %v", writeErr)
-		}
+		renderEmbyForwardLogin(w, http.StatusUnauthorized, username, "Login failed; please try again.")
 		return
 	}
 
 	if Debugf != nil {
 		Debugf("emby/auth success userID=%s", auth.User.ID)
 	}
-	if ok, terr := embyTokenStillValid(EmbyServerURL, auth.AccessToken); terr == nil && ok {
-		if Debugf != nil {
-			Debugf("emby/auth token valid for %s", username)
-		}
-	}
-
-	_, mediaUUID := saveEmbyUser(auth, authorized)
-
-	if authorized {
-		if SetSessionCookie != nil {
-			_ = SetSessionCookie(w, mediaUUID, auth.User.Name)
-		}
-	} else {
-		if SetTempSessionCookie != nil {
-			_ = SetTempSessionCookie(w, mediaUUID, auth.User.Name)
-		}
-	}
+	logEmbyTokenValidation(username, auth.AccessToken)
+	completeEmbyForwardSession(w, auth, authorized)
 
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
 		Message:  "Signed in - you can close this window.",

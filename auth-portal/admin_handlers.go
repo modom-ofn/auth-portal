@@ -658,36 +658,66 @@ func validateMFAConfig(cfg MFAConfig) error {
 	return nil
 }
 
-func validateAppSettingsConfig(cfg AppSettingsConfig) error {
-	link := strings.TrimSpace(cfg.LoginExtraLinkURL)
+func validateOptionalPortalLink(raw string) error {
+	link := strings.TrimSpace(raw)
 	if link != "" && !isValidPortalLinkURL(link) {
 		return errors.New("login extra link URL must be a relative path or absolute URL")
 	}
-	email := strings.TrimSpace(cfg.UnauthRequestEmail)
-	if email != "" {
-		if _, err := mail.ParseAddress(email); err != nil {
-			return fmt.Errorf("invalid unauth request email: %v", err)
-		}
+	return nil
+}
+
+func validateOptionalRequestEmail(raw string) error {
+	email := strings.TrimSpace(raw)
+	if email == "" {
+		return nil
 	}
-	if color := strings.TrimSpace(cfg.PortalBackgroundColor); color != "" && !isValidServiceLinkColor(color) {
-		return errors.New("portal background color must be a #RRGGBB value")
+	if _, err := mail.ParseAddress(email); err != nil {
+		return fmt.Errorf("invalid unauth request email: %v", err)
 	}
-	if color := strings.TrimSpace(cfg.PortalModalColor); color != "" && !isValidServiceLinkColor(color) {
-		return errors.New("portal modal color must be a #RRGGBB value")
+	return nil
+}
+
+func validateOptionalPortalColor(raw, field string) error {
+	color := strings.TrimSpace(raw)
+	if color != "" && !isValidServiceLinkColor(color) {
+		return fmt.Errorf("%s must be a #RRGGBB value", field)
+	}
+	return nil
+}
+
+func validateServiceLinkEntry(idx int, item AppServiceLink) error {
+	if strings.TrimSpace(item.Name) == "" {
+		return fmt.Errorf("service link %d name is required", idx+1)
+	}
+	if len(item.Name) > 64 {
+		return fmt.Errorf("service link %d name exceeds 64 characters", idx+1)
+	}
+	if !isValidPortalLinkURL(item.URL) {
+		return fmt.Errorf("service link %d URL must be a relative path or absolute http(s) URL", idx+1)
+	}
+	if color := strings.TrimSpace(item.Color); color != "" && !isValidServiceLinkColor(color) {
+		return fmt.Errorf("service link %d color must be a #RRGGBB value", idx+1)
+	}
+	return nil
+}
+
+func validateAppSettingsConfig(cfg AppSettingsConfig) error {
+	if err := validateOptionalPortalLink(cfg.LoginExtraLinkURL); err != nil {
+		return err
+	}
+	if err := validateOptionalRequestEmail(cfg.UnauthRequestEmail); err != nil {
+		return err
+	}
+	if err := validateOptionalPortalColor(cfg.PortalBackgroundColor, "portal background color"); err != nil {
+		return err
+	}
+	if err := validateOptionalPortalColor(cfg.PortalModalColor, "portal modal color"); err != nil {
+		return err
 	}
 
 	for idx, item := range cfg.ServiceLinks {
-		if strings.TrimSpace(item.Name) == "" {
-			return fmt.Errorf("service link %d name is required", idx+1)
-		}
-		if len(item.Name) > 64 {
-			return fmt.Errorf("service link %d name exceeds 64 characters", idx+1)
-		}
-		if !isValidPortalLinkURL(item.URL) {
-			return fmt.Errorf("service link %d URL must be a relative path or absolute http(s) URL", idx+1)
-		}
-		if color := strings.TrimSpace(item.Color); color != "" && !isValidServiceLinkColor(color) {
-			return fmt.Errorf("service link %d color must be a #RRGGBB value", idx+1)
+		if err := validateServiceLinkEntry(idx, item); err != nil {
+			return err
 		}
 	}
 	return nil
