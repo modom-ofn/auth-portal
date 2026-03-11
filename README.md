@@ -59,25 +59,21 @@ AuthPortal authenticates users directly against their connected media server acc
 
 ### UI Preview
 
-Unified login flow with Plex, Jellyfin, and Emby buttons:
-<a href="screenshots/auth-portal-login-flow.png">
-  <img src="screenshots/auth-portal-login-flow-thumb.png" alt="Unified login flow with Plex, Jellyfin, and Emby buttons" width="600">
-</a>
+<p align="center">
+  <img src="./screenshots/ui-preview-rotating.gif" alt="Rotating AuthPortal UI preview banner showing authorized and unauthorized views, MFA flow, and admin tabs for providers, security, MFA, app settings, OAuth clients, and backups." />
+</p>
 
-MFA enrollment and recovery code management:
-<a href="screenshots/auth-portal-mfa-pages.png">
-  <img src="screenshots/auth-portal-mfa-pages-thumb.png" alt="MFA enrollment and recovery code management" width="600">
-</a>
-
-Admin console showing provider, security, and MFA configuration tabs:
-<a href="screenshots/auth-portal-admin-pages-1.png">
-  <img src="screenshots/auth-portal-admin-pages-1-thumb.png" alt="Admin console showing provider, security, and MFA configuration tabs" width="600">
-</a>
-
-Admin console showing OAuth clients and backups tab with scheduled runs and retention controls
-<a href="screenshots/auth-portal-admin-pages-2.png">
-  <img src="screenshots/auth-portal-admin-pages-2-thumb.png" alt="Admin console showing OAuth clients and backups tab with scheduled runs and retention controls" width="600">
-</a>
+Frame descriptions (alt text):
+1. Authorized user home with service buttons and account summary.
+2. Unauthorized user view with restricted/guest access messaging.
+3. MFA enrollment screen showing TOTP setup and verification flow.
+4. Signed-in flow after MFA challenge completion.
+5. Admin Providers tab for Plex, Jellyfin, and Emby configuration.
+6. Admin Security tab for session and authentication controls.
+7. Admin MFA settings tab with enforcement and recovery options.
+8. Admin App Settings tab for portal behavior and branding controls.
+9. Admin OAuth Clients tab showing client cards and management actions.
+10. Admin Backups tab with exports, scheduling, retention, and restore actions.
 
 ---
 
