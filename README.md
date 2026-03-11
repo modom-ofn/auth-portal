@@ -104,7 +104,7 @@ Frame descriptions (alt text):
 - [Security scans and code analysis](#security-scans-and-code-analysis)
 - [Contributing](#contributing)
 - [License](#license)
-- [Upgrade Guide (from < v2.0.3)](#upgrade-guide-from--v203)
+- [Upgrade Guide (to v2.0.4)](#upgrade-guide-from--v203)
 
 ---
 
@@ -737,7 +737,7 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ---
 
-## Upgrade Guide (from < v2.0.3)
+## Upgrade Guide (to v2.0.4)
 
 1) Rebuild or pull `modomofn/auth-portal:v2.0.4` so you pick up the modular admin UX improvements and hardened runtime base image (`dhi.io/alpine-base:3.23-alpine3.23-dev`).
 2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
