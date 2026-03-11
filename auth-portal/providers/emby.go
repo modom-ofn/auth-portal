@@ -111,7 +111,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusSeeOther, Header: hdr}, nil
 	}
 
-	auth, _, authorized, err := processEmbyLogin(username, password)
+	auth, detail, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
@@ -122,7 +122,7 @@ func (EmbyProvider) CompleteOutcome(_ context.Context, r *http.Request) (AuthOut
 		return AuthOutcome{}, &HTTPResult{Status: http.StatusUnauthorized, Header: hdr, Body: body}, nil
 	}
 
-	return finalizeEmbyOutcome(auth, authorized), nil, nil
+	return finalizeEmbyOutcome(auth, detail, authorized), nil, nil
 }
 
 // StartWeb: tell the client to open our own login form popup (/auth/forward?emby=1)
@@ -134,65 +134,97 @@ func (EmbyProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		w.Header().Set(embyHeaderContent, embyContentTypeHTML)
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write(embyLoginPageHTML("", "")); err != nil {
-			log.Printf("emby login write failed: %v", err)
-		}
-		return
+func renderEmbyForwardLogin(w http.ResponseWriter, status int, username, message string) {
+	w.Header().Set(embyHeaderContent, embyContentTypeHTML)
+	w.WriteHeader(status)
+	if _, err := w.Write(embyLoginPageHTML(username, message)); err != nil {
+		log.Printf("emby login write failed: %v", err)
 	}
+}
 
+func parseEmbyForwardCredentials(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
+		return "", "", false
 	}
 	username := strings.TrimSpace(r.Form.Get("username"))
 	password := r.Form.Get("password")
 	if username == "" || password == "" {
 		http.Redirect(w, r, embyForwardAuthPath, http.StatusSeeOther)
+		return "", "", false
+	}
+	return username, password, true
+}
+
+func logEmbyTokenValidation(username, token string) {
+	if ok, terr := embyTokenStillValid(EmbyServerURL, token); terr == nil && ok && Debugf != nil {
+		Debugf("emby/auth token valid for %s", username)
+	}
+}
+
+func completeEmbyForwardSession(w http.ResponseWriter, auth mediaAuthResp, authorized bool) {
+	_, mediaUUID := saveEmbyUser(auth, authorized)
+	if authorized {
+		if SetSessionCookie != nil {
+			_ = SetSessionCookie(w, mediaUUID, auth.User.Name)
+		}
+		return
+	}
+	if SetTempSessionCookie != nil {
+		_ = SetTempSessionCookie(w, mediaUUID, auth.User.Name)
+	}
+}
+
+func isEmbyAdmin(username, userID string, detail embyUserDetail) bool {
+	if owner := strings.TrimSpace(EmbyOwnerUsername); owner != "" && strings.EqualFold(username, owner) {
+		return true
+	}
+	if ownerID := strings.TrimSpace(EmbyOwnerID); ownerID != "" && userID == ownerID {
+		return true
+	}
+	return detail.ID != "" && !detail.Policy.IsDisabled && (detail.Policy.IsAdministrator || detail.Policy.IsAdmin)
+}
+
+func embySyncAdminAccess(username string, admin bool) {
+	if SetUserAdminByUsername == nil {
+		return
+	}
+	if err := SetUserAdminByUsername(username, admin); err != nil && Warnf != nil {
+		Warnf("emby admin sync failed for %s: %v", username, err)
+	}
+}
+
+func (EmbyProvider) Forward(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		renderEmbyForwardLogin(w, http.StatusOK, "", "")
 		return
 	}
 
-	auth, _, authorized, err := processEmbyLogin(username, password)
+	username, password, ok := parseEmbyForwardCredentials(w, r)
+	if !ok {
+		return
+	}
+
+	auth, detail, authorized, err := processEmbyLogin(username, password)
 	if err != nil {
 		if Warnf != nil {
 			Warnf("emby/auth Pw failed: %v", err)
 		}
-		w.Header().Set(embyHeaderContent, embyContentTypeHTML)
-		w.WriteHeader(http.StatusUnauthorized)
-		if _, writeErr := w.Write(embyLoginPageHTML(username, "Login failed; please try again.")); writeErr != nil {
-			log.Printf("emby login write failed: %v", writeErr)
-		}
+		renderEmbyForwardLogin(w, http.StatusUnauthorized, username, "Login failed; please try again.")
 		return
 	}
 
 	if Debugf != nil {
 		Debugf("emby/auth success userID=%s", auth.User.ID)
 	}
-	if ok, terr := embyTokenStillValid(EmbyServerURL, auth.AccessToken); terr == nil && ok {
-		if Debugf != nil {
-			Debugf("emby/auth token valid for %s", username)
-		}
-	}
-
-	_, mediaUUID := saveEmbyUser(auth, authorized)
-
-	if authorized {
-		if SetSessionCookie != nil {
-			_ = SetSessionCookie(w, mediaUUID, auth.User.Name)
-		}
-	} else {
-		if SetTempSessionCookie != nil {
-			_ = SetTempSessionCookie(w, mediaUUID, auth.User.Name)
-		}
-	}
+	logEmbyTokenValidation(username, auth.AccessToken)
+	embySyncAdminAccess(auth.User.Name, isEmbyAdmin(auth.User.Name, auth.User.ID, detail))
+	completeEmbyForwardSession(w, auth, authorized)
 
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
-		Message:  "Signed in - you can close this window.",
+		Message:  PostAuthMessageSignedIn,
 		Provider: "emby-auth",
-		Redirect: "/home",
+		Redirect: PostAuthRedirectHome,
 	})
 }
 
@@ -210,11 +242,10 @@ func (EmbyProvider) IsAuthorized(uuid, _ string) (bool, error) {
 	if EmbyAPIKey != "" && u.MediaUUID != "" {
 		id := strings.TrimPrefix(u.MediaUUID, "emby-")
 		if detail, derr := embyGetUserDetail(EmbyServerURL, EmbyAPIKey, id); derr == nil {
-			ok := !detail.Policy.IsDisabled
 			if SetUserMediaAccessByUsername != nil {
-				_ = SetUserMediaAccessByUsername(u.Username, ok)
+				_ = SetUserMediaAccessByUsername(u.Username, !detail.Policy.IsDisabled)
 			}
-			return ok, nil
+			return !detail.Policy.IsDisabled, nil
 		}
 	}
 	return false, nil
@@ -282,7 +313,8 @@ func saveEmbyUser(auth mediaAuthResp, authorized bool) (sealedToken string, medi
 	return sealedToken, mediaUUID
 }
 
-func finalizeEmbyOutcome(auth mediaAuthResp, authorized bool) AuthOutcome {
+func finalizeEmbyOutcome(auth mediaAuthResp, detail embyUserDetail, authorized bool) AuthOutcome {
+	embySyncAdminAccess(auth.User.Name, isEmbyAdmin(auth.User.Name, auth.User.ID, detail))
 	sealedToken, mediaUUID := saveEmbyUser(auth, authorized)
 	return AuthOutcome{
 		Provider:    "emby",

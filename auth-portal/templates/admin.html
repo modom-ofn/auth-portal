@@ -11,19 +11,21 @@
             <h1>AuthPortal Admin Console</h1>
             <p class="muted">Active Provider: <span class="highlight">{{.ProviderDisplay}}</span> &bull; Last refreshed <span id="loaded-at">{{.ConfigLoadedAt}}</span></p>
         </div>
-        <a class="admin-home-link" href="/home">Back to Portal</a>
+        <div class="admin-header-actions">
+            <a class="admin-home-link ghost-btn" href="/home">Back to Portal</a>
+        </div>
     </header>
 
     <div id="status-banner" class="status-banner"></div>
 
     <main class="admin-main">
         <aside class="admin-nav">
-            <button type="button" class="admin-tab active" data-section="providers">Providers</button>
-            <button type="button" class="admin-tab" data-section="security">Security</button>
-            <button type="button" class="admin-tab" data-section="mfa">MFA</button>
-            <button type="button" class="admin-tab" data-section="app-settings">App Settings</button>
-            <button type="button" class="admin-tab" data-section="oauth">OAuth Clients</button>
-            <button type="button" class="admin-tab" data-section="backups">Backups</button>
+            <button type="button" class="admin-tab ghost-btn active" data-section="providers">Providers</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="security">Security</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="mfa">MFA</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="app-settings">App Settings</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="oauth">OAuth Clients</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="backups">Backups</button>
         </aside>
 
         <section class="admin-content">
@@ -32,29 +34,22 @@
                     <div class="panel-header">
                         <h2 id="panel-title">Providers</h2>
                         <div class="panel-header-actions">
-                            <button type="button" id="config-help-btn" class="icon-btn" aria-label="Show help for this configuration" title="Show help">?</button>
                             <span id="version-badge" class="version-badge">v-</span>
                         </div>
                     </div>
-                    <p class="panel-helper">Edit the configuration JSON for this section. Provide a short reason before saving.</p>
+                    <p class="panel-helper">Edit this section using the form fields below. Provide a short reason before saving.</p>
                     <div class="config-tools">
                         <button type="button" id="config-export-btn" class="ghost-btn">Export</button>
                         <button type="button" id="config-import-btn" class="ghost-btn">Import</button>
                         <input type="file" id="config-import-input" accept="application/json" hidden>
                     </div>
-                    <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON"></textarea>
+                    <div id="config-fields" class="config-fields" aria-live="polite"></div>
+                    <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
                     <div class="admin-actions">
                         <input id="reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
-                        <button id="save-btn" type="submit">Save Changes</button>
+                        <button id="save-btn" type="submit" class="primary-btn">Save Changes</button>
                     </div>
                 </form>
-
-                <div id="history-panel" class="panel history-panel">
-                    <h3>Recent Changes</h3>
-                    <ul id="history-list" class="history-list">
-                        <li>Loading…</li>
-                    </ul>
-                </div>
 
                 <div id="oauth-panel" class="panel" hidden>
                     <div class="panel-header">
@@ -64,21 +59,7 @@
                     <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
                     <div id="oauth-secret-banner" class="secret-banner" hidden></div>
                     <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
-                    <div id="oauth-client-table-wrapper" class="oauth-table-wrapper" hidden>
-                        <table id="oauth-client-table" class="oauth-table" hidden>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Client ID</th>
-                                    <th>Redirect URIs</th>
-                                    <th>Scopes</th>
-                                    <th>Updated</th>
-                                    <th class="actions-col"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="oauth-client-rows"></tbody>
-                        </table>
-                    </div>
+                    <div id="oauth-client-cards" class="oauth-client-cards" hidden></div>
                     <form id="oauth-client-form" class="oauth-form" autocomplete="off">
                         <input type="hidden" id="oauth-client-id">
                         <div class="form-row">
@@ -96,7 +77,7 @@
                             <span class="field-hint">Whitespace or newline separated. Defaults to <code>openid profile email</code>.</span>
                         </div>
                         <div class="oauth-form-actions">
-                            <button id="oauth-client-save" type="submit">Save Client</button>
+                            <button id="oauth-client-save" type="submit" class="primary-btn">Save Client</button>
                             <button id="oauth-client-cancel" type="button" class="ghost-btn" hidden>Cancel Edit</button>
                         </div>
                     </form>
@@ -106,7 +87,7 @@
                         <h2>Backups</h2>
                         <div class="backup-header-actions">
                             <button type="button" id="backups-refresh-btn" class="ghost-btn">Refresh</button>
-                            <button type="button" id="backups-run-btn" class="primary-btn">Run Backup</button>
+                            <button type="button" id="backups-run-btn" class="success-btn">Run Backup</button>
                         </div>
                     </div>
                     <p class="panel-helper">Schedule or create configuration backups. Files are written to <code>./backups</code> inside the container.</p>
@@ -160,7 +141,8 @@
                             <label><input type="checkbox" class="backup-section-checkbox" value="app-settings" checked> App Settings</label>
                         </fieldset>
                             <div class="backup-schedule-actions">
-                                <button type="submit" id="backup-schedule-save" class="ghost-btn">Save Schedule</button>
+                                <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button type="submit" id="backup-schedule-save" class="primary-btn">Save Schedule</button>
                                 <div class="backup-run-meta">
                                     <span>Last run ({{.AppTimeZone}}): <span id="backup-last-run">-</span></span>
                                     <span>Next run ({{.AppTimeZone}}): <span id="backup-next-run">-</span></span>
@@ -183,6 +165,13 @@
                         </table>
                     </div>
                 </div>
+
+                <div id="history-panel" class="panel history-panel">
+                    <h3>Recent Changes</h3>
+                    <ul id="history-list" class="history-list">
+                        <li>Loading.</li>
+                    </ul>
+                </div>
             </div>
         </section>
     </main>
@@ -196,10 +185,37 @@
         </div>
     </dialog>
 
+    <dialog id="recent-changes-modal" class="modal" hidden aria-labelledby="recent-changes-modal-title">
+        <div class="modal-backdrop" data-recent-close></div>
+        <div class="modal-dialog">
+            <button type="button" id="recent-changes-modal-close" class="icon-btn close-btn" aria-label="Close recent changes" title="Close">×</button>
+            <h3 id="recent-changes-modal-title">Recent Changes</h3>
+            <div class="modal-body">
+                <ul id="recent-changes-list" class="history-list recent-changes-list">
+                    <li>Loading.</li>
+                </ul>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="oauth-detail-modal" class="modal" hidden aria-labelledby="oauth-detail-title">
+        <div class="modal-backdrop" data-oauth-detail-close></div>
+        <div class="modal-dialog">
+            <button type="button" id="oauth-detail-close" class="icon-btn close-btn" aria-label="Close OAuth details" title="Close">×</button>
+            <h3 id="oauth-detail-title">OAuth Client Details</h3>
+            <div id="oauth-detail-body" class="modal-body"></div>
+            <div class="oauth-detail-actions">
+                <button type="button" id="oauth-detail-edit" class="primary-btn">Edit</button>
+                <button type="button" id="oauth-detail-rotate" class="success-btn">Rotate Secret</button>
+                <button type="button" id="oauth-detail-delete" class="danger-btn">Delete</button>
+            </div>
+        </div>
+    </dialog>
+
     <footer class="admin-footer">
         <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>
     </footer>
 
-    <script src="/static/admin.js" defer></script>
+    <script type="module" src="/static/admin.js"></script>
 </body>
 </html>

@@ -23,6 +23,14 @@ type plexPin struct {
 	AuthToken2 string `json:"auth_token"`
 }
 
+type plexPinPollStatus int
+
+const (
+	plexPinPollPending plexPinPollStatus = iota
+	plexPinPollReady
+	plexPinPollRateLimited
+)
+
 type plexUser struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
@@ -149,23 +157,34 @@ func plexCreatePin(clientID string) (plexPin, error) {
 
 func plexPollPin(clientID string, id int, timeout time.Duration) (token string, err error) {
 	deadline := time.Now().Add(timeout)
+	rateLimitedCount := 0
 	for time.Now().Before(deadline) {
-		token, ready, pollErr := plexPollPinOnce(clientID, id)
+		token, status, pollErr := plexPollPinOnce(clientID, id)
 		if pollErr != nil && Debugf != nil {
 			Debugf("plex pin poll error: %v", pollErr)
 		}
-		if ready && token != "" {
+		if status == plexPinPollReady && token != "" {
 			return token, nil
 		}
+		if status == plexPinPollRateLimited {
+			rateLimitedCount++
+			// Keep this visible but not noisy: log first event, then every 3rd repeat.
+			if Debugf != nil && (rateLimitedCount == 1 || rateLimitedCount%3 == 0) {
+				Debugf("plex pin poll rate-limited (429): count=%d backoff=3s", rateLimitedCount)
+			}
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		rateLimitedCount = 0
 		time.Sleep(1 * time.Second)
 	}
-	return "", fmt.Errorf("timeout waiting for plex pin")
+	return "", errPlexPinTimeout
 }
 
-func plexPollPinOnce(clientID string, id int) (string, bool, error) {
+func plexPollPinOnce(clientID string, id int) (string, plexPinPollStatus, error) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://plex.tv/api/v2/pins/%d", id), nil)
 	if err != nil {
-		return "", false, fmt.Errorf("build plex pin poll request: %w", err)
+		return "", plexPinPollPending, fmt.Errorf("build plex pin poll request: %w", err)
 	}
 	plexSetStandardHeaders(req, "", clientID)
 	req.Header.Set("X-Plex-Device", "Web")
@@ -173,28 +192,31 @@ func plexPollPinOnce(clientID string, id int) (string, bool, error) {
 
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return "", false, err
+		return "", plexPinPollPending, err
 	}
 	defer resp.Body.Close()
 	body, err := plexReadBody(resp)
 	if err != nil {
-		return "", false, err
+		return "", plexPinPollPending, err
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return "", plexPinPollRateLimited, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", false, fmt.Errorf("plex pin poll non-2xx: %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", plexPinPollPending, fmt.Errorf("plex pin poll non-2xx: %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var p plexPin
 	if err := json.Unmarshal(body, &p); err != nil {
-		return "", false, fmt.Errorf("decode plex pin: %w", err)
+		return "", plexPinPollPending, fmt.Errorf("decode plex pin: %w", err)
 	}
 	if p.AuthToken != "" {
-		return p.AuthToken, true, nil
+		return p.AuthToken, plexPinPollReady, nil
 	}
 	if p.AuthToken2 != "" {
-		return p.AuthToken2, true, nil
+		return p.AuthToken2, plexPinPollReady, nil
 	}
-	return "", false, nil
+	return "", plexPinPollPending, nil
 }
 
 func plexFetchUser(token string) (plexUser, error) {
@@ -300,6 +322,7 @@ type plexAuthData struct {
 }
 
 var errPlexPinNotReady = errors.New("plex pin not ready")
+var errPlexPinTimeout = errors.New("timeout waiting for plex pin")
 
 func plexParsePinCookie(r *http.Request) (plexPinCookie, error) {
 	pc, err := r.Cookie("plex_pin")
@@ -392,6 +415,9 @@ func plexResolveAuthData(r *http.Request, timeout time.Duration) (plexAuthData, 
 	}
 	token, err := plexPollPin(pin.clientID, pin.id, timeout)
 	if err != nil || token == "" {
+		if errors.Is(err, errPlexPinTimeout) {
+			return plexAuthData{}, errPlexPinNotReady
+		}
 		if err == nil {
 			if token == "" {
 				return plexAuthData{}, errPlexPinNotReady
@@ -570,11 +596,11 @@ func (PlexProvider) Forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirect := "/home"
-	message := "Signed in - you can close this window."
+	redirect := PostAuthRedirectHome
+	message := PostAuthMessageSignedIn
 	if requiresMFA {
-		redirect = "/mfa/challenge"
-		message = "Continue in the main window to finish multi-factor authentication."
+		redirect = PostAuthRedirectMFAChallenge
+		message = PostAuthMessageContinueMFA
 	}
 	WriteAuthCompletePage(w, AuthCompletePageOptions{
 		Message:     message,
@@ -610,9 +636,9 @@ func PlexPoll(w http.ResponseWriter, r *http.Request) {
 	if Debugf != nil {
 		Debugf("plex poll success: user=%s authorized=%t", data.username, data.authorized)
 	}
-	redirect := "/home"
+	redirect := PostAuthRedirectHome
 	if requiresMFA {
-		redirect = "/mfa/challenge"
+		redirect = PostAuthRedirectMFAChallenge
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "redirect": redirect, "mfa": requiresMFA})
 }
@@ -634,8 +660,7 @@ func (PlexProvider) IsAuthorized(uuid, _ string) (bool, error) {
 		return false, nil
 	}
 
-	authorized := plexTokenAuthorized(userToken)
-	if authorized {
+	if plexTokenAuthorized(userToken) {
 		plexSetUserMediaAccess(u.Username, true)
 		return true, nil
 	}

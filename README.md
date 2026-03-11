@@ -1,8 +1,8 @@
-# AuthPortal (v2.0.3)
+# AuthPortal (v2.0.4)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.25.5%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 [![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
 
@@ -59,38 +59,34 @@ AuthPortal authenticates users directly against their connected media server acc
 
 ### UI Preview
 
-Unified login flow with Plex, Jellyfin, and Emby buttons:
-<a href="screenshots/auth-portal-login-flow.png">
-  <img src="screenshots/auth-portal-login-flow-thumb.png" alt="Unified login flow with Plex, Jellyfin, and Emby buttons" width="600">
-</a>
+<p align="center">
+  <img src="./screenshots/ui-preview-rotating.gif" alt="Rotating AuthPortal UI preview banner showing authorized and unauthorized views, MFA flow, and admin tabs for providers, security, MFA, app settings, OAuth clients, and backups." />
+</p>
 
-MFA enrollment and recovery code management:
-<a href="screenshots/auth-portal-mfa-pages.png">
-  <img src="screenshots/auth-portal-mfa-pages-thumb.png" alt="MFA enrollment and recovery code management" width="600">
-</a>
-
-Admin console showing provider, security, and MFA configuration tabs:
-<a href="screenshots/auth-portal-admin-pages-1.png">
-  <img src="screenshots/auth-portal-admin-pages-1-thumb.png" alt="Admin console showing provider, security, and MFA configuration tabs" width="600">
-</a>
-
-Admin console showing OAuth clients and backups tab with scheduled runs and retention controls
-<a href="screenshots/auth-portal-admin-pages-2.png">
-  <img src="screenshots/auth-portal-admin-pages-2-thumb.png" alt="Admin console showing OAuth clients and backups tab with scheduled runs and retention controls" width="600">
-</a>
+Frame descriptions (alt text):
+1. Authorized user home with service buttons and account summary.
+2. Unauthorized user view with restricted/guest access messaging.
+3. MFA enrollment screen showing TOTP setup and verification flow.
+4. Signed-in flow after MFA challenge completion.
+5. Admin Providers tab for Plex, Jellyfin, and Emby configuration.
+6. Admin Security tab for session and authentication controls.
+7. Admin MFA settings tab with enforcement and recovery options.
+8. Admin App Settings tab for portal behavior and branding controls.
+9. Admin OAuth Clients tab showing client cards and management actions.
+10. Admin Backups tab with exports, scheduling, retention, and restore actions.
 
 ---
 
 ## Table of Contents
 
 - [Features](#features)
-- [What's New in v2.0.3](#whats-new-in-v203)
+- [What's New in v2.0.4](#whats-new-in-v204)
 - [ldap-sync](#ldap-sync)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
-  - [Admin Console & Config Store (new in v2.0.3)](#admin-console--config-store-new-in-v203)
+  - [Admin Console & Config Store (new in v2.0.4)](#admin-console--config-store-new-in-v204)
   - [Backups](#backups)
-  - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)](#oauth-21--oidc-authorization-server-new-in-v203)
+  - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.4)](#oauth-21--oidc-authorization-server-new-in-v204)
   - [Multi-factor authentication](#multi-factor-authentication)
   - [Plex](#plex)
   - [Jellyfin](#jellyfin)
@@ -108,15 +104,21 @@ Admin console showing OAuth clients and backups tab with scheduled runs and rete
 - [Security scans and code analysis](#security-scans-and-code-analysis)
 - [Contributing](#contributing)
 - [License](#license)
-- [Upgrade Guide (from < v2.0.2)](#upgrade-guide-from--v202)
+- [Upgrade Guide (to v2.0.4)](#upgrade-guide-from--v203)
 
 ---
 
-## What's New in v2.0.3
+## What's New in v2.0.4
 
-- **Runtime config store + admin console:** JSON-backed providers/security/MFA configuration with optimistic concurrency, history audit, and inline editing from `/admin`. Bootstrap admin accounts via `ADMIN_BOOTSTRAP_USERS`.
-- **OAuth 2.1 / OIDC authorization server:** Authorization-code + refresh grants with PKCE, signed ID tokens, consent tracking, and optional `offline_access` refresh rotation. Includes discovery, JWKS, token, and userinfo endpoints.
-- **Admin OAuth client management:** List/create/update/delete clients, rotate secrets, and expose new secrets in the UI. All backed by new `/api/admin/oauth/*` routes.
+- **Admin UX modularization and tab isolation:** refactored section logic into module controllers so Providers, Security, MFA, App Settings, OAuth, and Backups no longer trample each other’s state.
+- **Shared Recent Changes module:** standardized recent-changes behavior/presentation across tabs, including Backups schedule updates with required change reason support.
+- **Form-first admin configuration:** replaced fragile raw JSON editing paths with normalized forms while preserving import/export compatibility for valid JSON backups.
+- **OAuth client UX redesign:** migrated OAuth clients from table rows to card layout with detail modal actions (edit, rotate secret, delete) and consistent button behaviors.
+- **Consistency and clarity improvements:** unified button styling tokens across admin/authorized/unauthorized pages; replaced legacy `?` help popups with per-field hover helper text.
+- **Authorized User service buttons:** removed legacy single-link fields, added add/remove/edit support with per-button colors, and updated authorized portal rendering to only use service-button entries.
+- **Portal styling simplification:** removed custom image/mode upload flows and standardized to secure color-only controls for page background and modal color.
+- **Provider login reliability hardening:** reduced Plex pin-polling failure behavior during 429 rate-limit windows to prevent stale popup flows ending in `Auth failed`.
+- **Container hardening:** runtime image moved to `dhi.io/alpine-base:3.23-alpine3.23-dev`; compose defaults updated to local hardened builds.
 
 ---
 
@@ -198,7 +200,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.3
+EMBY_APP_VERSION=2.0.4
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -207,7 +209,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.3
+JELLYFIN_APP_VERSION=2.0.4
 ```
 
 
@@ -250,7 +252,7 @@ services:
             ;;
         esac
         # IMPORTANT: call the official entrypoint so initdb still runs on first boot
-        exec docker-entrypoint.sh postgres $EXTRA
+        exec docker-entrypoint.sh postgres $$EXTRA
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -261,7 +263,10 @@ services:
     networks: [authnet]
 
   auth-portal:
-    image: modomofn/auth-portal:v2.0.3
+    image: ${AUTH_PORTAL_IMAGE:-auth-portal:hardened-local}
+    build:
+      context: ./auth-portal
+      dockerfile: Dockerfile
     ports:
       - "8089:8080"
     environment:
@@ -303,12 +308,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.3}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.4}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.3}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.4}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -426,7 +431,7 @@ docker compose --profile ldap up -d --build
 - `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./backups` relative to the binary).
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 
-### Admin Console & Config Store (new in v2.0.3)
+### Admin Console & Config Store (new in v2.0.4)
 
 - Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
 - Providers, Security, and MFA settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
@@ -441,7 +446,7 @@ docker compose --profile ldap up -d --build
 - Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
 - The same functionality is exposed via the REST API (`/api/admin/backups*`); see [HTTP Routes](#http-routes) below for endpoint details.
 
-### OAuth 2.1 / OIDC Authorization Server (new in v2.0.3)
+### OAuth 2.1 / OIDC Authorization Server (new in v2.0.4)
 
 - Discovery endpoint `/.well-known/openid-configuration` advertises JWKS (`/oidc/jwks.json`), authorize (`/oidc/authorize`), token (`/oidc/token`), and userinfo (`/oidc/userinfo`) URLs.
 - `/oidc/authorize` implements the authorization-code grant with PKCE. User consent is recorded per client/scope, supports `prompt=consent`, and returns `consent_required` when `prompt=none` is requested without prior approval.
@@ -555,10 +560,10 @@ CREATE TABLE IF NOT EXISTS pins (
 
 ## Build & Images
 
-- Go: `1.25.5` on `alpine:3.21`.
-- Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.25`, builds with:
+- Go: `1.26.1` on `alpine:3.23` (builder stage).
+- Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.26`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
-- Runtime: `alpine:3.21`, installs CA certs + tzdata, runs as non-root `uid 10001`.
+- Runtime: `dhi.io/alpine-base:3.23-alpine3.23-dev`, installs CA certs + tzdata, runs as non-root `uid 10001`.
 
 ---
 
@@ -732,9 +737,9 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ---
 
-## Upgrade Guide (from < v2.0.2)
+## Upgrade Guide (to v2.0.4)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.3` so you pick up Go 1.25.5 plus the patched OpenSSL 3.3.5 / BusyBox layers.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.4` so you pick up the modular admin UX improvements and hardened runtime base image (`dhi.io/alpine-base:3.23-alpine3.23-dev`).
 2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
 3) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.

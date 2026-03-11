@@ -7,6 +7,7 @@ VERSION ?= $(shell cat VERSION 2>/dev/null || echo "0.0.0")
 help:
 	@echo "make build        # go build"
 	@echo "make test         # go test"
+	@echo "make smoke-admin  # admin JS smoke tests"
 	@echo "make docker       # local docker build (amd64)"
 	@echo "make tag          # create signed git tag v$(VERSION)"
 	@echo "make release      # push tag to trigger CI release"
@@ -20,6 +21,11 @@ build:
 test:
 	@echo "==> go test"
 	go test ./...
+
+.PHONY: smoke-admin
+smoke-admin:
+	@echo "==> admin JS smoke tests"
+	node auth-portal/static/admin/smoke-test.mjs
 
 .PHONY: docker
 docker:

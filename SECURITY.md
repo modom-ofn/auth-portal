@@ -8,9 +8,9 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.3` (latest: `v2.0.3`) | ✅ Supported | Receives all security and high-priority bug fixes. |
+| `v2.0.4` (latest: `v2.0.4`) | ✅ Supported | Receives all security and high-priority bug fixes. |
 | `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
-| `< v2.0.3` | ❌ End-of-life | Please upgrade to a supported release. |
+| `< v2.0.4` | ❌ End-of-life | Please upgrade to a supported release. |
 
 When a new minor series ships, the previous series remains supported for at least 90 days. I will post deprecation notices in the release notes and CHANGELOG when a branch approaches end-of-life.
 
@@ -45,6 +45,8 @@ AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, CSP/HSTS header
 
 Automated security checks run on this project:
 
+- Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
+- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
 - GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
@@ -61,4 +63,4 @@ If you spot an issue or have questions about these scans, please open an issue o
 - **Security headers:** all responses carry X-Frame-Options, X-Content-Type-Options, Referrer-Policy, a restrictive CSP, and conditional Strict-Transport-Security (or forceable via FORCE_HSTS).
 - **Config governance:** provider/security/MFA JSON lives in Postgres with optimistic versioning, in-browser history, scheduled backups, and download/restore flows for recovery.
 - **Token privacy for OIDC:** access/refresh tokens are stored as deterministic SHA-256 digests, limiting exposure if databases or logs leak.
-- **Runtime hygiene:** containers are built on Alpine with CA certs/tzdata only, and the final image runs as non-root UID 10001 to shrink the attack surface.
+- **Runtime hygiene:** containers are built on Docker Scout Hardened Alpine image with CA certs/tzdata only (dhi.io/alpine-base:3.23-alpine3.23-dev), and the final image runs as non-root UID 10001 to shrink the attack surface.

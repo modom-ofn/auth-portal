@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -65,8 +66,8 @@ var (
 	unauthRequestEmail   = envOr("UNAUTH_REQUEST_EMAIL", "admin@example.com")
 	unauthRequestSubject = envOr("UNAUTH_REQUEST_SUBJECT", "Request Access")
 
-	// Provider selected at startup (plex default; emby and jellyfin are distinct)
-	currentProvider providers.MediaProvider
+	// Active provider is runtime-configurable and accessed per request.
+	currentProvider atomic.Value // stores providers.MediaProvider
 
 	// Session TTLs & flags
 	sessionSameSite              = parseSameSite(os.Getenv("SESSION_SAMESITE"), http.SameSiteLaxMode)
@@ -77,6 +78,10 @@ var (
 	forceHSTS                    = os.Getenv("FORCE_HSTS") == "1"
 	appLocation                  = time.UTC
 )
+
+type providerState struct {
+	provider providers.MediaProvider
+}
 
 func envOr(k, d string) string {
 	if v := os.Getenv(k); v != "" {
@@ -141,6 +146,22 @@ func pickProvider(selection string) providers.MediaProvider {
 	}
 }
 
+func setCurrentProvider(p providers.MediaProvider) {
+	if p == nil {
+		return
+	}
+	currentProvider.Store(providerState{provider: p})
+}
+
+func activeProvider() providers.MediaProvider {
+	if v := currentProvider.Load(); v != nil {
+		if state, ok := v.(providerState); ok && state.provider != nil {
+			return state.provider
+		}
+	}
+	return pickProvider(mediaProviderKey)
+}
+
 // --- Health check helpers (minimal, local to main.go) ---
 func dbChecker(db *sql.DB) health.Checker {
 	return func(ctx context.Context) error {
@@ -172,8 +193,8 @@ func main() {
 	logConfigSnapshot(configStore)
 
 	initProviderDeps()
-	currentProvider = pickProvider(mediaProviderKey)
-	log.Printf("AuthPortal using provider: %s", currentProvider.Name())
+	setCurrentProvider(pickProvider(mediaProviderKey))
+	log.Printf("AuthPortal using provider: %s", activeProvider().Name())
 
 	router := buildRouter()
 	startServer(router)
@@ -302,7 +323,7 @@ func initProviderDeps() {
 		},
 		SetUserMediaAccessByUsername: setUserMediaAccessByUsername,
 		SetUserAdminByUsername: func(username string, admin bool) error {
-			return setUserAdminByUsername(username, admin, "jellyfin")
+			return setUserAdminByUsername(username, admin, "provider-sync")
 		},
 		FinalizeLogin:        finalizeLoginSession,
 		SetSessionCookie:     setSessionCookie,
@@ -313,104 +334,150 @@ func initProviderDeps() {
 	})
 }
 
-func buildRouter() *mux.Router {
-	r := mux.NewRouter()
+type routeLimiters struct {
+	login    *ipRateLimiter
+	mfa      *ipRateLimiter
+	plexPoll *ipRateLimiter
+}
 
-	loginLimiter := newIPRateLimiter(rate.Every(6*time.Second), 5, 15*time.Minute)
-	mfaLimiter := newIPRateLimiter(rate.Every(12*time.Second), 3, 15*time.Minute)
-	plexPollLimiter := newIPRateLimiter(rate.Every(1*time.Second), 6, 10*time.Minute)
+func newRouteLimiters() routeLimiters {
+	return routeLimiters{
+		login:    newIPRateLimiter(rate.Every(6*time.Second), 5, 15*time.Minute),
+		mfa:      newIPRateLimiter(rate.Every(12*time.Second), 3, 15*time.Minute),
+		plexPoll: newIPRateLimiter(rate.Every(1*time.Second), 6, 10*time.Minute),
+	}
+}
 
+func registerStaticAndBasicRoutes(r *mux.Router, lim routeLimiters) {
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-
 	r.HandleFunc("/", loginPageHandler).Methods("GET")
 	r.HandleFunc("/whoami", whoamiHandler).Methods("GET")
 	r.HandleFunc("/mfa/challenge", mfaChallengePage).Methods("GET")
-	r.Handle("/mfa/challenge/verify", requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaChallengeVerifyHandler)))).Methods("POST")
+	r.Handle("/mfa/challenge/verify", requireSameOrigin(rateLimitMiddleware(lim.mfa, http.HandlerFunc(mfaChallengeVerifyHandler)))).Methods("POST")
+}
+
+func registerEnrollmentRoutes(r *mux.Router, lim routeLimiters) {
 	enrollmentPageGuard := requireSessionOrPending(true)
 	enrollmentAPIGuard := requireSessionOrPending(false)
 
 	r.Handle("/mfa/enroll", enrollmentPageGuard(http.HandlerFunc(mfaEnrollPage))).Methods("GET")
 	r.Handle("/mfa/enroll/status", enrollmentAPIGuard(http.HandlerFunc(mfaEnrollmentStatusHandler))).Methods("GET")
+	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(lim.mfa, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
+	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(lim.mfa, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
+}
 
+func registerOIDCRoutes(r *mux.Router) {
 	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
 	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
 	r.Handle("/oidc/authorize", authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
 	r.Handle("/oidc/authorize/decision", authMiddleware(requireSameOrigin(http.HandlerFunc(oidcAuthorizeDecisionHandler)))).Methods("POST")
 	r.HandleFunc("/oidc/token", oidcTokenHandler).Methods("POST")
 	r.HandleFunc("/oidc/userinfo", oidcUserinfoHandler).Methods("GET")
+}
 
-	v2 := providers.AdaptV2(currentProvider)
-	if err := v2.Health(); err != nil {
-		log.Printf("Provider health warning: %v", err)
+func providerNameForCompletePage(out providers.AuthOutcome, v2 providers.MediaProviderV2) string {
+	prov := out.Provider
+	if prov == "" {
+		prov = v2.Name()
+	}
+	return prov + "-auth"
+}
+
+func maybeUpsertProviderOutcomeUser(out providers.AuthOutcome) {
+	if providers.UpsertUser == nil {
+		return
+	}
+	provider := strings.TrimSpace(out.Provider)
+	if provider == "" {
+		// Fallback for older providers that might omit the field.
+		switch {
+		case strings.HasPrefix(strings.TrimSpace(out.MediaUUID), "plex-"):
+			provider = "plex"
+		case strings.HasPrefix(strings.TrimSpace(out.MediaUUID), "emby-"):
+			provider = "emby"
+		case strings.HasPrefix(strings.TrimSpace(out.MediaUUID), "jellyfin-"):
+			provider = "jellyfin"
+		}
+	}
+	if err := providers.UpsertUser(providers.User{
+		Username:    out.Username,
+		Email:       out.Email,
+		MediaUUID:   out.MediaUUID,
+		MediaToken:  out.SealedToken,
+		MediaAccess: out.Authorized,
+		Provider:    provider,
+	}); err != nil {
+		log.Printf("provider outcome upsert failed for %s (%s): %v", out.Username, out.MediaUUID, err)
+	}
+}
+
+func finalizeProviderOutcomeSession(w http.ResponseWriter, out providers.AuthOutcome) (bool, error) {
+	if out.Authorized {
+		if providers.FinalizeLogin != nil {
+			return providers.FinalizeLogin(w, out.MediaUUID, out.Username)
+		}
+		_ = providers.SetSessionCookie(w, out.MediaUUID, out.Username)
+		return false, nil
+	}
+	_ = providers.SetTempSessionCookie(w, out.MediaUUID, out.Username)
+	return false, nil
+}
+
+func completePageMessageAndRedirect(requiresMFA bool) (string, string) {
+	if requiresMFA {
+		return providers.PostAuthMessageContinueMFA, providers.PostAuthRedirectMFAChallenge
+	}
+	return providers.PostAuthMessageSignedIn, providers.PostAuthRedirectHome
+}
+
+func handleOutcomeProviderForward(w http.ResponseWriter, r *http.Request, v2 providers.MediaProviderV2, op providers.OutcomeProvider) bool {
+	out, resp, err := op.CompleteOutcome(r.Context(), r)
+	if resp != nil {
+		providers.WriteHTTPResult(w, *resp)
+		return true
+	}
+	if err != nil {
+		http.Error(w, "Auth failed", http.StatusUnauthorized)
+		return true
 	}
 
-	startWebHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	maybeUpsertProviderOutcomeUser(out)
+
+	requiresMFA, finalizeErr := finalizeProviderOutcomeSession(w, out)
+	if finalizeErr != nil {
+		http.Error(w, "Login finalization failed", http.StatusInternalServerError)
+		return true
+	}
+
+	message, redirect := completePageMessageAndRedirect(requiresMFA)
+	providers.WriteAuthCompletePage(w, providers.AuthCompletePageOptions{
+		Message:     message,
+		Provider:    providerNameForCompletePage(out, v2),
+		Redirect:    redirect,
+		RequiresMFA: requiresMFA,
+	})
+	return true
+}
+
+func buildProviderStartHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v2 := providers.AdaptV2(activeProvider())
 		res, err := v2.Start(r.Context(), r)
 		if err != nil {
 			log.Printf("provider start error: %v", err)
 		}
 		providers.WriteHTTPResult(w, res)
 	})
-	startWebLimited := rateLimitMiddleware(loginLimiter, startWebHandler)
-	r.Handle("/auth/start-web", startWebLimited).Methods("GET")
-	r.Handle("/auth/start-web", requireSameOrigin(startWebLimited)).Methods("POST")
+}
 
-	forwardHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if op, ok := currentProvider.(providers.OutcomeProvider); ok {
-			out, resp, err := op.CompleteOutcome(r.Context(), r)
-			if resp != nil {
-				providers.WriteHTTPResult(w, *resp)
+func buildProviderForwardHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		provider := activeProvider()
+		v2 := providers.AdaptV2(provider)
+		if op, ok := provider.(providers.OutcomeProvider); ok {
+			if handled := handleOutcomeProviderForward(w, r, v2, op); handled {
 				return
 			}
-			if err != nil {
-				http.Error(w, "Auth failed", http.StatusUnauthorized)
-				return
-			}
-			if providers.UpsertUser != nil {
-				_ = providers.UpsertUser(providers.User{
-					Username:    out.Username,
-					Email:       out.Email,
-					MediaUUID:   out.MediaUUID,
-					MediaToken:  out.SealedToken,
-					MediaAccess: out.Authorized,
-				})
-			}
-
-			requiresMFA := false
-			if out.Authorized {
-				if providers.FinalizeLogin != nil {
-					var finalizeErr error
-					requiresMFA, finalizeErr = providers.FinalizeLogin(w, out.MediaUUID, out.Username)
-					if finalizeErr != nil {
-						http.Error(w, "Login finalization failed", http.StatusInternalServerError)
-						return
-					}
-				} else {
-					_ = providers.SetSessionCookie(w, out.MediaUUID, out.Username)
-				}
-			} else {
-				_ = providers.SetTempSessionCookie(w, out.MediaUUID, out.Username)
-			}
-
-			prov := out.Provider
-			if prov == "" {
-				prov = v2.Name()
-			}
-
-			redirect := "/home"
-			message := "Signed in - you can close this window."
-			if requiresMFA {
-				redirect = "/mfa/challenge"
-				message = "Continue in the main window to finish multi-factor authentication."
-			}
-
-			providers.WriteAuthCompletePage(w, providers.AuthCompletePageOptions{
-				Message:     message,
-				Provider:    prov + "-auth",
-				Redirect:    redirect,
-				RequiresMFA: requiresMFA,
-			})
-			return
 		}
 
 		res, err := v2.Complete(r.Context(), r)
@@ -419,21 +486,36 @@ func buildRouter() *mux.Router {
 		}
 		providers.WriteHTTPResult(w, res)
 	})
-	forwardLimited := rateLimitMiddleware(loginLimiter, forwardHandler)
+}
+
+func registerProviderRoutes(r *mux.Router, lim routeLimiters) {
+	v2 := providers.AdaptV2(activeProvider())
+	if err := v2.Health(); err != nil {
+		log.Printf("Provider health warning: %v", err)
+	}
+
+	startWebLimited := rateLimitMiddleware(lim.login, buildProviderStartHandler())
+	r.Handle("/auth/start-web", startWebLimited).Methods("GET")
+	r.Handle("/auth/start-web", requireSameOrigin(startWebLimited)).Methods("POST")
+
+	forwardLimited := rateLimitMiddleware(lim.login, buildProviderForwardHandler())
 	r.Handle("/auth/forward", forwardLimited).Methods("GET")
 	r.Handle("/auth/forward", requireSameOrigin(forwardLimited)).Methods("POST")
 
-	r.Handle("/auth/poll", rateLimitMiddleware(plexPollLimiter, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
-	r.Handle("/logout", requireSameOrigin(rateLimitMiddleware(loginLimiter, http.HandlerFunc(logoutHandler)))).Methods("POST")
+	r.Handle("/auth/poll", rateLimitMiddleware(lim.plexPoll, http.HandlerFunc(providers.PlexPoll))).Methods("GET")
+	r.Handle("/logout", requireSameOrigin(rateLimitMiddleware(lim.login, http.HandlerFunc(logoutHandler)))).Methods("POST")
+}
 
+func registerAuthenticatedRoutes(r *mux.Router) {
 	r.Handle("/home", authMiddleware(http.HandlerFunc(homeHandler))).Methods("GET")
 	r.Handle("/me", authMiddleware(http.HandlerFunc(meHandler))).Methods("GET")
-	r.Handle("/mfa/enroll/start", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentStartHandler))))).Methods("POST")
-	r.Handle("/mfa/enroll/verify", enrollmentAPIGuard(requireSameOrigin(rateLimitMiddleware(mfaLimiter, http.HandlerFunc(mfaEnrollmentVerifyHandler))))).Methods("POST")
+}
 
+func registerAdminRoutes(r *mux.Router) {
 	adminProtected := func(h http.Handler) http.Handler {
 		return authMiddleware(requireAdmin(h))
 	}
+
 	adminAPI := r.PathPrefix("/api/admin").Subrouter()
 	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
 	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
@@ -450,15 +532,27 @@ func buildRouter() *mux.Router {
 	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
 	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
 	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
+}
 
+func registerHealthRoutes(r *mux.Router) {
 	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
-
 	readyChecks := map[string]health.Checker{
 		"db": dbChecker(db),
 	}
 	r.HandleFunc("/startupz", health.ReadinessHandler(readyChecks)).Methods("GET")
 	r.HandleFunc("/readyz", health.ReadinessHandler(readyChecks)).Methods("GET")
+}
 
+func buildRouter() *mux.Router {
+	r := mux.NewRouter()
+	limiters := newRouteLimiters()
+	registerStaticAndBasicRoutes(r, limiters)
+	registerEnrollmentRoutes(r, limiters)
+	registerOIDCRoutes(r)
+	registerProviderRoutes(r, limiters)
+	registerAuthenticatedRoutes(r)
+	registerAdminRoutes(r)
+	registerHealthRoutes(r)
 	return r
 }
 
@@ -783,8 +877,9 @@ func sessionStateFromRequest(w http.ResponseWriter, r *http.Request) sessionStat
 		state.uuid = strings.TrimSpace(claims.UUID)
 		state.admin = adminFlag
 		state.authorized = adminFlag
-		if !adminFlag && currentProvider != nil && state.uuid != "" {
-			if ok, authErr := currentProvider.IsAuthorized(state.uuid, state.username); authErr == nil {
+		provider := activeProvider()
+		if !adminFlag && provider != nil && state.uuid != "" {
+			if ok, authErr := provider.IsAuthorized(state.uuid, state.username); authErr == nil {
 				state.authorized = ok
 			} else {
 				log.Printf("requireSessionOrPending: authorization check failed for %s (%s): %v", state.username, state.uuid, authErr)

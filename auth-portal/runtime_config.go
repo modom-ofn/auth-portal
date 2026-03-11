@@ -56,12 +56,21 @@ type MFAConfig struct {
 	EnforceForAllUsers bool   `json:"enforceForAllUsers"`
 }
 
+type AppServiceLink struct {
+	Name  string `json:"name"`
+	URL   string `json:"url"`
+	Color string `json:"color,omitempty"`
+}
+
 // AppSettingsConfig captures miscellaneous portal presentation controls.
 type AppSettingsConfig struct {
-	LoginExtraLinkURL    string `json:"loginExtraLinkUrl"`
-	LoginExtraLinkText   string `json:"loginExtraLinkText"`
-	UnauthRequestEmail   string `json:"unauthRequestEmail"`
-	UnauthRequestSubject string `json:"unauthRequestSubject"`
+	LoginExtraLinkURL     string           `json:"loginExtraLinkUrl"`
+	LoginExtraLinkText    string           `json:"loginExtraLinkText"`
+	UnauthRequestEmail    string           `json:"unauthRequestEmail"`
+	UnauthRequestSubject  string           `json:"unauthRequestSubject"`
+	ServiceLinks          []AppServiceLink `json:"serviceLinks,omitempty"`
+	PortalBackgroundColor string           `json:"portalBackgroundColor,omitempty"`
+	PortalModalColor      string           `json:"portalModalColor,omitempty"`
 }
 
 // RuntimeConfig represents all typed configuration sections with revision metadata.
@@ -166,10 +175,12 @@ func defaultMFAConfig() MFAConfig {
 
 func defaultAppSettingsConfig() AppSettingsConfig {
 	cfg := AppSettingsConfig{
-		LoginExtraLinkURL:    strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_URL")),
-		LoginExtraLinkText:   strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_TEXT")),
-		UnauthRequestEmail:   strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_EMAIL")),
-		UnauthRequestSubject: strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_SUBJECT")),
+		LoginExtraLinkURL:     strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_URL")),
+		LoginExtraLinkText:    strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_TEXT")),
+		UnauthRequestEmail:    strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_EMAIL")),
+		UnauthRequestSubject:  strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_SUBJECT")),
+		PortalBackgroundColor: strings.TrimSpace(os.Getenv("PORTAL_BACKGROUND_COLOR")),
+		PortalModalColor:      strings.TrimSpace(os.Getenv("PORTAL_MODAL_COLOR")),
 	}
 
 	if cfg.LoginExtraLinkURL == "" {
@@ -183,6 +194,19 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	}
 	if cfg.UnauthRequestSubject == "" {
 		cfg.UnauthRequestSubject = "Request Access"
+	}
+	if cfg.PortalBackgroundColor == "" {
+		cfg.PortalBackgroundColor = "#0b1020"
+	}
+	if cfg.PortalModalColor == "" {
+		cfg.PortalModalColor = "#111827"
+	}
+	cfg.ServiceLinks = []AppServiceLink{
+		{
+			Name:  cfg.LoginExtraLinkText,
+			URL:   cfg.LoginExtraLinkURL,
+			Color: "#0a5a35",
+		},
 	}
 	return cfg
 }
@@ -265,6 +289,7 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	}
 	mediaServerSelection = selectedProvider
 	mediaProviderKey, mediaProviderDisplay = resolveProviderSelection(mediaServerSelection)
+	setCurrentProvider(pickProvider(mediaProviderKey))
 	cfg.Providers.Active = mediaServerSelection
 
 	plexOwnerToken = strings.TrimSpace(firstNonEmpty(cfg.Providers.Plex.OwnerToken, defaults.Providers.Plex.OwnerToken))
@@ -329,6 +354,11 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		unauthRequestSubject = defaults.AppSettings.UnauthRequestSubject
 	}
 	cfg.AppSettings.UnauthRequestSubject = unauthRequestSubject
+
+	// Keep provider package configuration in sync with live runtime settings.
+	// Without this, switching providers in Admin can leave auth flows using stale
+	// URLs/API keys initialized at process startup.
+	initProviderDeps()
 
 	if cfg.LoadedAt.IsZero() {
 		cfg.LoadedAt = time.Now().UTC()
