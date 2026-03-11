@@ -1,6 +1,6 @@
 # AuthPortal Changelog
 
-## v2.0.4
+## v2.0.4 - 2026-03-11
 
 ### Highlights
 - Refactored the admin UX into modular tab controllers so tab state/actions are isolated; fixes regressions where editing one tab could break others.
