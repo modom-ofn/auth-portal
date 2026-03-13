@@ -57,24 +57,15 @@ export const createSectionRouter = ({
     }
   };
 
-  const activate = async (section) => {
-    if (!section) {
-      return;
-    }
-    if (
-      section === currentSection &&
-      section !== 'oauth' &&
-      section !== 'ldap-sync' &&
-      section !== 'backups' &&
-      hasSectionData(section)
-    ) {
-      return;
-    }
-    currentSection = section;
-    setActiveTab();
-    if (typeof onSectionChange === 'function') {
-      await onSectionChange(section);
-    }
+  const shouldSkipActivation = (section) => (
+    section === currentSection &&
+    section !== 'oauth' &&
+    section !== 'ldap-sync' &&
+    section !== 'backups' &&
+    hasSectionData(section)
+  );
+
+  const activateSection = async (section) => {
     if (isConfigSection(section)) {
       showPanelsForSection(section);
       if (typeof onConfigSection === 'function') {
@@ -82,24 +73,33 @@ export const createSectionRouter = ({
       }
       return;
     }
-    if (section === 'oauth' && oauthPanel) {
-      showPanelsForSection(section);
-      if (typeof onOAuthSection === 'function') {
-        await onOAuthSection(section);
-      }
+
+    const specialSections = {
+      oauth: { panel: oauthPanel, handler: onOAuthSection },
+      'ldap-sync': { panel: ldapSyncPanel, handler: onLDAPSyncSection },
+      backups: { panel: backupsPanel, handler: onBackupsSection },
+    };
+    const special = specialSections[section];
+    if (!special?.panel || typeof special.handler !== 'function') {
       return;
     }
-    if (section === 'ldap-sync' && ldapSyncPanel) {
-      showPanelsForSection(section);
-      if (typeof onLDAPSyncSection === 'function') {
-        await onLDAPSyncSection(section);
-      }
+    showPanelsForSection(section);
+    await special.handler(section);
+  };
+
+  const activate = async (section) => {
+    if (!section) {
       return;
     }
-    if (section === 'backups' && backupsPanel && typeof onBackupsSection === 'function') {
-      showPanelsForSection(section);
-      await onBackupsSection(section);
+    if (shouldSkipActivation(section)) {
+      return;
     }
+    currentSection = section;
+    setActiveTab();
+    if (typeof onSectionChange === 'function') {
+      await onSectionChange(section);
+    }
+    await activateSection(section);
   };
 
   const bind = () => {
