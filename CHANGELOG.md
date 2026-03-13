@@ -1,5 +1,28 @@
 # AuthPortal Changelog
 
+## v2.0.5 - 2026-03-13
+
+### Highlights
+- Merged LDAP sync into AuthPortal as a built-in admin module, removing the need for the old standalone `ldap-sync` workflow in the recommended deployment path.
+- Added a dedicated `LDAP Sync` admin tab with persisted config, manual `Run Sync`, connection testing, and Recent Changes integration.
+- Added built-in LDAP scheduling with hourly/daily/weekly cadence, next-run calculation, scheduled/manual run history, and per-run summary reporting in the UI.
+- Added structured LDAP connection-test diagnostics for connect, bind, Base DN existence, and Base DN creatability, including inline status badges and clearer helper text.
+- Added LDAP Sync config import/export support from the tab so operators can move settings between environments without hand-editing JSON.
+- Added optional stale-entry cleanup that only deletes LDAP entries previously marked as AuthPortal-managed under the configured Base DN.
+- Improved LDAP observability: per-user add/update/failure logging, stale-delete failure logging, and final run summary lines now appear in application logs.
+- Simplified docs and example compose files by removing the bundled `openldap` / `phpldapadmin` stack; LDAP is now documented as an optional external integration chosen by the operator.
+
+### Upgrade Notes
+- Bump image tags/config references to `v2.0.5` and rebuild so you pick up the built-in LDAP Sync functionality and scheduler fixes.
+- If you previously used the standalone `ldap-sync` repo or container, migrate those settings into `Admin -> LDAP Sync` and retire the external workflow.
+- If you enable stale-entry deletion, wait until at least one successful built-in sync has touched the entries you want AuthPortal to own before turning deletion on.
+- Point `LDAP_HOST` and related LDAP variables at your existing directory service; the sample compose no longer ships a bundled LDAP implementation.
+- No manual database migration is required beyond normal startup migrations.
+
+### Pre-release Scan Summary
+- Docker Scout: `0` HIGH/CRITICAL findings.
+- ...remaining scans to be documented.
+
 ## v2.0.4 - 2026-03-11
 
 ### Highlights

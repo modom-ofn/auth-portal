@@ -126,6 +126,48 @@ export const createAdminAPI = () => {
     return json;
   };
 
+  const getLDAPSync = async () => {
+    const { res, json } = await requestJSON('/api/admin/ldap-sync');
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'LDAP sync fetch failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const runLDAPSync = async () => {
+    const { res, json } = await requestJSON('/api/admin/ldap-sync/run', {
+      method: 'POST',
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'LDAP sync failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const testLDAPSyncConnection = async (payload) => {
+    const { res, json } = await requestJSON('/api/admin/ldap-sync/test-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'LDAP connection test failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
   const createBackup = async (payload) => {
     const { res, json } = await requestJSON('/api/admin/backups', {
       method: 'POST',
@@ -187,6 +229,9 @@ export const createAdminAPI = () => {
     deleteOAuthClient,
     rotateOAuthSecret,
     listBackups,
+    getLDAPSync,
+    testLDAPSyncConnection,
+    runLDAPSync,
     createBackup,
     updateBackupSchedule,
     deleteBackup,

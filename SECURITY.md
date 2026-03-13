@@ -8,7 +8,7 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.4` (latest: `v2.0.4`) | ✅ Supported | Receives all security and high-priority bug fixes. |
+| `v2.0.5` (latest: `v2.0.5`) | ✅ Supported | Receives all security and high-priority bug fixes. |
 | `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
 | `< v2.0.4` | ❌ End-of-life | Please upgrade to a supported release. |
 
@@ -61,6 +61,7 @@ If you spot an issue or have questions about these scans, please open an issue o
 - **Rate limits plus MFA:** shared per-IP limiters guard login/start-forward flows, separate limiters protect Plex polling/MFA endpoints, and enforced MFA can hold users at a pending cookie until codes succeed.
 - **CSRF-lite controls:** every state-changing route (start-web, forward, MFA APIs, logout) passes through an Origin/Referer validator that builds an allowlist from APP_BASE_URL and proxy headers.
 - **Security headers:** all responses carry X-Frame-Options, X-Content-Type-Options, Referrer-Policy, a restrictive CSP, and conditional Strict-Transport-Security (or forceable via FORCE_HSTS).
-- **Config governance:** provider/security/MFA JSON lives in Postgres with optimistic versioning, in-browser history, scheduled backups, and download/restore flows for recovery.
+- **Config governance:** provider/security/MFA/App Settings/LDAP Sync config lives in Postgres with optimistic versioning, in-browser history, scheduled backups, and download/restore flows for recovery.
+- **LDAP sync safety rails:** built-in LDAP Sync supports connection testing before save/run, logs per-user failures, tracks scheduled/manual runs, and only deletes stale entries that were previously marked as AuthPortal-managed under the configured Base DN.
 - **Token privacy for OIDC:** access/refresh tokens are stored as deterministic SHA-256 digests, limiting exposure if databases or logs leak.
 - **Runtime hygiene:** containers are built on Docker Scout Hardened Alpine image with CA certs/tzdata only (dhi.io/alpine-base:3.23-alpine3.23-dev), and the final image runs as non-root UID 10001 to shrink the attack surface.

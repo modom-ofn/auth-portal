@@ -35,7 +35,7 @@ export const createBackupsSectionController = ({
     backups: [],
   };
 
-  const defaultSections = ['providers', 'security', 'mfa', 'app-settings'];
+  const defaultSections = ['providers', 'security', 'mfa', 'app-settings', 'ldap-sync'];
 
   const createDateFormatter = () => {
     const options = {

@@ -234,6 +234,29 @@ CREATE TABLE IF NOT EXISTS oauth_consents (
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_consents_client ON oauth_consents (client_id);
 `,
+		`
+CREATE TABLE IF NOT EXISTS ldap_sync_runs (
+  id               BIGSERIAL PRIMARY KEY,
+  trigger_type     TEXT NOT NULL DEFAULT 'manual',
+  triggered_by     TEXT,
+  started_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  success          BOOLEAN NOT NULL DEFAULT FALSE,
+  users_considered INTEGER NOT NULL DEFAULT 0,
+  entries_added    INTEGER NOT NULL DEFAULT 0,
+  entries_updated  INTEGER NOT NULL DEFAULT 0,
+  entries_deleted  INTEGER NOT NULL DEFAULT 0,
+  failed_entries   INTEGER NOT NULL DEFAULT 0,
+  summary          TEXT,
+  error_message    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ldap_sync_runs_started_at ON ldap_sync_runs (started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ldap_sync_runs_success ON ldap_sync_runs (success, started_at DESC);
+`,
+		`
+ALTER TABLE ldap_sync_runs
+  ADD COLUMN IF NOT EXISTS entries_deleted INTEGER NOT NULL DEFAULT 0;
+`,
 	}
 
 	return execStatements(statements)

@@ -3,6 +3,7 @@ export const createSectionRouter = ({
   configPanel,
   historyPanel,
   oauthPanel,
+  ldapSyncPanel,
   backupsPanel,
   initialSection = 'providers',
   isConfigSection,
@@ -10,6 +11,7 @@ export const createSectionRouter = ({
   onSectionChange,
   onConfigSection,
   onOAuthSection,
+  onLDAPSyncSection,
   onBackupsSection,
 }) => {
   let currentSection = initialSection;
@@ -30,6 +32,9 @@ export const createSectionRouter = ({
     if (oauthPanel) {
       oauthPanel.hidden = true;
     }
+    if (ldapSyncPanel) {
+      ldapSyncPanel.hidden = true;
+    }
     if (backupsPanel) {
       backupsPanel.hidden = true;
     }
@@ -44,6 +49,27 @@ export const createSectionRouter = ({
     }
     if (oauthPanel) {
       oauthPanel.hidden = false;
+    }
+    if (ldapSyncPanel) {
+      ldapSyncPanel.hidden = true;
+    }
+    if (backupsPanel) {
+      backupsPanel.hidden = true;
+    }
+  };
+
+  const showLDAPSyncPanel = () => {
+    if (configPanel) {
+      configPanel.hidden = true;
+    }
+    if (historyPanel) {
+      historyPanel.hidden = false;
+    }
+    if (oauthPanel) {
+      oauthPanel.hidden = true;
+    }
+    if (ldapSyncPanel) {
+      ldapSyncPanel.hidden = false;
     }
     if (backupsPanel) {
       backupsPanel.hidden = true;
@@ -60,6 +86,9 @@ export const createSectionRouter = ({
     if (oauthPanel) {
       oauthPanel.hidden = true;
     }
+    if (ldapSyncPanel) {
+      ldapSyncPanel.hidden = true;
+    }
     if (backupsPanel) {
       backupsPanel.hidden = false;
     }
@@ -72,6 +101,7 @@ export const createSectionRouter = ({
     if (
       section === currentSection &&
       section !== 'oauth' &&
+      section !== 'ldap-sync' &&
       section !== 'backups' &&
       hasSectionData(section)
     ) {
@@ -93,6 +123,13 @@ export const createSectionRouter = ({
       showOAuthPanel();
       if (typeof onOAuthSection === 'function') {
         await onOAuthSection(section);
+      }
+      return;
+    }
+    if (section === 'ldap-sync' && ldapSyncPanel) {
+      showLDAPSyncPanel();
+      if (typeof onLDAPSyncSection === 'function') {
+        await onLDAPSyncSection(section);
       }
       return;
     }

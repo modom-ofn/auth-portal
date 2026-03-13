@@ -25,6 +25,7 @@
             <button type="button" class="admin-tab ghost-btn" data-section="mfa">MFA</button>
             <button type="button" class="admin-tab ghost-btn" data-section="app-settings">App Settings</button>
             <button type="button" class="admin-tab ghost-btn" data-section="oauth">OAuth Clients</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="ldap-sync">LDAP Sync</button>
             <button type="button" class="admin-tab ghost-btn" data-section="backups">Backups</button>
         </aside>
 
@@ -81,6 +82,204 @@
                             <button id="oauth-client-cancel" type="button" class="ghost-btn" hidden>Cancel Edit</button>
                         </div>
                     </form>
+                </div>
+                <div id="ldap-sync-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <div class="ldap-sync-title-block">
+                            <span class="ldap-sync-kicker">Directory Bridge</span>
+                            <h2>LDAP Sync</h2>
+                        </div>
+                        <div class="ldap-sync-header-actions">
+                            <button type="button" id="ldap-sync-refresh-btn" class="ghost-btn">Refresh</button>
+                            <button type="button" id="ldap-sync-test-btn" class="primary-btn">Test Connection</button>
+                            <button type="button" id="ldap-sync-run-btn" class="success-btn">Run Sync</button>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Mirror authorized AuthPortal users into LDAP. Start by validating connection settings, then save or run sync when the test passes.</p>
+                    <div class="config-tools">
+                        <button type="button" id="ldap-sync-export-btn" class="ghost-btn">Export</button>
+                        <button type="button" id="ldap-sync-import-btn" class="ghost-btn">Import</button>
+                        <input type="file" id="ldap-sync-import-input" accept="application/json" hidden>
+                    </div>
+                    <div class="ldap-sync-layout">
+                        <section class="ldap-sync-section">
+                            <div class="ldap-sync-section-head">
+                                <div class="ldap-sync-section-title">
+                                    <h3>Sync Overview</h3>
+                                    <span class="section-info-icon" tabindex="0" role="img" aria-label="Current run state, timestamps, and latest connection test results." data-tooltip="Current run state, timestamps, and latest connection test results.">i</span>
+                                </div>
+                            </div>
+                            <div class="ldap-sync-overview-grid">
+                                <div class="ldap-sync-card ldap-sync-card-emphasis">
+                                    <span class="ldap-sync-card-label">Status</span>
+                                    <span id="ldap-sync-status-state" class="ldap-sync-card-value">Idle</span>
+                                    <span id="ldap-sync-status-summary" class="field-hint">No LDAP sync has been run yet.</span>
+                                </div>
+                                <div class="ldap-sync-card">
+                                    <span class="ldap-sync-card-label">Started</span>
+                                    <span id="ldap-sync-status-started" class="ldap-sync-card-value muted">-</span>
+                                </div>
+                                <div class="ldap-sync-card">
+                                    <span class="ldap-sync-card-label">Finished</span>
+                                    <span id="ldap-sync-status-finished" class="ldap-sync-card-value muted">-</span>
+                                </div>
+                                <div class="ldap-sync-card">
+                                    <span class="ldap-sync-card-label">Last Success</span>
+                                    <span id="ldap-sync-status-success" class="ldap-sync-card-value muted">-</span>
+                                </div>
+                                <div class="ldap-sync-card">
+                                    <span class="ldap-sync-card-label">Triggered By</span>
+                                    <span id="ldap-sync-status-triggered-by" class="ldap-sync-card-value muted">-</span>
+                                </div>
+                            </div>
+                            <div id="ldap-sync-test-result" class="status-banner" hidden></div>
+                            <div id="ldap-sync-test-details" class="ldap-sync-test-grid" hidden>
+                                <div class="ldap-sync-test-item">
+                                    <span class="ldap-sync-test-label" title="Whether AuthPortal could open a network connection to the configured LDAP host.">Connect</span>
+                                    <span id="ldap-sync-test-connected" class="muted" title="Whether AuthPortal could open a network connection to the configured LDAP host.">-</span>
+                                </div>
+                                <div class="ldap-sync-test-item">
+                                    <span class="ldap-sync-test-label" title="Whether the configured LDAP admin DN and password successfully authenticated.">Bind</span>
+                                    <span id="ldap-sync-test-bound" class="muted" title="Whether the configured LDAP admin DN and password successfully authenticated.">-</span>
+                                </div>
+                                <div class="ldap-sync-test-item">
+                                    <span class="ldap-sync-test-label" title="Whether the configured Base DN already exists in LDAP.">Base DN Exists</span>
+                                    <span id="ldap-sync-test-base-exists" class="muted" title="Whether the configured Base DN already exists in LDAP.">-</span>
+                                </div>
+                                <div class="ldap-sync-test-item">
+                                    <span class="ldap-sync-test-label" title="Whether the configured Base DN is missing but its parent DN exists, so AuthPortal should be able to create it.">Base DN Creatable</span>
+                                    <span id="ldap-sync-test-base-creatable" class="muted" title="Whether the configured Base DN is missing but its parent DN exists, so AuthPortal should be able to create it.">-</span>
+                                </div>
+                            </div>
+                        </section>
+
+                        <form id="ldap-sync-form" class="oauth-form ldap-sync-form" autocomplete="off">
+                            <section class="ldap-sync-section">
+                                <div class="ldap-sync-section-head">
+                                    <div class="ldap-sync-section-title">
+                                        <h3>Connection Settings</h3>
+                                        <span class="section-info-icon" tabindex="0" role="img" aria-label="Credentials and directory location used for LDAP sync and connection tests." data-tooltip="Credentials and directory location used for LDAP sync and connection tests.">i</span>
+                                    </div>
+                                </div>
+                                <div class="ldap-sync-settings-grid">
+                                    <div class="form-row">
+                                        <label for="ldap-sync-host" title="LDAP server URL or host:port. Supports ldap:// and ldaps:// endpoints.">LDAP Host</label>
+                                        <input id="ldap-sync-host" type="text" required placeholder="ldap://openldap:389" title="LDAP server URL or host:port. Supports ldap:// and ldaps:// endpoints.">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="ldap-sync-admin-dn" title="Bind DN used by AuthPortal to authenticate to LDAP and manage entries.">LDAP Admin DN</label>
+                                        <input id="ldap-sync-admin-dn" type="text" required placeholder="cn=admin,dc=authportal,dc=local" title="Bind DN used by AuthPortal to authenticate to LDAP and manage entries.">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="ldap-sync-admin-password" title="Password for the configured LDAP bind DN.">LDAP Admin Password</label>
+                                        <input id="ldap-sync-admin-password" type="password" autocomplete="off" title="Password for the configured LDAP bind DN.">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="ldap-sync-base-dn" title="LDAP branch where AuthPortal stores managed user entries.">Base DN</label>
+                                        <input id="ldap-sync-base-dn" type="text" required placeholder="ou=users,dc=authportal,dc=local" title="LDAP branch where AuthPortal stores managed user entries.">
+                                    </div>
+                                </div>
+                                <div class="ldap-sync-toggle-group">
+                                    <label class="ldap-sync-toggle" title="Enable StartTLS when connecting over ldap:// if your server supports it."><input id="ldap-sync-starttls" type="checkbox" title="Enable StartTLS when connecting over ldap:// if your server supports it."> <span>Use StartTLS</span></label>
+                                    <label class="ldap-sync-toggle" title="When enabled, sync can delete LDAP entries under the Base DN that were previously marked as managed by AuthPortal but are no longer authorized."><input id="ldap-sync-delete-stale" type="checkbox" title="When enabled, sync can delete LDAP entries under the Base DN that were previously marked as managed by AuthPortal but are no longer authorized."> <span>Delete stale AuthPortal-managed LDAP entries</span></label>
+                                </div>
+                                <p class="field-hint">Only entries previously stamped as managed by AuthPortal are eligible for deletion.</p>
+                            </section>
+
+                            <section class="ldap-sync-section ldap-sync-section-muted">
+                                <div class="ldap-sync-section-head">
+                                    <div class="ldap-sync-section-title">
+                                        <h3>Automatic Sync</h3>
+                                        <span class="section-info-icon" tabindex="0" role="img" aria-label="Control scheduled LDAP sync timing using the saved connection settings above." data-tooltip="Control scheduled LDAP sync timing using the saved connection settings above.">i</span>
+                                    </div>
+                                </div>
+                                <div class="ldap-sync-overview-grid ldap-sync-scheduler-grid">
+                                    <div class="ldap-sync-card ldap-sync-card-emphasis">
+                                        <span class="ldap-sync-card-label">Scheduler</span>
+                                        <label class="ldap-sync-toggle ldap-sync-toggle-card" title="Enable automatic LDAP sync runs using the saved schedule below.">
+                                            <input type="checkbox" id="ldap-sync-schedule-enabled" title="Enable automatic LDAP sync runs using the saved schedule below.">
+                                            <span>Enable scheduled LDAP sync</span>
+                                        </label>
+                                        <span class="field-hint">Runs use the saved LDAP connection settings above.</span>
+                                    </div>
+                                    <div class="ldap-sync-card">
+                                        <span class="ldap-sync-card-label">Next Scheduled Run</span>
+                                        <span id="ldap-sync-next-run" class="ldap-sync-card-value muted" title="Computed next automatic LDAP sync time based on the saved schedule.">Disabled</span>
+                                    </div>
+                                </div>
+                                <div class="ldap-sync-settings-grid ldap-sync-scheduler-settings">
+                                    <div class="form-row">
+                                        <label for="ldap-sync-frequency" title="How often AuthPortal should run LDAP sync automatically.">Frequency</label>
+                                        <select id="ldap-sync-frequency" title="How often AuthPortal should run LDAP sync automatically.">
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="hourly">Hourly</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-row" data-ldap-frequency-row="daily weekly">
+                                        <label for="ldap-sync-time" title="Local time of day for daily or weekly LDAP sync runs.">Run at ({{.AppTimeZone}})</label>
+                                        <input type="time" id="ldap-sync-time" value="02:15" title="Local time of day for daily or weekly LDAP sync runs.">
+                                    </div>
+                                    <div class="form-row" data-ldap-frequency-row="weekly">
+                                        <label for="ldap-sync-weekday" title="Day of week for weekly LDAP sync runs.">Day</label>
+                                        <select id="ldap-sync-weekday" title="Day of week for weekly LDAP sync runs.">
+                                            <option value="sunday">Sunday</option>
+                                            <option value="monday">Monday</option>
+                                            <option value="tuesday">Tuesday</option>
+                                            <option value="wednesday">Wednesday</option>
+                                            <option value="thursday">Thursday</option>
+                                            <option value="friday">Friday</option>
+                                            <option value="saturday">Saturday</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-row" data-ldap-frequency-row="hourly">
+                                        <label for="ldap-sync-minute" title="Minute past the hour for hourly LDAP sync runs.">Minute past the hour</label>
+                                        <input type="number" id="ldap-sync-minute" min="0" max="59" value="15" title="Minute past the hour for hourly LDAP sync runs.">
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="ldap-sync-section">
+                                <div class="ldap-sync-section-head">
+                                    <div class="ldap-sync-section-title">
+                                        <h3>Save Changes</h3>
+                                        <span class="section-info-icon" tabindex="0" role="img" aria-label="Document why you changed LDAP Sync settings before applying them." data-tooltip="Document why you changed LDAP Sync settings before applying them.">i</span>
+                                    </div>
+                                </div>
+                                <div class="admin-actions">
+                                    <input id="ldap-sync-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                    <button id="ldap-sync-save-btn" type="submit" class="primary-btn">Save Configuration</button>
+                                </div>
+                            </section>
+                        </form>
+
+                        <section class="ldap-sync-section">
+                            <div class="ldap-sync-section-head">
+                                <div class="ldap-sync-section-title">
+                                    <h3>Recent Sync Runs</h3>
+                                    <span class="section-info-icon" tabindex="0" role="img" aria-label="Latest manual and scheduled LDAP sync outcomes." data-tooltip="Latest manual and scheduled LDAP sync outcomes.">i</span>
+                                </div>
+                            </div>
+                            <div class="backup-table-wrapper">
+                                <table class="backup-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Started</th>
+                                            <th>Trigger</th>
+                                            <th>Result</th>
+                                            <th>Counts</th>
+                                            <th>Summary</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ldap-sync-run-rows">
+                                        <tr>
+                                            <td colspan="5" class="muted">No LDAP sync runs recorded yet.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
                 </div>
                 <div id="backups-panel" class="panel" hidden>
                     <div class="panel-header">
@@ -139,6 +338,7 @@
                             <label><input type="checkbox" class="backup-section-checkbox" value="security" checked> Security</label>
                             <label><input type="checkbox" class="backup-section-checkbox" value="mfa" checked> MFA</label>
                             <label><input type="checkbox" class="backup-section-checkbox" value="app-settings" checked> App Settings</label>
+                            <label><input type="checkbox" class="backup-section-checkbox" value="ldap-sync" checked> LDAP Sync</label>
                         </fieldset>
                             <div class="backup-schedule-actions">
                                 <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
@@ -167,7 +367,12 @@
                 </div>
 
                 <div id="history-panel" class="panel history-panel">
-                    <h3>Recent Changes</h3>
+                    <div class="panel-header">
+                        <h3>Recent Changes</h3>
+                        <div class="panel-header-actions">
+                            <button type="button" id="recent-changes-btn" class="ghost-btn">View All</button>
+                        </div>
+                    </div>
                     <ul id="history-list" class="history-list">
                         <li>Loading.</li>
                     </ul>
