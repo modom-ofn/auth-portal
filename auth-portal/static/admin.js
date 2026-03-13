@@ -1,6 +1,7 @@
 import { createConfigFormsController } from './admin/config-forms.js';
 import { createRecentChangesController } from './admin/recent-changes.js';
 import { createOAuthSectionController } from './admin/oauth-section.js';
+import { createLDAPSyncSectionController } from './admin/ldap-sync-section.js';
 import { createBackupsSectionController } from './admin/backups-section.js';
 import { createHelpModalController } from './admin/help-modal.js';
 import { createConfigSectionController } from './admin/config-section.js';
@@ -55,6 +56,43 @@ import { createAdminAPI } from './admin/admin-api.js';
   const recentChangesModalTitle = document.getElementById('recent-changes-modal-title');
   const recentChangesList = document.getElementById('recent-changes-list');
 
+  const ldapSyncPanel = document.getElementById('ldap-sync-panel');
+  const ldapSyncRefreshBtn = document.getElementById('ldap-sync-refresh-btn');
+  const ldapSyncExportBtn = document.getElementById('ldap-sync-export-btn');
+  const ldapSyncImportBtn = document.getElementById('ldap-sync-import-btn');
+  const ldapSyncImportInput = document.getElementById('ldap-sync-import-input');
+  const ldapSyncTestBtn = document.getElementById('ldap-sync-test-btn');
+  const ldapSyncRunBtn = document.getElementById('ldap-sync-run-btn');
+  const ldapSyncForm = document.getElementById('ldap-sync-form');
+  const ldapSyncHost = document.getElementById('ldap-sync-host');
+  const ldapSyncAdminDn = document.getElementById('ldap-sync-admin-dn');
+  const ldapSyncAdminPassword = document.getElementById('ldap-sync-admin-password');
+  const ldapSyncBaseDn = document.getElementById('ldap-sync-base-dn');
+  const ldapSyncStartTLS = document.getElementById('ldap-sync-starttls');
+  const ldapSyncDeleteStale = document.getElementById('ldap-sync-delete-stale');
+  const ldapSyncScheduleEnabled = document.getElementById('ldap-sync-schedule-enabled');
+  const ldapSyncFrequency = document.getElementById('ldap-sync-frequency');
+  const ldapSyncTime = document.getElementById('ldap-sync-time');
+  const ldapSyncWeekday = document.getElementById('ldap-sync-weekday');
+  const ldapSyncMinute = document.getElementById('ldap-sync-minute');
+  const ldapSyncNextRun = document.getElementById('ldap-sync-next-run');
+  const ldapSyncFrequencyRows = Array.from(document.querySelectorAll('[data-ldap-frequency-row]'));
+  const ldapSyncReasonInput = document.getElementById('ldap-sync-reason-input');
+  const ldapSyncSaveBtn = document.getElementById('ldap-sync-save-btn');
+  const ldapSyncStatusSummary = document.getElementById('ldap-sync-status-summary');
+  const ldapSyncStatusState = document.getElementById('ldap-sync-status-state');
+  const ldapSyncStatusStarted = document.getElementById('ldap-sync-status-started');
+  const ldapSyncStatusFinished = document.getElementById('ldap-sync-status-finished');
+  const ldapSyncStatusSuccess = document.getElementById('ldap-sync-status-success');
+  const ldapSyncStatusTriggeredBy = document.getElementById('ldap-sync-status-triggered-by');
+  const ldapSyncTestResult = document.getElementById('ldap-sync-test-result');
+  const ldapSyncTestDetails = document.getElementById('ldap-sync-test-details');
+  const ldapSyncTestConnected = document.getElementById('ldap-sync-test-connected');
+  const ldapSyncTestBound = document.getElementById('ldap-sync-test-bound');
+  const ldapSyncTestBaseExists = document.getElementById('ldap-sync-test-base-exists');
+  const ldapSyncTestBaseCreatable = document.getElementById('ldap-sync-test-base-creatable');
+  const ldapSyncRunRows = document.getElementById('ldap-sync-run-rows');
+
   const backupsPanel = document.getElementById('backups-panel');
   const backupRefreshBtn = document.getElementById('backups-refresh-btn');
   const backupRunBtn = document.getElementById('backups-run-btn');
@@ -97,6 +135,9 @@ import { createAdminAPI } from './admin/admin-api.js';
     security: 'Security',
     mfa: 'MFA',
     'app-settings': 'App Settings',
+    'ldap-sync': 'LDAP Sync',
+    backups: 'Backups',
+    oauth: 'OAuth Clients',
   };
   const initialSection = 'providers';
   let sectionRouter = null;
@@ -104,7 +145,7 @@ import { createAdminAPI } from './admin/admin-api.js';
 
   const state = {
     data: { providers: null, security: null, mfa: null, 'app-settings': null },
-    history: { providers: [], security: [], mfa: [], 'app-settings': [], oauth: [], backups: [] },
+    history: { providers: [], security: [], mfa: [], 'app-settings': [], oauth: [], 'ldap-sync': [], backups: [] },
     loadedAt: null,
   };
 
@@ -291,6 +332,49 @@ import { createAdminAPI } from './admin/admin-api.js';
       recentChanges.recordLocalActivity(section, message, reason),
   });
 
+  const ldapSyncSection = createLDAPSyncSectionController({
+    api,
+    panel: ldapSyncPanel,
+    refreshBtn: ldapSyncRefreshBtn,
+    exportBtn: ldapSyncExportBtn,
+    importBtn: ldapSyncImportBtn,
+    importInput: ldapSyncImportInput,
+    testBtn: ldapSyncTestBtn,
+    runBtn: ldapSyncRunBtn,
+    form: ldapSyncForm,
+    hostInput: ldapSyncHost,
+    adminDnInput: ldapSyncAdminDn,
+    passwordInput: ldapSyncAdminPassword,
+    baseDnInput: ldapSyncBaseDn,
+    startTlsInput: ldapSyncStartTLS,
+    deleteStaleInput: ldapSyncDeleteStale,
+    scheduleEnabledInput: ldapSyncScheduleEnabled,
+    frequencyInput: ldapSyncFrequency,
+    timeInput: ldapSyncTime,
+    weekdayInput: ldapSyncWeekday,
+    minuteInput: ldapSyncMinute,
+    nextRunEl: ldapSyncNextRun,
+    frequencyRows: ldapSyncFrequencyRows,
+    reasonInput: ldapSyncReasonInput,
+    saveBtn: ldapSyncSaveBtn,
+    statusSummary: ldapSyncStatusSummary,
+    statusState: ldapSyncStatusState,
+    statusStartedAt: ldapSyncStatusStarted,
+    statusFinishedAt: ldapSyncStatusFinished,
+    statusSuccessAt: ldapSyncStatusSuccess,
+    statusTriggeredBy: ldapSyncStatusTriggeredBy,
+    testResultEl: ldapSyncTestResult,
+    testDetailsEl: ldapSyncTestDetails,
+    testConnectedEl: ldapSyncTestConnected,
+    testBoundEl: ldapSyncTestBound,
+    testBaseExistsEl: ldapSyncTestBaseExists,
+    testBaseCreatableEl: ldapSyncTestBaseCreatable,
+    runRows: ldapSyncRunRows,
+    showStatus: (message, type) => status.show(message, type),
+    recordActivity: (section, message, reason = '') =>
+      recentChanges.recordLocalActivity(section, message, reason),
+  });
+
   const backupsSection = createBackupsSectionController({
     api,
     panel: backupsPanel,
@@ -336,6 +420,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     configPanel: configForm,
     historyPanel,
     oauthPanel,
+    ldapSyncPanel,
     backupsPanel,
     initialSection,
     isConfigSection: configSection.isConfigSection,
@@ -353,6 +438,16 @@ import { createAdminAPI } from './admin/admin-api.js';
     onOAuthSection: async () => {
       await oauthSection.loadClients();
     },
+    onLDAPSyncSection: async () => {
+      oauthSection.clearSecretBanner();
+      await ldapSyncSection.load();
+      try {
+        await configSection.fetchHistory('ldap-sync');
+      } catch (error_) {
+        console.error('LDAP sync history fetch failed', error_);
+      }
+      recentChanges.refresh('ldap-sync');
+    },
     onBackupsSection: async () => {
       oauthSection.clearSecretBanner();
       recentChanges.refresh('backups');
@@ -368,6 +463,7 @@ import { createAdminAPI } from './admin/admin-api.js';
   configSection.bind(getCurrentSection);
 
   oauthSection.bind();
+  ldapSyncSection.bind();
 
   helpModalController.bind();
 

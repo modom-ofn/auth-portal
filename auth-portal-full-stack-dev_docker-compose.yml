@@ -80,6 +80,18 @@ services:
       # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
 
+      # LDAP Sync
+      LDAP_HOST: ${LDAP_HOST:-ldap://ldap.example.com:389}
+      LDAP_ADMIN_DN: ${LDAP_ADMIN_DN:-cn=admin,dc=authportal,dc=local}
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-}
+      BASE_DN: ${BASE_DN:-ou=users,dc=authportal,dc=local}
+      LDAP_STARTTLS: ${LDAP_STARTTLS:-false}
+      LDAP_DELETE_STALE_ENTRIES: ${LDAP_DELETE_STALE_ENTRIES:-false}
+      LDAP_SYNC_SCHEDULE_ENABLED: ${LDAP_SYNC_SCHEDULE_ENABLED:-false}
+      LDAP_SYNC_SCHEDULE_FREQUENCY: ${LDAP_SYNC_SCHEDULE_FREQUENCY:-daily}
+      LDAP_SYNC_SCHEDULE_TIME: ${LDAP_SYNC_SCHEDULE_TIME:-02:15}
+      LDAP_SYNC_SCHEDULE_DAY: ${LDAP_SYNC_SCHEDULE_DAY:-sunday}
+
       # Plex
       PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}
       PLEX_SERVER_MACHINE_ID: ${PLEX_SERVER_MACHINE_ID:-}
@@ -110,70 +122,8 @@ services:
       retries: 3
     networks: [authnet]
 
-  openldap:
-    image: osixia/openldap:1.5.0
-    profiles: ["ldap"]
-    environment:
-      LDAP_ORGANISATION: AuthPortal
-      LDAP_DOMAIN: authportal.local
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      TZ: ${TZ:-UTC}
-    # Uncomment if you need external LDAP access from host:
-    # ports:
-    #   - "389:389"
-    #   - "636:636"
-    volumes:
-      - ldap_data:/var/lib/ldap
-      - ldap_config:/etc/ldap/slapd.d
-      # Seed OU/users if desired:
-      # - ./ldap-seed:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
-    restart: unless-stopped
-    healthcheck:
-      # Use service DNS name inside the network, not localhost
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://openldap -D 'cn=admin,dc=authportal,dc=local' -w \"$LDAP_ADMIN_PASSWORD\" -b 'dc=authportal,dc=local' -s base dn >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [authnet]
-
-  ldap-sync:
-    image: modomofn/ldap-sync:latest
-    profiles: ["ldap"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      openldap:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
-      LDAP_HOST: ldap://openldap:389
-      LDAP_ADMIN_DN: cn=admin,dc=authportal,dc=local
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      BASE_DN: ou=users,dc=authportal,dc=local
-      # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
-      TZ: ${TZ:-UTC}
-    restart: "no"
-    networks: [authnet]
-
-  phpldapadmin:
-    image: osixia/phpldapadmin:0.9.0
-    profiles: ["ldap"]
-    environment:
-      PHPLDAPADMIN_LDAP_HOSTS: openldap
-      PHPLDAPADMIN_HTTPS: "false"
-      TZ: ${TZ:-UTC}
-    ports:
-      - "8087:80"
-    depends_on:
-      openldap:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [authnet]
-
 volumes:
   pgdata:
-  ldap_data:
-  ldap_config:
 
 networks:
   authnet:

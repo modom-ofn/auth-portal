@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"auth-portal/ldapsync"
+
 	"github.com/gorilla/mux"
 
 	"auth-portal/configstore"
@@ -45,12 +47,18 @@ type adminConfigSectionAppSettings struct {
 	Config  AppSettingsConfig `json:"config"`
 }
 
+type adminConfigSectionLDAPSync struct {
+	Version int64          `json:"version"`
+	Config  LDAPSyncConfig `json:"config"`
+}
+
 type adminConfigResponse struct {
 	OK          bool                          `json:"ok"`
 	Providers   adminConfigSectionProviders   `json:"providers"`
 	Security    adminConfigSectionSecurity    `json:"security"`
 	MFA         adminConfigSectionMFA         `json:"mfa"`
 	AppSettings adminConfigSectionAppSettings `json:"appSettings"`
+	LDAPSync    adminConfigSectionLDAPSync    `json:"ldapSync"`
 	LoadedAt    time.Time                     `json:"loadedAt"`
 }
 
@@ -100,6 +108,18 @@ type adminOAuthClientRequest struct {
 	Name         string   `json:"name"`
 	RedirectURIs []string `json:"redirectUris"`
 	Scopes       []string `json:"scopes"`
+}
+
+type adminLDAPSyncResponse struct {
+	OK     bool                       `json:"ok"`
+	Config adminConfigSectionLDAPSync `json:"config"`
+	Status ldapSyncStatusView         `json:"status"`
+	Runs   []ldapSyncRunRecord        `json:"runs"`
+}
+
+type adminLDAPSyncTestResponse struct {
+	OK     bool                          `json:"ok"`
+	Result ldapsync.ConnectionTestResult `json:"result"`
 }
 
 func adminConfigGetHandler(w http.ResponseWriter, _ *http.Request) {
@@ -188,6 +208,8 @@ func buildConfigPayload(section configstore.Section, raw json.RawMessage) (any, 
 		return parseMFAPayload(raw)
 	case configstore.SectionAppSettings:
 		return parseAppSettingsPayload(raw)
+	case configstore.SectionLDAPSync:
+		return parseLDAPSyncPayload(raw)
 	default:
 		return nil, errors.New("unsupported section")
 	}
@@ -236,6 +258,18 @@ func parseAppSettingsPayload(raw json.RawMessage) (AppSettingsConfig, error) {
 	}
 	normalizeAppSettingsConfig(&cfg)
 	if err := validateAppSettingsConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func parseLDAPSyncPayload(raw json.RawMessage) (LDAPSyncConfig, error) {
+	var cfg LDAPSyncConfig
+	if json.Unmarshal(raw, &cfg) != nil {
+		return cfg, errors.New("invalid ldap sync config")
+	}
+	normalizeLDAPSyncConfig(&cfg)
+	if err := validateLDAPSyncConfig(cfg); err != nil {
 		return cfg, err
 	}
 	return cfg, nil
@@ -441,6 +475,105 @@ func adminPageHandler(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+func adminLDAPSyncGetHandler(w http.ResponseWriter, _ *http.Request) {
+	cfg := currentRuntimeConfig()
+	status := ldapSyncStatusView{}
+	runs := []ldapSyncRunRecord{}
+	if manager := currentLDAPSyncManager(); manager != nil {
+		var err error
+		status, err = manager.Status(10)
+		if err != nil {
+			log.Printf("admin ldap sync status failed: %v", err)
+			respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "ldap sync status unavailable"})
+			return
+		}
+		runs, err = manager.ListRuns(10)
+		if err != nil {
+			log.Printf("admin ldap sync history failed: %v", err)
+			respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "ldap sync history unavailable"})
+			return
+		}
+	}
+	respondJSON(w, http.StatusOK, adminLDAPSyncResponse{
+		OK: true,
+		Config: adminConfigSectionLDAPSync{
+			Version: cfg.LDAPSyncVersion,
+			Config:  cfg.LDAPSync,
+		},
+		Status: status,
+		Runs:   runs,
+	})
+}
+
+func adminLDAPSyncRunHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
+		return
+	}
+	manager := currentLDAPSyncManager()
+	if manager == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "ldap sync unavailable"})
+		return
+	}
+	actor := strings.TrimSpace(usernameFrom(r.Context()))
+	if actor == "" {
+		actor = "admin"
+	}
+	result, status, err := manager.Run(r.Context(), actor, "manual")
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if errors.Is(err, ldapsync.ErrRunInProgress) {
+			statusCode = http.StatusConflict
+		} else if strings.Contains(strings.ToLower(err.Error()), "required") {
+			statusCode = http.StatusBadRequest
+		}
+		respondJSON(w, statusCode, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"result": result,
+		"status": status,
+	})
+}
+
+func adminLDAPSyncTestConnectionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
+		return
+	}
+	if ldapSyncSvc == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "ldap sync unavailable"})
+		return
+	}
+	var raw json.RawMessage
+	if json.NewDecoder(r.Body).Decode(&raw) != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request body"})
+		return
+	}
+	cfg, err := parseLDAPSyncPayload(raw)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	result, err := ldapSyncSvc.TestConnection(r.Context(), ldapsync.Config{
+		LDAPHost:           cfg.LDAPHost,
+		LDAPAdminDN:        cfg.LDAPAdminDN,
+		LDAPAdminPassword:  cfg.LDAPAdminPassword,
+		BaseDN:             cfg.BaseDN,
+		LDAPStartTLS:       cfg.LDAPStartTLS,
+		DeleteStaleEntries: cfg.DeleteStaleEntries,
+	})
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, adminLDAPSyncTestResponse{
+		OK:     true,
+		Result: result,
+	})
+}
+
 func buildAdminConfigResponse(cfg RuntimeConfig) adminConfigResponse {
 	return adminConfigResponse{
 		OK: true,
@@ -460,6 +593,10 @@ func buildAdminConfigResponse(cfg RuntimeConfig) adminConfigResponse {
 			Version: cfg.AppSettingsVersion,
 			Config:  cfg.AppSettings,
 		},
+		LDAPSync: adminConfigSectionLDAPSync{
+			Version: cfg.LDAPSyncVersion,
+			Config:  cfg.LDAPSync,
+		},
 		LoadedAt: cfg.loadedAt(),
 	}
 }
@@ -474,6 +611,8 @@ func sectionFromKey(key string) (configstore.Section, error) {
 		return configstore.SectionMFA, nil
 	case "app-settings":
 		return configstore.SectionAppSettings, nil
+	case "ldap-sync":
+		return configstore.SectionLDAPSync, nil
 	default:
 		return "", errors.New("unknown section")
 	}
@@ -718,6 +857,52 @@ func validateAppSettingsConfig(cfg AppSettingsConfig) error {
 	for idx, item := range cfg.ServiceLinks {
 		if err := validateServiceLinkEntry(idx, item); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func normalizeLDAPSyncConfig(cfg *LDAPSyncConfig) {
+	defaults := defaultLDAPSyncConfig()
+	cfg.LDAPHost = strings.TrimSpace(firstNonEmpty(cfg.LDAPHost, defaults.LDAPHost))
+	cfg.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPAdminDN, defaults.LDAPAdminDN))
+	cfg.LDAPAdminPassword = strings.TrimSpace(firstNonEmpty(cfg.LDAPAdminPassword, defaults.LDAPAdminPassword))
+	cfg.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.BaseDN, defaults.BaseDN))
+	cfg.ScheduleFrequency = strings.ToLower(strings.TrimSpace(firstNonEmpty(cfg.ScheduleFrequency, defaults.ScheduleFrequency)))
+	cfg.ScheduleTimeOfDay = strings.TrimSpace(firstNonEmpty(cfg.ScheduleTimeOfDay, defaults.ScheduleTimeOfDay))
+	cfg.ScheduleDayOfWeek = strings.ToLower(strings.TrimSpace(firstNonEmpty(cfg.ScheduleDayOfWeek, defaults.ScheduleDayOfWeek)))
+	if cfg.ScheduleMinute < 0 || cfg.ScheduleMinute > 59 {
+		cfg.ScheduleMinute = defaults.ScheduleMinute
+	}
+}
+
+func validateLDAPSyncConfig(cfg LDAPSyncConfig) error {
+	if err := ldapsync.ValidateConfig(ldapsync.Config{
+		LDAPHost:          cfg.LDAPHost,
+		LDAPAdminDN:       cfg.LDAPAdminDN,
+		LDAPAdminPassword: cfg.LDAPAdminPassword,
+		BaseDN:            cfg.BaseDN,
+		LDAPStartTLS:      cfg.LDAPStartTLS,
+	}); err != nil {
+		return err
+	}
+	switch cfg.ScheduleFrequency {
+	case "hourly", "daily", "weekly":
+	default:
+		return fmt.Errorf("unsupported ldap sync frequency %q", cfg.ScheduleFrequency)
+	}
+	if cfg.ScheduleFrequency == "hourly" {
+		if cfg.ScheduleMinute < 0 || cfg.ScheduleMinute > 59 {
+			return fmt.Errorf("invalid ldap sync minute %d", cfg.ScheduleMinute)
+		}
+		return nil
+	}
+	if _, _, err := parseTimeOfDay(cfg.ScheduleTimeOfDay); err != nil {
+		return fmt.Errorf("invalid ldap sync time: %w", err)
+	}
+	if cfg.ScheduleFrequency == "weekly" {
+		if _, err := parseWeekday(cfg.ScheduleDayOfWeek); err != nil {
+			return fmt.Errorf("invalid ldap sync weekday: %w", err)
 		}
 	}
 	return nil

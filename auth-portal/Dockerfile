@@ -18,6 +18,7 @@ COPY providers ./providers
 COPY oauth ./oauth
 COPY configstore ./configstore
 COPY health ./health
+COPY ldapsync ./ldapsync
 COPY static ./static
 COPY templates ./templates
 RUN go mod tidy -compat=1.26

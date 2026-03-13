@@ -73,6 +73,20 @@ type AppSettingsConfig struct {
 	PortalModalColor      string           `json:"portalModalColor,omitempty"`
 }
 
+type LDAPSyncConfig struct {
+	LDAPHost           string `json:"ldapHost"`
+	LDAPAdminDN        string `json:"ldapAdminDn"`
+	LDAPAdminPassword  string `json:"ldapAdminPassword"`
+	BaseDN             string `json:"baseDn"`
+	LDAPStartTLS       bool   `json:"ldapStartTls"`
+	DeleteStaleEntries bool   `json:"deleteStaleEntries"`
+	ScheduleEnabled    bool   `json:"scheduleEnabled"`
+	ScheduleFrequency  string `json:"scheduleFrequency"`
+	ScheduleTimeOfDay  string `json:"scheduleTimeOfDay"`
+	ScheduleDayOfWeek  string `json:"scheduleDayOfWeek"`
+	ScheduleMinute     int    `json:"scheduleMinute"`
+}
+
 // RuntimeConfig represents all typed configuration sections with revision metadata.
 type RuntimeConfig struct {
 	Providers        ProvidersConfig
@@ -87,13 +101,16 @@ type RuntimeConfig struct {
 	AppSettings        AppSettingsConfig
 	AppSettingsVersion int64
 
+	LDAPSync        LDAPSyncConfig
+	LDAPSyncVersion int64
+
 	LoadedAt time.Time
 }
 
 var runtimeConfigValue atomic.Value
 
 func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
-	defaults := make(map[configstore.Section]json.RawMessage, 4)
+	defaults := make(map[configstore.Section]json.RawMessage, 5)
 
 	rawProviders, err := json.Marshal(defaultProvidersConfig())
 	if err != nil {
@@ -118,6 +135,12 @@ func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
 		return nil, err
 	}
 	defaults[configstore.SectionAppSettings] = rawAppSettings
+
+	rawLDAPSync, err := json.Marshal(defaultLDAPSyncConfig())
+	if err != nil {
+		return nil, err
+	}
+	defaults[configstore.SectionLDAPSync] = rawLDAPSync
 
 	return defaults, nil
 }
@@ -211,6 +234,22 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	return cfg
 }
 
+func defaultLDAPSyncConfig() LDAPSyncConfig {
+	return LDAPSyncConfig{
+		LDAPHost:           strings.TrimSpace(envOr("LDAP_HOST", "ldap://openldap:389")),
+		LDAPAdminDN:        strings.TrimSpace(envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local")),
+		LDAPAdminPassword:  strings.TrimSpace(envOr("LDAP_ADMIN_PASSWORD", "")),
+		BaseDN:             strings.TrimSpace(envOr("BASE_DN", "ou=users,dc=authportal,dc=local")),
+		LDAPStartTLS:       envBool("LDAP_STARTTLS", false),
+		DeleteStaleEntries: envBool("LDAP_DELETE_STALE_ENTRIES", false),
+		ScheduleEnabled:    envBool("LDAP_SYNC_SCHEDULE_ENABLED", false),
+		ScheduleFrequency:  strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_FREQUENCY", "daily"))),
+		ScheduleTimeOfDay:  strings.TrimSpace(envOr("LDAP_SYNC_SCHEDULE_TIME", "02:15")),
+		ScheduleDayOfWeek:  strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_DAY", "sunday"))),
+		ScheduleMinute:     15,
+	}
+}
+
 func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
 	return loadRuntimeConfigInternal(store, false)
 }
@@ -248,6 +287,12 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 		return RuntimeConfig{}, err
 	}
 
+	var ldapSync LDAPSyncConfig
+	lVersion, err := store.Section(configstore.SectionLDAPSync, &ldapSync)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+
 	rc.Providers = providers
 	rc.ProvidersVersion = pVersion
 	rc.Security = security
@@ -256,6 +301,8 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 	rc.MFAVersion = mVersion
 	rc.AppSettings = app
 	rc.AppSettingsVersion = aVersion
+	rc.LDAPSync = ldapSync
+	rc.LDAPSyncVersion = lVersion
 
 	snap := store.Snapshot()
 	if !snap.LoadedAt.IsZero() {
@@ -264,7 +311,7 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 		rc.LoadedAt = time.Now().UTC()
 	}
 
-	missing := detectMissingSections(pVersion, sVersion, mVersion, aVersion)
+	missing := detectMissingSections(pVersion, sVersion, mVersion, aVersion, lVersion)
 	if len(missing) > 0 && !retried {
 		if err := persistInitialSections(store, rc, missing); err != nil {
 			return RuntimeConfig{}, err
@@ -281,6 +328,7 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		Security:    defaultSecurityConfig(),
 		MFA:         defaultMFAConfig(),
 		AppSettings: defaultAppSettingsConfig(),
+		LDAPSync:    defaultLDAPSyncConfig(),
 	}
 
 	selectedProvider := strings.TrimSpace(cfg.Providers.Active)
@@ -355,6 +403,17 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	}
 	cfg.AppSettings.UnauthRequestSubject = unauthRequestSubject
 
+	cfg.LDAPSync.LDAPHost = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPHost, defaults.LDAPSync.LDAPHost))
+	cfg.LDAPSync.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminDN, defaults.LDAPSync.LDAPAdminDN))
+	cfg.LDAPSync.LDAPAdminPassword = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminPassword, defaults.LDAPSync.LDAPAdminPassword))
+	cfg.LDAPSync.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.BaseDN, defaults.LDAPSync.BaseDN))
+	cfg.LDAPSync.ScheduleFrequency = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleFrequency, defaults.LDAPSync.ScheduleFrequency))
+	cfg.LDAPSync.ScheduleTimeOfDay = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleTimeOfDay, defaults.LDAPSync.ScheduleTimeOfDay))
+	cfg.LDAPSync.ScheduleDayOfWeek = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleDayOfWeek, defaults.LDAPSync.ScheduleDayOfWeek))
+	if cfg.LDAPSync.ScheduleMinute < 0 || cfg.LDAPSync.ScheduleMinute > 59 {
+		cfg.LDAPSync.ScheduleMinute = defaults.LDAPSync.ScheduleMinute
+	}
+
 	// Keep provider package configuration in sync with live runtime settings.
 	// Without this, switching providers in Admin can leave auth flows using stale
 	// URLs/API keys initialized at process startup.
@@ -377,6 +436,7 @@ func currentRuntimeConfig() RuntimeConfig {
 		Security:    defaultSecurityConfig(),
 		MFA:         defaultMFAConfig(),
 		AppSettings: defaultAppSettingsConfig(),
+		LDAPSync:    defaultLDAPSyncConfig(),
 		LoadedAt:    time.Now().UTC(),
 	}
 }
@@ -424,7 +484,7 @@ func ensureMFAConsistency() {
 	}
 }
 
-func detectMissingSections(pVersion, sVersion, mVersion, aVersion int64) []configstore.Section {
+func detectMissingSections(pVersion, sVersion, mVersion, aVersion, lVersion int64) []configstore.Section {
 	var sections []configstore.Section
 	if pVersion == 0 {
 		sections = append(sections, configstore.SectionProviders)
@@ -437,6 +497,9 @@ func detectMissingSections(pVersion, sVersion, mVersion, aVersion int64) []confi
 	}
 	if aVersion == 0 {
 		sections = append(sections, configstore.SectionAppSettings)
+	}
+	if lVersion == 0 {
+		sections = append(sections, configstore.SectionLDAPSync)
 	}
 	return sections
 }
@@ -454,6 +517,8 @@ func persistInitialSections(store *configstore.Store, cfg RuntimeConfig, section
 			payload = cfg.MFA
 		case configstore.SectionAppSettings:
 			payload = cfg.AppSettings
+		case configstore.SectionLDAPSync:
+			payload = cfg.LDAPSync
 		default:
 			continue
 		}

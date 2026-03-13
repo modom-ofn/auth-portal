@@ -5,6 +5,7 @@ import { createConfigSectionController } from './config-section.js';
 import { createHelpModalController } from './help-modal.js';
 import { createRecentChangesController } from './recent-changes.js';
 import { createOAuthSectionController } from './oauth-section.js';
+import { createLDAPSyncSectionController } from './ldap-sync-section.js';
 import { createBackupsSectionController } from './backups-section.js';
 import { createAdminAPI } from './admin-api.js';
 
@@ -36,7 +37,7 @@ const makeEl = () => {
 };
 
 const runRouterSmoke = async () => {
-  const tabs = ['providers', 'oauth', 'backups'].map((section) => ({
+  const tabs = ['providers', 'oauth', 'ldap-sync', 'backups'].map((section) => ({
     dataset: { section },
     classList: {
       active: false,
@@ -48,6 +49,7 @@ const runRouterSmoke = async () => {
   }));
   const configPanel = makeEl();
   const oauthPanel = makeEl();
+  const ldapSyncPanel = makeEl();
   const backupsPanel = makeEl();
   const events = [];
 
@@ -55,6 +57,7 @@ const runRouterSmoke = async () => {
     tabs,
     configPanel,
     oauthPanel,
+    ldapSyncPanel,
     backupsPanel,
     initialSection: 'providers',
     isConfigSection: (section) => section === 'providers',
@@ -62,23 +65,28 @@ const runRouterSmoke = async () => {
     onSectionChange: async (section) => events.push(`change:${section}`),
     onConfigSection: async (section) => events.push(`config:${section}`),
     onOAuthSection: async (section) => events.push(`oauth:${section}`),
+    onLDAPSyncSection: async (section) => events.push(`ldap:${section}`),
     onBackupsSection: async (section) => events.push(`backups:${section}`),
   });
 
   router.init();
   await router.activate('providers');
   await router.activate('oauth');
+  await router.activate('ldap-sync');
   await router.activate('backups');
 
   assert.equal(router.getCurrentSection(), 'backups');
   assert.equal(configPanel.hidden, true);
   assert.equal(oauthPanel.hidden, true);
+  assert.equal(ldapSyncPanel.hidden, true);
   assert.equal(backupsPanel.hidden, false);
   assert.deepEqual(events, [
     'change:providers',
     'config:providers',
     'change:oauth',
     'oauth:oauth',
+    'change:ldap-sync',
+    'ldap:ldap-sync',
     'change:backups',
     'backups:backups',
   ]);
@@ -97,6 +105,7 @@ const runConfigSmoke = async () => {
         security: { version: 1, config: {} },
         mfa: { version: 1, config: {} },
         appSettings: { version: 1, config: {} },
+        ldapSync: { version: 1, config: {} },
         loadedAt: '2026-03-08T00:00:00Z',
       };
     },
@@ -109,6 +118,7 @@ const runConfigSmoke = async () => {
         security: { version: 1, config: {} },
         mfa: { version: 1, config: {} },
         appSettings: { version: 1, config: {} },
+        ldapSync: { version: 1, config: {} },
         loadedAt: '2026-03-08T00:00:00Z',
       };
     },
@@ -198,6 +208,9 @@ const runConstructionSmoke = () => {
     'deleteOAuthClient',
     'rotateOAuthSecret',
     'listBackups',
+    'getLDAPSync',
+    'testLDAPSyncConnection',
+    'runLDAPSync',
     'createBackup',
     'updateBackupSchedule',
     'deleteBackup',
@@ -228,6 +241,50 @@ const runConstructionSmoke = () => {
   });
   assert.equal(typeof oauth.bind, 'function');
   assert.equal(typeof oauth.loadClients, 'function');
+
+  const ldapSync = createLDAPSyncSectionController({
+    api: {},
+    panel: makeEl(),
+    refreshBtn: makeEl(),
+    exportBtn: makeEl(),
+    importBtn: makeEl(),
+    importInput: makeEl(),
+    testBtn: makeEl(),
+    runBtn: makeEl(),
+    form: makeEl(),
+    hostInput: makeEl(),
+    adminDnInput: makeEl(),
+    passwordInput: makeEl(),
+    baseDnInput: makeEl(),
+    startTlsInput: makeEl(),
+    deleteStaleInput: makeEl(),
+    scheduleEnabledInput: makeEl(),
+    frequencyInput: makeEl(),
+    timeInput: makeEl(),
+    weekdayInput: makeEl(),
+    minuteInput: makeEl(),
+    nextRunEl: makeEl(),
+    frequencyRows: [],
+    reasonInput: makeEl(),
+    saveBtn: makeEl(),
+    statusSummary: makeEl(),
+    statusState: makeEl(),
+    statusStartedAt: makeEl(),
+    statusFinishedAt: makeEl(),
+    statusSuccessAt: makeEl(),
+    statusTriggeredBy: makeEl(),
+    testResultEl: makeEl(),
+    testDetailsEl: makeEl(),
+    testConnectedEl: makeEl(),
+    testBoundEl: makeEl(),
+    testBaseExistsEl: makeEl(),
+    testBaseCreatableEl: makeEl(),
+    runRows: { ...makeEl(), innerHTML: '', appendChild() {} },
+    showStatus() {},
+    recordActivity() {},
+  });
+  assert.equal(typeof ldapSync.bind, 'function');
+  assert.equal(typeof ldapSync.load, 'function');
 
   const backups = createBackupsSectionController({
     api: {},

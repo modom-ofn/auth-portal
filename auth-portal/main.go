@@ -21,6 +21,7 @@ import (
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
 	"auth-portal/configstore"
 	"auth-portal/health"
+	"auth-portal/ldapsync"
 	"auth-portal/oauth"
 	"auth-portal/providers"
 	"golang.org/x/time/rate"
@@ -30,6 +31,8 @@ var (
 	db                                     *sql.DB
 	configStore                            *configstore.Store
 	backupSvc                              *backupService
+	ldapSyncSvc                            *ldapsync.Service
+	ldapSyncMgr                            *ldapSyncManager
 	sessionSecret                          []byte
 	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
 	appTimeZone                            = envOr("APP_TIMEZONE", "UTC")
@@ -183,6 +186,8 @@ func main() {
 	applyRuntimeConfig(runtimeCfg)
 
 	backupSvc = mustInitBackupService(configStore)
+	ldapSyncSvc = mustInitLDAPSyncService(db)
+	ldapSyncMgr = mustInitLDAPSyncManager(db, ldapSyncSvc)
 	oauthService = newOAuthService()
 
 	if err := bootstrapAdminUsers(); err != nil {
@@ -257,6 +262,23 @@ func mustInitBackupService(store *configstore.Store) *backupService {
 		log.Fatalf("Backup service init error: %v", err)
 	}
 	return svc
+}
+
+func mustInitLDAPSyncService(db *sql.DB) *ldapsync.Service {
+	svc, err := ldapsync.NewService(db)
+	if err != nil {
+		log.Fatalf("LDAP sync service init error: %v", err)
+	}
+	return svc
+}
+
+func mustInitLDAPSyncManager(db *sql.DB, service *ldapsync.Service) *ldapSyncManager {
+	manager, err := newLDAPSyncManager(db, service)
+	if err != nil {
+		log.Fatalf("LDAP sync manager init error: %v", err)
+	}
+	setLDAPSyncManager(manager)
+	return manager
 }
 
 func newOAuthService() oauth.Service {
@@ -531,6 +553,9 @@ func registerAdminRoutes(r *mux.Router) {
 	adminAPI.Handle("/backups/{name}/restore", adminProtected(http.HandlerFunc(adminBackupsRestoreHandler))).Methods("POST")
 	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
 	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
+	adminAPI.Handle("/ldap-sync", adminProtected(http.HandlerFunc(adminLDAPSyncGetHandler))).Methods("GET")
+	adminAPI.Handle("/ldap-sync/test-connection", adminProtected(http.HandlerFunc(adminLDAPSyncTestConnectionHandler))).Methods("POST")
+	adminAPI.Handle("/ldap-sync/run", adminProtected(http.HandlerFunc(adminLDAPSyncRunHandler))).Methods("POST")
 	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
 }
 

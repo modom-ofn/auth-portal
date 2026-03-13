@@ -1,4 +1,4 @@
-# AuthPortal (v2.0.4)
+# AuthPortal (v2.0.5)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
@@ -49,7 +49,7 @@ AuthPortal authenticates users directly against their connected media server acc
   - Dark, modern UI with branded login buttons
 
 - **Runtime configuration & admin console**
-  - Web-based editing of Providers, Security, and MFA JSON with versioning and history
+  - Web-based editing of Providers, Security, MFA, App Settings, and LDAP Sync config with versioning and history
   - OAuth client management (list/create/update/delete + secret rotation) without leaving the browser
   - Config backup tab with manual exports, scheduled runs (hourly/daily/weekly), retention, and one-click restore/download actions
 
@@ -60,7 +60,7 @@ AuthPortal authenticates users directly against their connected media server acc
 ### UI Preview
 
 <p align="center">
-  <img src="./screenshots/ui-preview-rotating.gif" alt="Rotating AuthPortal UI preview banner showing authorized and unauthorized views, MFA flow, and admin tabs for providers, security, MFA, app settings, OAuth clients, and backups." />
+  <img src="./screenshots/ui-preview-rotating.gif" alt="Rotating AuthPortal UI preview banner showing authorized and unauthorized views, MFA flow, and admin tabs for providers, security, MFA, app settings, OAuth clients, LDAP Sync, and backups." />
 </p>
 
 Frame descriptions (alt text):
@@ -73,18 +73,20 @@ Frame descriptions (alt text):
 7. Admin MFA settings tab with enforcement and recovery options.
 8. Admin App Settings tab for portal behavior and branding controls.
 9. Admin OAuth Clients tab showing client cards and management actions.
-10. Admin Backups tab with exports, scheduling, retention, and restore actions.
+10. Admin LDAP Sync tab with connection testing, scheduling, and run history.
+11. Admin Backups tab with exports, scheduling, retention, and restore actions.
 
 ---
 
 ## Table of Contents
 
 - [Features](#features)
-- [What's New in v2.0.4](#whats-new-in-v204)
-- [ldap-sync](#ldap-sync)
+- [What's New in v2.0.5](#whats-new-in-v205)
+- [LDAP Sync](#ldap-sync)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Admin Console & Config Store (new in v2.0.4)](#admin-console--config-store-new-in-v204)
+  - [LDAP Sync (new in v2.0.5)](#ldap-sync-new-in-v205)
   - [Backups](#backups)
   - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.4)](#oauth-21--oidc-authorization-server-new-in-v204)
   - [Multi-factor authentication](#multi-factor-authentication)
@@ -104,9 +106,18 @@ Frame descriptions (alt text):
 - [Security scans and code analysis](#security-scans-and-code-analysis)
 - [Contributing](#contributing)
 - [License](#license)
-- [Upgrade Guide (to v2.0.4)](#upgrade-guide-from--v203)
+- [Upgrade Guide (to v2.0.5)](#upgrade-guide-to-v205)
 
 ---
+
+## What's New in v2.0.5
+
+- **LDAP Sync is now first-class in AuthPortal:** the former standalone `ldap-sync` companion workflow is replaced by a built-in `LDAP Sync` admin tab with persisted runtime config.
+- **Manual and scheduled LDAP sync runs:** run syncs on demand or on an hourly/daily/weekly schedule directly from the admin console, with next-run calculation and persisted run history.
+- **Connection validation before save/run:** test LDAP connectivity, bind credentials, and Base DN reachability from the UI before committing config.
+- **Safe stale-entry cleanup:** optional deletion of stale LDAP records now only targets entries previously marked as AuthPortal-managed under the configured Base DN.
+- **Improved LDAP observability and UX:** per-user sync failures are logged with the affected username, completion summaries are logged per run, and the admin panel now exposes structured connection-test results, Recent Changes integration, and a cleaner sectioned layout.
+- **OpenLDAP bootstrap simplification:** the old `ldap-seed` helper is no longer part of the recommended workflow because AuthPortal can create the configured Base DN when it is missing and creatable.
 
 ## What's New in v2.0.4
 
@@ -122,11 +133,32 @@ Frame descriptions (alt text):
 
 ---
 
-## ldap-sync
+## LDAP Sync
 
-> [!NOTE]
-> - ldap-sync has been moved to its own repository.  
-> - You can now find it at: https://github.com/modom-ofn/ldap-sync
+LDAP sync is built into AuthPortal in `v2.0.5`. Configure it in the Admin Console under `LDAP Sync` to run manual syncs or schedule recurring LDAP exports of authorized users.
+
+What it does:
+
+- Connects to LDAP with the configured host, bind DN, and password.
+- Creates the configured Base DN when it is missing and creatable.
+- Exports currently authorized AuthPortal users as LDAP entries.
+- Supports manual sync and built-in hourly/daily/weekly scheduling.
+- Records recent run history in the admin UI.
+- Optionally deletes stale LDAP entries that were previously marked as managed by AuthPortal.
+
+What changed from the old workflow:
+
+- There is no longer a separate `ldap-sync` service or repo dependency in the recommended AuthPortal deployment path.
+- The old `ldap-seed` helper for `ou=users` is no longer required for the default setup.
+- LDAP sync configuration, change history, and schedule state now live with the rest of the AuthPortal admin/runtime config.
+
+Operational notes:
+
+- Use the `Test Connection` button before saving or running a sync.
+- `Base DN Exists = PASS` means the target branch is already usable.
+- `Base DN Exists = FAIL` and `Base DN Creatable = PASS` means AuthPortal should be able to create the branch on the first sync.
+- `Base DN Exists = FAIL` and `Base DN Creatable = FAIL` means you need to fix the directory layout or LDAP ACLs first.
+- Stale deletion only applies to entries previously stamped as AuthPortal-managed.
 
 ---
 
@@ -186,8 +218,17 @@ TRUSTED_REDIRECT_HOSTS=
 # Logging # DEBUG | INFO | WARN | ERROR
 LOG_LEVEL=INFO
 
-# ---------- LDAP (only if using `--profile ldap`) ----------
+# ---------- LDAP Sync (optional; point to your existing LDAP server) ----------
+LDAP_HOST=ldap://ldap.example.com:389
+LDAP_ADMIN_DN=cn=admin,dc=authportal,dc=local
 LDAP_ADMIN_PASSWORD=change-me-strong
+BASE_DN=ou=users,dc=authportal,dc=local
+LDAP_STARTTLS=false
+LDAP_DELETE_STALE_ENTRIES=false
+LDAP_SYNC_SCHEDULE_ENABLED=false
+LDAP_SYNC_SCHEDULE_FREQUENCY=daily
+LDAP_SYNC_SCHEDULE_TIME=02:15
+LDAP_SYNC_SCHEDULE_DAY=sunday
 
 # ---------- Plex ----------
 # Optional but recommended for server-authorization checks
@@ -200,7 +241,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.4
+EMBY_APP_VERSION=2.0.5
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -209,7 +250,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.4
+JELLYFIN_APP_VERSION=2.0.5
 ```
 
 
@@ -299,6 +340,18 @@ services:
       # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
 
+      # LDAP Sync
+      LDAP_HOST: ${LDAP_HOST:-ldap://ldap.example.com:389}
+      LDAP_ADMIN_DN: ${LDAP_ADMIN_DN:-cn=admin,dc=authportal,dc=local}
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-}
+      BASE_DN: ${BASE_DN:-ou=users,dc=authportal,dc=local}
+      LDAP_STARTTLS: ${LDAP_STARTTLS:-false}
+      LDAP_DELETE_STALE_ENTRIES: ${LDAP_DELETE_STALE_ENTRIES:-false}
+      LDAP_SYNC_SCHEDULE_ENABLED: ${LDAP_SYNC_SCHEDULE_ENABLED:-false}
+      LDAP_SYNC_SCHEDULE_FREQUENCY: ${LDAP_SYNC_SCHEDULE_FREQUENCY:-daily}
+      LDAP_SYNC_SCHEDULE_TIME: ${LDAP_SYNC_SCHEDULE_TIME:-02:15}
+      LDAP_SYNC_SCHEDULE_DAY: ${LDAP_SYNC_SCHEDULE_DAY:-sunday}
+
       # Plex
       PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}
       PLEX_SERVER_MACHINE_ID: ${PLEX_SERVER_MACHINE_ID:-}
@@ -308,12 +361,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.4}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.5}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.4}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.5}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -329,70 +382,8 @@ services:
       retries: 3
     networks: [authnet]
 
-  openldap:
-    image: osixia/openldap:1.5.0
-    profiles: ["ldap"]
-    environment:
-      LDAP_ORGANISATION: AuthPortal
-      LDAP_DOMAIN: authportal.local
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      TZ: ${TZ:-UTC}
-    # Uncomment if you need external LDAP access from host:
-    # ports:
-    #   - "389:389"
-    #   - "636:636"
-    volumes:
-      - ldap_data:/var/lib/ldap
-      - ldap_config:/etc/ldap/slapd.d
-      # Seed OU/users if desired:
-      # - ./ldap-seed:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
-    restart: unless-stopped
-    healthcheck:
-      # Use service DNS name inside the network, not localhost
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://openldap -D 'cn=admin,dc=authportal,dc=local' -w \"$LDAP_ADMIN_PASSWORD\" -b 'dc=authportal,dc=local' -s base dn >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [authnet]
-
-  ldap-sync:
-    image: modomofn/ldap-sync:latest
-    profiles: ["ldap"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      openldap:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
-      LDAP_HOST: ldap://openldap:389
-      LDAP_ADMIN_DN: cn=admin,dc=authportal,dc=local
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      BASE_DN: ou=users,dc=authportal,dc=local
-      # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
-      TZ: ${TZ:-UTC}
-    restart: "no"
-    networks: [authnet]
-
-  phpldapadmin:
-    image: osixia/phpldapadmin:0.9.0
-    profiles: ["ldap"]
-    environment:
-      PHPLDAPADMIN_LDAP_HOSTS: openldap
-      PHPLDAPADMIN_HTTPS: "false"
-      TZ: ${TZ:-UTC}
-    ports:
-      - "8087:80"
-    depends_on:
-      openldap:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [authnet]
-
 volumes:
   pgdata:
-  ldap_data:
-  ldap_config:
 
 networks:
   authnet:
@@ -405,11 +396,7 @@ docker compose up -d --build
 # Visit http://localhost:8089
 ```
 
-*Run with LDAP stack:*
-```bash
-docker compose --profile ldap up -d --build
-# Visit http://localhost:8089
-```
+If you plan to use LDAP Sync, point the LDAP environment variables at your existing LDAP implementation, then open `Admin -> LDAP Sync` in AuthPortal to save connection settings, run a manual sync, or enable the built-in scheduler.
 
 ## Configuration
 
@@ -429,18 +416,28 @@ docker compose --profile ldap up -d --build
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
 - `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
 - `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./backups` relative to the binary).
+- `LDAP_DELETE_STALE_ENTRIES`  when set to `true`, scheduled or manual LDAP syncs may delete stale entries previously marked as AuthPortal-managed under the configured LDAP base DN.
+- `LDAP_SYNC_SCHEDULE_ENABLED` / `LDAP_SYNC_SCHEDULE_FREQUENCY` / `LDAP_SYNC_SCHEDULE_TIME` / `LDAP_SYNC_SCHEDULE_DAY`  bootstrap defaults for the built-in LDAP scheduler; once saved in Admin, the persisted runtime config takes precedence.
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 
 ### Admin Console & Config Store (new in v2.0.4)
 
 - Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
-- Providers, Security, and MFA settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
+- Providers, Security, MFA, App Settings, and LDAP Sync settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
 - Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
 - The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation) backed by the `/api/admin/oauth/*` endpoints.
 
+### LDAP Sync (new in v2.0.5)
+
+- The **LDAP Sync** tab under `/admin` manages LDAP host/bind/Base-DN settings, StartTLS, optional stale-entry deletion, manual sync runs, and the built-in scheduler.
+- The `Test Connection` action validates connect, bind, Base DN existence, and Base DN creatability before you save or sync.
+- Scheduled runs support `hourly`, `daily`, and `weekly` timing directly in the UI and are reflected in the `Next Scheduled Run` panel state.
+- Recent sync history includes manual and scheduled runs with trigger source, timestamps, result status, entry counts, and summary/error output.
+- LDAP sync config changes participate in the same config history / Recent Changes workflow as the other admin sections.
+
 ### Backups
 
-- The **Backups** tab under `/admin` lets you export the current Providers/Security/MFA documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
+- The **Backups** tab under `/admin` lets you export the current config documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
 - Backup files are JSON blobs stored under `BACKUP_DIR` (default `./backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
 - Scheduled backup settings now live in the config store (section `backups`), so your cadence, selected sections, and retention persist across container rebuilds and are auditable like other config updates.
 - Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
@@ -621,9 +618,12 @@ DEBUG plex: resources match via machine id
 
 - **Admin console & APIs**
   - `GET /admin`  admin SPA for bootstrap/admin users.
-  - `GET /api/admin/config`  returns Providers/Security/MFA JSON bundle.
+  - `GET /api/admin/config`  returns the admin configuration bundle, including Providers, Security, MFA, App Settings, and LDAP Sync.
   - `PUT /api/admin/config/{section}`  update a configuration section with optimistic concurrency.
   - `GET /api/admin/config/history/{section}`  fetch prior revisions.
+  - `GET /api/admin/ldap-sync`  fetch LDAP sync config, scheduler status, and recent runs.
+  - `POST /api/admin/ldap-sync/test-connection`  validate LDAP connectivity and Base DN readiness using the submitted form values without saving them.
+  - `POST /api/admin/ldap-sync/run`  trigger a manual LDAP sync run.
   - `GET /api/admin/oauth/clients`  list registered OAuth clients.
   - `POST /api/admin/oauth/clients`  create a new client.
   - `PUT /api/admin/oauth/clients/{id}`  update client metadata.
@@ -634,7 +634,7 @@ DEBUG plex: resources match via machine id
   - `PUT /api/admin/backups/schedule`  update the automated backup schedule (frequency, sections, retention).
   - `GET /api/admin/backups/{name}`  download a specific backup file.
   - `DELETE /api/admin/backups/{name}`  remove a backup file from storage.
-  - `POST /api/admin/backups/{name}/restore`  restore Providers/Security/MFA configs from a saved backup.
+  - `POST /api/admin/backups/{name}/restore`  restore captured config sections from a saved backup.
 
 - **Health & readiness**
   - `GET /healthz`  liveness check.
@@ -672,7 +672,6 @@ DEBUG plex: resources match via machine id
 
 ## Customization
 
-- **Hero background:** put your image at `static/bg.jpg` (1920"1080 works great).  
 - **Logo:** in `templates/login.html`, swap the inline SVG for your logo.  
 - **Colors & button:** tweak in `static/styles.css` (`--brand` etc.).
 - **Authorized / Unauthorized pages:** edit `templates/portal_authorized.html` and `templates/portal_unauthorized.html`
@@ -737,14 +736,20 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ---
 
-## Upgrade Guide (to v2.0.4)
+## Upgrade Guide (to v2.0.5)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.4` so you pick up the modular admin UX improvements and hardened runtime base image (`dhi.io/alpine-base:3.23-alpine3.23-dev`).
-2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
-3) Decide on MFA posture:
+1) Rebuild or pull `modomofn/auth-portal:v2.0.5` so you pick up the built-in LDAP Sync admin module and scheduler improvements.
+2) If you previously used the standalone `ldap-sync` workflow, migrate that configuration into `Admin -> LDAP Sync` and stop relying on the external repo/service.
+3) If your compose/docs still reference `ldap-seed` for `ou=users`, remove that dependency unless you intentionally seed extra LDAP structure outside AuthPortal-managed sync.
+4) Review LDAP behavior before enabling stale deletion:
+   - Leave `Delete stale AuthPortal-managed LDAP entries` off until at least one successful built-in sync has updated the entries you want AuthPortal to own.
+   - Verify the bind account has permission to create entries under the configured Base DN.
+5) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
+6) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.
    - Flip `MFA_ENFORCE=1` if everyone must pass MFA on login; keep `MFA_ENABLE=1` in that case.
-4) Verify end-to-end:
+7) Verify end-to-end:
    - Existing users can log in, enroll, and download recovery codes.
    - Enforced logins reach `/mfa/challenge` and succeed with both TOTP codes and a recovery code.
    - Repeated bad logins or code attempts return HTTP 429 from the per-IP rate limiters.
+   - LDAP `Test Connection` passes, a manual LDAP sync succeeds, and scheduled runs appear in `Recent Sync Runs` when enabled.
