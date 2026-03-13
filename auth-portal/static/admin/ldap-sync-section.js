@@ -143,11 +143,10 @@ export const createLDAPSyncSectionController = ({
     const info = state.runStatus || {};
     const result = info.lastResult || {};
     if (statusSummary) {
-      statusSummary.textContent =
-        result.summary || (info.running ? 'LDAP sync is running.' : 'No LDAP sync has been run yet.');
+      statusSummary.textContent = getStatusSummary(info, result);
     }
     if (statusState) {
-      statusState.textContent = info.running ? 'Running' : info.lastError ? 'Failed' : info.finishedAt ? 'Idle' : 'Idle';
+      statusState.textContent = getStatusState(info);
     }
     if (statusStartedAt) {
       statusStartedAt.textContent = formatDate(info.startedAt);
@@ -162,7 +161,7 @@ export const createLDAPSyncSectionController = ({
       statusTriggeredBy.textContent = info.triggeredBy || '-';
     }
     if (nextRunEl) {
-      nextRunEl.textContent = info.nextRun ? formatDate(info.nextRun) : configScheduleEnabled(state.config) ? '-' : 'Disabled';
+      nextRunEl.textContent = getNextRunText(info.nextRun, state.config);
     }
   };
 
@@ -172,33 +171,24 @@ export const createLDAPSyncSectionController = ({
     }
     const result = state.testResult;
     if (!result?.message) {
-      testResultEl.hidden = true;
-      testResultEl.textContent = '';
-      testResultEl.className = 'status-banner';
-      if (testDetailsEl) {
-        testDetailsEl.hidden = true;
-      }
-      [testConnectedEl, testBoundEl, testBaseExistsEl, testBaseCreatableEl]
-        .filter(Boolean)
-        .forEach((el) => {
-          el.textContent = '-';
-          el.className = 'muted';
-        });
+      clearTestResult({
+        testResultEl,
+        testDetailsEl,
+        testConnectedEl,
+        testBoundEl,
+        testBaseExistsEl,
+        testBaseCreatableEl,
+      });
       return;
     }
-    testResultEl.hidden = false;
-    testResultEl.textContent = result.message;
-    testResultEl.className = `status-banner ${result.type === 'error' ? 'error' : 'success'}`;
-    if (testDetailsEl) {
-      testDetailsEl.hidden = false;
-    }
-    setTestField(testConnectedEl, result.connected);
-    setTestField(testBoundEl, result.bound);
-    setTestField(testBaseExistsEl, result.baseDnExists);
-    setTestField(
+    applyTestResult(result, {
+      testResultEl,
+      testDetailsEl,
+      testConnectedEl,
+      testBoundEl,
+      testBaseExistsEl,
       testBaseCreatableEl,
-      result.baseDnExists === true ? null : result.baseDnCreatable,
-    );
+    });
   };
 
   const renderRuns = () => {
@@ -481,6 +471,89 @@ export const createLDAPSyncSectionController = ({
 };
 
 const configScheduleEnabled = (config) => Boolean(config?.scheduleEnabled);
+
+const getStatusSummary = (info, result) => {
+  if (result.summary) {
+    return result.summary;
+  }
+  return info.running ? 'LDAP sync is running.' : 'No LDAP sync has been run yet.';
+};
+
+const getStatusState = (info) => {
+  if (info.running) {
+    return 'Running';
+  }
+  if (info.lastError) {
+    return 'Failed';
+  }
+  return 'Idle';
+};
+
+const getNextRunText = (nextRun, config) => {
+  if (nextRun) {
+    const date = new Date(nextRun);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString();
+    }
+    return nextRun;
+  }
+  if (configScheduleEnabled(config)) {
+    return '-';
+  }
+  return 'Disabled';
+};
+
+const clearTestResult = ({
+  testResultEl,
+  testDetailsEl,
+  testConnectedEl,
+  testBoundEl,
+  testBaseExistsEl,
+  testBaseCreatableEl,
+}) => {
+  if (!testResultEl) {
+    return;
+  }
+  testResultEl.hidden = true;
+  testResultEl.textContent = '';
+  testResultEl.className = 'status-banner';
+  if (testDetailsEl) {
+    testDetailsEl.hidden = true;
+  }
+  [testConnectedEl, testBoundEl, testBaseExistsEl, testBaseCreatableEl]
+    .filter(Boolean)
+    .forEach((el) => {
+      el.textContent = '-';
+      el.className = 'muted';
+    });
+};
+
+const applyTestResult = (result, {
+  testResultEl,
+  testDetailsEl,
+  testConnectedEl,
+  testBoundEl,
+  testBaseExistsEl,
+  testBaseCreatableEl,
+}) => {
+  testResultEl.hidden = false;
+  testResultEl.textContent = result.message;
+  testResultEl.className = `status-banner ${result.type === 'error' ? 'error' : 'success'}`;
+  if (testDetailsEl) {
+    testDetailsEl.hidden = false;
+  }
+  setTestField(testConnectedEl, result.connected);
+  setTestField(testBoundEl, result.bound);
+  setTestField(testBaseExistsEl, result.baseDnExists);
+  setTestField(testBaseCreatableEl, getBaseCreatableValue(result));
+};
+
+const getBaseCreatableValue = (result) => {
+  if (result.baseDnExists === true) {
+    return null;
+  }
+  return result.baseDnCreatable;
+};
 
 const setTestField = (el, value) => {
   if (!el) {

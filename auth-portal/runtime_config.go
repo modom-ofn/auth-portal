@@ -407,9 +407,6 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	cfg.LDAPSync.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminDN, defaults.LDAPSync.LDAPAdminDN))
 	cfg.LDAPSync.LDAPAdminPassword = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminPassword, defaults.LDAPSync.LDAPAdminPassword))
 	cfg.LDAPSync.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.BaseDN, defaults.LDAPSync.BaseDN))
-	cfg.LDAPSync.LDAPStartTLS = cfg.LDAPSync.LDAPStartTLS
-	cfg.LDAPSync.DeleteStaleEntries = cfg.LDAPSync.DeleteStaleEntries
-	cfg.LDAPSync.ScheduleEnabled = cfg.LDAPSync.ScheduleEnabled
 	cfg.LDAPSync.ScheduleFrequency = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleFrequency, defaults.LDAPSync.ScheduleFrequency))
 	cfg.LDAPSync.ScheduleTimeOfDay = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleTimeOfDay, defaults.LDAPSync.ScheduleTimeOfDay))
 	cfg.LDAPSync.ScheduleDayOfWeek = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleDayOfWeek, defaults.LDAPSync.ScheduleDayOfWeek))

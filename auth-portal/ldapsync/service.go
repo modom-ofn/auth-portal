@@ -199,41 +199,13 @@ func (s *Service) run(ctx context.Context, cfg Config) (Result, error) {
 	}
 	defer conn.Close()
 
-	if cfg.LDAPStartTLS {
-		if err := conn.StartTLS(&tls.Config{MinVersion: tls.VersionTLS12}); err != nil {
-			return Result{}, fmt.Errorf("ldap StartTLS error: %w", err)
-		}
-	}
-	if err := conn.Bind(strings.TrimSpace(cfg.LDAPAdminDN), cfg.LDAPAdminPassword); err != nil {
-		return Result{}, fmt.Errorf("ldap bind error: %w", err)
-	}
-	if err := ensureOUExists(conn, strings.TrimSpace(cfg.BaseDN)); err != nil {
-		return Result{}, fmt.Errorf("ensure base DN failed: %w", err)
+	baseDN := strings.TrimSpace(cfg.BaseDN)
+	if err := prepareLDAPConnection(conn, cfg, baseDN); err != nil {
+		return Result{}, err
 	}
 
 	result := Result{UsersConsidered: len(users)}
-	usernames := make([]string, 0, len(users))
-	for username := range users {
-		usernames = append(usernames, username)
-	}
-	sort.Strings(usernames)
-
-	for _, username := range usernames {
-		entry := users[username]
-		added, err := upsertLDAPEntry(conn, strings.TrimSpace(cfg.BaseDN), entry)
-		if err != nil {
-			log.Printf("LDAP sync entry failed for %q: %v", username, err)
-			result.FailedEntries++
-			continue
-		}
-		if added {
-			log.Printf("LDAP sync added entry for %q", username)
-			result.EntriesAdded++
-		} else {
-			log.Printf("LDAP sync updated entry for %q", username)
-			result.EntriesUpdated++
-		}
-	}
+	s.syncAuthorizedUsers(conn, baseDN, users, &result)
 
 	if cfg.DeleteStaleEntries {
 		deleted, failed, err := deleteStaleManagedEntries(conn, strings.TrimSpace(cfg.BaseDN), users)
@@ -270,30 +242,7 @@ SELECT EXISTS (
 		return nil, fmt.Errorf("identities table check failed: %w", err)
 	}
 
-	var (
-		rows          *sql.Rows
-		queryErr      error
-		useIdentities bool
-	)
-
-	if identitiesAvailable {
-		rows, queryErr = s.db.QueryContext(queryCtx, `
-SELECT u.username, u.email, i.media_uuid, i.provider
-  FROM identities i
-  JOIN users u ON u.id = i.user_id
- WHERE i.media_access = TRUE
- ORDER BY u.username, i.provider`)
-		if queryErr == nil {
-			useIdentities = true
-		}
-	}
-	if rows == nil {
-		rows, queryErr = s.db.QueryContext(queryCtx, `
-SELECT username, email, media_uuid
-  FROM users
- WHERE media_access = TRUE
- ORDER BY username`)
-	}
+	rows, useIdentities, queryErr := s.queryAuthorizedUsers(queryCtx, identitiesAvailable)
 	if queryErr != nil {
 		return nil, fmt.Errorf("query authorized users failed: %w", queryErr)
 	}
@@ -301,43 +250,114 @@ SELECT username, email, media_uuid
 
 	users := make(map[string]*rowUser)
 	for rows.Next() {
-		var (
-			username  string
-			email     sql.NullString
-			mediaUUID sql.NullString
-			provider  string
-		)
-		if useIdentities {
-			if err := rows.Scan(&username, &email, &mediaUUID, &provider); err != nil {
-				return nil, fmt.Errorf("scan identities row failed: %w", err)
-			}
-		} else {
-			if err := rows.Scan(&username, &email, &mediaUUID); err != nil {
-				return nil, fmt.Errorf("scan users row failed: %w", err)
-			}
-			provider = inferProviderFromUUID(mediaUUID.String)
+		username, email, mediaUUID, provider, err := scanAuthorizedUserRow(rows, useIdentities)
+		if err != nil {
+			return nil, err
 		}
-
-		username = strings.TrimSpace(username)
-		if username == "" {
-			continue
-		}
-		entry := users[username]
-		if entry == nil {
-			entry = &rowUser{Username: username}
-			users[username] = entry
-		}
-		if normalized := normalizeNullString(email); normalized.Valid {
-			if !entry.Email.Valid {
-				entry.Email = normalized
-			}
-		}
-		entry.addIdentity(provider, mediaUUID.String)
+		upsertAuthorizedUser(users, username, email, mediaUUID, provider)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("authorized user rows error: %w", err)
 	}
 	return users, nil
+}
+
+func prepareLDAPConnection(conn *ldap.Conn, cfg Config, baseDN string) error {
+	if cfg.LDAPStartTLS {
+		if err := conn.StartTLS(&tls.Config{MinVersion: tls.VersionTLS12}); err != nil {
+			return fmt.Errorf("ldap StartTLS error: %w", err)
+		}
+	}
+	if err := conn.Bind(strings.TrimSpace(cfg.LDAPAdminDN), cfg.LDAPAdminPassword); err != nil {
+		return fmt.Errorf("ldap bind error: %w", err)
+	}
+	if err := ensureOUExists(conn, baseDN); err != nil {
+		return fmt.Errorf("ensure base DN failed: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) syncAuthorizedUsers(conn *ldap.Conn, baseDN string, users map[string]*rowUser, result *Result) {
+	usernames := make([]string, 0, len(users))
+	for username := range users {
+		usernames = append(usernames, username)
+	}
+	sort.Strings(usernames)
+
+	for _, username := range usernames {
+		entry := users[username]
+		added, err := upsertLDAPEntry(conn, baseDN, entry)
+		if err != nil {
+			log.Printf("LDAP sync entry failed for %q: %v", username, err)
+			result.FailedEntries++
+			continue
+		}
+		if added {
+			log.Printf("LDAP sync added entry for %q", username)
+			result.EntriesAdded++
+			continue
+		}
+		log.Printf("LDAP sync updated entry for %q", username)
+		result.EntriesUpdated++
+	}
+}
+
+func (s *Service) queryAuthorizedUsers(ctx context.Context, identitiesAvailable bool) (*sql.Rows, bool, error) {
+	if identitiesAvailable {
+		rows, err := s.db.QueryContext(ctx, `
+SELECT u.username, u.email, i.media_uuid, i.provider
+  FROM identities i
+  JOIN users u ON u.id = i.user_id
+ WHERE i.media_access = TRUE
+ ORDER BY u.username, i.provider`)
+		if err == nil {
+			return rows, true, nil
+		}
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT username, email, media_uuid
+  FROM users
+ WHERE media_access = TRUE
+ ORDER BY username`)
+	return rows, false, err
+}
+
+func scanAuthorizedUserRow(rows *sql.Rows, useIdentities bool) (string, sql.NullString, sql.NullString, string, error) {
+	var (
+		username  string
+		email     sql.NullString
+		mediaUUID sql.NullString
+		provider  string
+	)
+
+	if useIdentities {
+		if err := rows.Scan(&username, &email, &mediaUUID, &provider); err != nil {
+			return "", sql.NullString{}, sql.NullString{}, "", fmt.Errorf("scan identities row failed: %w", err)
+		}
+		return username, email, mediaUUID, provider, nil
+	}
+
+	if err := rows.Scan(&username, &email, &mediaUUID); err != nil {
+		return "", sql.NullString{}, sql.NullString{}, "", fmt.Errorf("scan users row failed: %w", err)
+	}
+	return username, email, mediaUUID, inferProviderFromUUID(mediaUUID.String), nil
+}
+
+func upsertAuthorizedUser(users map[string]*rowUser, username string, email, mediaUUID sql.NullString, provider string) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return
+	}
+	entry := users[username]
+	if entry == nil {
+		entry = &rowUser{Username: username}
+		users[username] = entry
+	}
+	if normalized := normalizeNullString(email); normalized.Valid && !entry.Email.Valid {
+		entry.Email = normalized
+	}
+	entry.addIdentity(provider, mediaUUID.String)
 }
 
 func (u *rowUser) addIdentity(provider, mediaUUID string) {
@@ -581,14 +601,7 @@ func ldapEscape(value string) string {
 }
 
 func ldapEscapeFilterValue(value string) string {
-	replacer := strings.NewReplacer(
-		"\\", "\\5c",
-		"*", "\\2a",
-		"(", "\\28",
-		")", "\\29",
-		"\x00", "\\00",
-	)
-	return replacer.Replace(value)
+	return ldap.EscapeFilter(value)
 }
 
 func inferProviderFromUUID(value string) string {

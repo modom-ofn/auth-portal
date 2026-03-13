@@ -16,81 +16,44 @@ export const createSectionRouter = ({
 }) => {
   let currentSection = initialSection;
 
+  const panelVisibility = {
+    config: { config: false, history: false, oauth: true, ldapSync: true, backups: true },
+    oauth: { config: true, history: true, oauth: false, ldapSync: true, backups: true },
+    'ldap-sync': { config: true, history: false, oauth: true, ldapSync: false, backups: true },
+    backups: { config: true, history: false, oauth: true, ldapSync: true, backups: false },
+  };
+
   const setActiveTab = () => {
     tabs.forEach((tab) => {
       tab.classList.toggle('active', tab.dataset.section === currentSection);
     });
   };
 
-  const showConfigPanels = () => {
+  const setPanelVisibility = (visibility) => {
     if (configPanel) {
-      configPanel.hidden = false;
+      configPanel.hidden = visibility.config;
     }
     if (historyPanel) {
-      historyPanel.hidden = false;
+      historyPanel.hidden = visibility.history;
     }
     if (oauthPanel) {
-      oauthPanel.hidden = true;
+      oauthPanel.hidden = visibility.oauth;
     }
     if (ldapSyncPanel) {
-      ldapSyncPanel.hidden = true;
+      ldapSyncPanel.hidden = visibility.ldapSync;
     }
     if (backupsPanel) {
-      backupsPanel.hidden = true;
+      backupsPanel.hidden = visibility.backups;
     }
   };
 
-  const showOAuthPanel = () => {
-    if (configPanel) {
-      configPanel.hidden = true;
+  const showPanelsForSection = (section) => {
+    if (isConfigSection(section)) {
+      setPanelVisibility(panelVisibility.config);
+      return;
     }
-    if (historyPanel) {
-      historyPanel.hidden = true;
-    }
-    if (oauthPanel) {
-      oauthPanel.hidden = false;
-    }
-    if (ldapSyncPanel) {
-      ldapSyncPanel.hidden = true;
-    }
-    if (backupsPanel) {
-      backupsPanel.hidden = true;
-    }
-  };
-
-  const showLDAPSyncPanel = () => {
-    if (configPanel) {
-      configPanel.hidden = true;
-    }
-    if (historyPanel) {
-      historyPanel.hidden = false;
-    }
-    if (oauthPanel) {
-      oauthPanel.hidden = true;
-    }
-    if (ldapSyncPanel) {
-      ldapSyncPanel.hidden = false;
-    }
-    if (backupsPanel) {
-      backupsPanel.hidden = true;
-    }
-  };
-
-  const showBackupsPanel = () => {
-    if (configPanel) {
-      configPanel.hidden = true;
-    }
-    if (historyPanel) {
-      historyPanel.hidden = false;
-    }
-    if (oauthPanel) {
-      oauthPanel.hidden = true;
-    }
-    if (ldapSyncPanel) {
-      ldapSyncPanel.hidden = true;
-    }
-    if (backupsPanel) {
-      backupsPanel.hidden = false;
+    if (panelVisibility[section]) {
+      setPanelVisibility(panelVisibility[section]);
     }
   };
 
@@ -113,28 +76,28 @@ export const createSectionRouter = ({
       await onSectionChange(section);
     }
     if (isConfigSection(section)) {
-      showConfigPanels();
+      showPanelsForSection(section);
       if (typeof onConfigSection === 'function') {
         await onConfigSection(section);
       }
       return;
     }
     if (section === 'oauth' && oauthPanel) {
-      showOAuthPanel();
+      showPanelsForSection(section);
       if (typeof onOAuthSection === 'function') {
         await onOAuthSection(section);
       }
       return;
     }
     if (section === 'ldap-sync' && ldapSyncPanel) {
-      showLDAPSyncPanel();
+      showPanelsForSection(section);
       if (typeof onLDAPSyncSection === 'function') {
         await onLDAPSyncSection(section);
       }
       return;
     }
     if (section === 'backups' && backupsPanel && typeof onBackupsSection === 'function') {
-      showBackupsPanel();
+      showPanelsForSection(section);
       await onBackupsSection(section);
     }
   };
@@ -153,7 +116,7 @@ export const createSectionRouter = ({
 
   const init = () => {
     setActiveTab();
-    showConfigPanels();
+    showPanelsForSection(initialSection);
   };
 
   return {
