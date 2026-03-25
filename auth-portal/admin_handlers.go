@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/mail"
@@ -25,6 +27,7 @@ import (
 const (
 	errClientIDRequired = "client id required"
 	errClientNotFound   = "client not found"
+	oauthHistoryKey     = "clients"
 )
 
 type adminConfigSectionProviders struct {
@@ -82,6 +85,11 @@ type adminConfigHistoryResponse struct {
 	Entries []adminConfigHistoryEntry `json:"entries"`
 }
 
+type adminConfigPermissionCatalogResponse struct {
+	OK          bool                   `json:"ok"`
+	Permissions []PermissionDefinition `json:"permissions"`
+}
+
 type adminOAuthClient struct {
 	ClientID      string    `json:"clientId"`
 	Name          string    `json:"name"`
@@ -98,6 +106,25 @@ type adminOAuthClientsResponse struct {
 	Clients []adminOAuthClient `json:"clients"`
 }
 
+type adminOAuthScopeDefinition struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	System      bool   `json:"system"`
+}
+
+type adminOAuthScopeCatalogResponse struct {
+	OK     bool                        `json:"ok"`
+	Scopes []adminOAuthScopeDefinition `json:"scopes"`
+}
+
+type adminOAuthAuditPayload struct {
+	Action       string   `json:"action"`
+	ClientID     string   `json:"clientId"`
+	Name         string   `json:"name,omitempty"`
+	RedirectURIs []string `json:"redirectUris,omitempty"`
+	Scopes       []string `json:"scopes,omitempty"`
+}
+
 type adminOAuthClientResponse struct {
 	OK           bool             `json:"ok"`
 	Client       adminOAuthClient `json:"client"`
@@ -108,6 +135,11 @@ type adminOAuthClientRequest struct {
 	Name         string   `json:"name"`
 	RedirectURIs []string `json:"redirectUris"`
 	Scopes       []string `json:"scopes"`
+	Reason       string   `json:"reason"`
+}
+
+type adminOAuthActionRequest struct {
+	Reason string `json:"reason"`
 }
 
 type adminLDAPSyncResponse struct {
@@ -337,6 +369,19 @@ func adminConfigHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
+func adminConfigPermissionCatalogHandler(w http.ResponseWriter, _ *http.Request) {
+	permissions, err := listPermissionDefinitions()
+	if err != nil {
+		log.Printf("admin config permission catalog failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "permission catalog unavailable"})
+		return
+	}
+	respondJSON(w, http.StatusOK, adminConfigPermissionCatalogResponse{
+		OK:          true,
+		Permissions: permissions,
+	})
+}
+
 func adminOAuthClientsList(w http.ResponseWriter, r *http.Request) {
 	clients, err := oauthService.ListClients(r.Context())
 	if err != nil {
@@ -351,6 +396,77 @@ func adminOAuthClientsList(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, adminOAuthClientsResponse{
 		OK:      true,
 		Clients: out,
+	})
+}
+
+func adminOAuthHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
+		return
+	}
+	limit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if configStore == nil {
+		log.Printf("admin oauth history unavailable: config store not initialized")
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "config store unavailable"})
+		return
+	}
+
+	history, err := configStore.History(r.Context(), configstore.SectionOAuth, oauthHistoryKey, limit)
+	if err != nil {
+		log.Printf("admin oauth history failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "history lookup failed"})
+		return
+	}
+
+	resp := adminConfigHistoryResponse{
+		OK:      true,
+		Section: "oauth",
+		Entries: make([]adminConfigHistoryEntry, 0, len(history)),
+	}
+	for _, entry := range history {
+		resp.Entries = append(resp.Entries, adminConfigHistoryEntry{
+			Version:   entry.Version,
+			UpdatedAt: entry.UpdatedAt,
+			UpdatedBy: entry.UpdatedBy,
+			Reason:    entry.Reason,
+			Config:    entry.Value,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func adminOAuthScopeCatalogHandler(w http.ResponseWriter, r *http.Request) {
+	scopes := []adminOAuthScopeDefinition{
+		{Name: "openid", Description: "Sign in with AuthPortal and share the user identifier.", System: true},
+		{Name: "profile", Description: "Access the user's basic profile information.", System: true},
+		{Name: "email", Description: "Access the user's email address.", System: true},
+		{Name: "offline_access", Description: "Allow refresh tokens for long-lived sessions.", System: true},
+	}
+	permissions, err := listPermissionDefinitions()
+	if err != nil {
+		log.Printf("admin oauth scope catalog: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "scope catalog unavailable"})
+		return
+	}
+	for _, permission := range permissions {
+		scopes = append(scopes, adminOAuthScopeDefinition{
+			Name:        permission.Name,
+			Description: permission.Description,
+			System:      permission.System,
+		})
+	}
+	respondJSON(w, http.StatusOK, adminOAuthScopeCatalogResponse{
+		OK:     true,
+		Scopes: scopes,
 	})
 }
 
@@ -375,6 +491,7 @@ func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client create failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "created", actorFromRequest(r), client, payload.Reason)
 	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
 		OK:           true,
 		Client:       mapOAuthClient(client),
@@ -412,6 +529,7 @@ func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client update failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "updated", actorFromRequest(r), client, payload.Reason)
 	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
 		OK:     true,
 		Client: mapOAuthClient(client),
@@ -428,6 +546,23 @@ func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errClientIDRequired})
 		return
 	}
+	var req adminOAuthActionRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+			return
+		}
+	}
+	client, err := oauthService.Client(r.Context(), clientID)
+	if err != nil {
+		if errors.Is(err, oauth.ErrClientNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
+			return
+		}
+		log.Printf("admin oauth rotate lookup: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client lookup failed"})
+		return
+	}
 	secret, err := oauthService.RotateClientSecret(r.Context(), clientID)
 	if err != nil {
 		if errors.Is(err, oauth.ErrClientNotFound) {
@@ -438,6 +573,7 @@ func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "secret rotation failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "secret rotated", actorFromRequest(r), client, sanitizeAdminReason(req.Reason))
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":           true,
 		"clientSecret": secret,
@@ -454,6 +590,23 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errClientIDRequired})
 		return
 	}
+	var req adminOAuthActionRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+			return
+		}
+	}
+	client, err := oauthService.Client(r.Context(), clientID)
+	if err != nil {
+		if errors.Is(err, oauth.ErrClientNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
+			return
+		}
+		log.Printf("admin oauth delete lookup: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client lookup failed"})
+		return
+	}
 	if err := oauthService.DeleteClient(r.Context(), clientID); err != nil {
 		if errors.Is(err, oauth.ErrClientNotFound) {
 			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
@@ -463,6 +616,7 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client delete failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "deleted", actorFromRequest(r), client, sanitizeAdminReason(req.Reason))
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -557,12 +711,17 @@ func adminLDAPSyncTestConnectionHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	result, err := ldapSyncSvc.TestConnection(r.Context(), ldapsync.Config{
-		LDAPHost:           cfg.LDAPHost,
-		LDAPAdminDN:        cfg.LDAPAdminDN,
-		LDAPAdminPassword:  cfg.LDAPAdminPassword,
-		BaseDN:             cfg.BaseDN,
-		LDAPStartTLS:       cfg.LDAPStartTLS,
-		DeleteStaleEntries: cfg.DeleteStaleEntries,
+		LDAPHost:             cfg.LDAPHost,
+		LDAPAdminDN:          cfg.LDAPAdminDN,
+		LDAPAdminPassword:    cfg.LDAPAdminPassword,
+		BaseDN:               cfg.BaseDN,
+		LDAPStartTLS:         cfg.LDAPStartTLS,
+		DeleteStaleEntries:   cfg.DeleteStaleEntries,
+		GroupSyncEnabled:     cfg.GroupSyncEnabled,
+		GroupSearchBaseDN:    cfg.GroupSearchBaseDN,
+		GroupNameAttribute:   cfg.GroupNameAttribute,
+		GroupMemberAttribute: cfg.GroupMemberAttribute,
+		GroupRoleMappings:    mapLDAPGroupRoleMappings(cfg.GroupRoleMappings),
 	})
 	if err != nil {
 		respondJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
@@ -631,6 +790,39 @@ func mapOAuthClient(c oauth.Client) adminOAuthClient {
 	}
 }
 
+func actorFromRequest(r *http.Request) string {
+	actor := strings.TrimSpace(usernameFrom(r.Context()))
+	if actor == "" {
+		return "admin"
+	}
+	return actor
+}
+
+func recordOAuthAudit(ctx context.Context, action string, actor string, client oauth.Client, reason string) {
+	if configStore == nil {
+		return
+	}
+	name := strings.TrimSpace(client.Name)
+	if name == "" {
+		name = client.ClientID
+	}
+	message := fmt.Sprintf("Client %s: %s (%s)", strings.TrimSpace(action), name, client.ClientID)
+	err := configStore.AppendHistory(ctx, configstore.SectionOAuth, adminOAuthAuditPayload{
+		Action:       strings.TrimSpace(action),
+		ClientID:     strings.TrimSpace(client.ClientID),
+		Name:         strings.TrimSpace(client.Name),
+		RedirectURIs: append([]string(nil), client.RedirectURIs...),
+		Scopes:       append([]string(nil), client.Scopes...),
+	}, configstore.UpdateOptions{
+		Key:       oauthHistoryKey,
+		UpdatedBy: actor,
+		Reason:    sanitizeAdminReason(firstNonEmpty(strings.TrimSpace(reason), message)),
+	})
+	if err != nil {
+		log.Printf("admin oauth audit failed: %v", err)
+	}
+}
+
 func sanitizeOAuthClientRequest(req adminOAuthClientRequest) (adminOAuthClientRequest, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -650,11 +842,41 @@ func sanitizeOAuthClientRequest(req adminOAuthClientRequest) (adminOAuthClientRe
 	if len(scopes) == 0 {
 		scopes = []string{"openid", "profile", "email"}
 	}
+	if err := validateOAuthScopes(scopes); err != nil {
+		return adminOAuthClientRequest{}, err
+	}
 	return adminOAuthClientRequest{
 		Name:         name,
 		RedirectURIs: redirects,
 		Scopes:       scopes,
+		Reason:       sanitizeAdminReason(req.Reason),
 	}, nil
+}
+
+func validateOAuthScopes(scopes []string) error {
+	allowed := make(map[string]struct{}, 16)
+	for _, scope := range []string{"openid", "profile", "email", "offline_access"} {
+		allowed[scope] = struct{}{}
+	}
+	if db != nil {
+		available, err := listPermissionNames()
+		if err != nil {
+			return errors.New("scope validation failed")
+		}
+		for _, scope := range available {
+			allowed[normalizeRBACName(scope)] = struct{}{}
+		}
+	}
+	for _, scope := range scopes {
+		scope = normalizeRBACName(scope)
+		if scope == "" {
+			continue
+		}
+		if _, ok := allowed[scope]; !ok {
+			return fmt.Errorf("unknown oauth scope %q", scope)
+		}
+	}
+	return nil
 }
 
 func normalizeAdminStringList(values []string) []string {
@@ -738,9 +960,10 @@ func normalizeServiceLinks(links []AppServiceLink) []AppServiceLink {
 		}
 		seen[key] = struct{}{}
 		normalized = append(normalized, AppServiceLink{
-			Name:  name,
-			URL:   rawURL,
-			Color: strings.TrimSpace(link.Color),
+			Name:               name,
+			URL:                rawURL,
+			Color:              strings.TrimSpace(link.Color),
+			RequiredPermission: normalizeRBACName(link.RequiredPermission),
 		})
 		if len(normalized) >= 20 {
 			break
@@ -837,6 +1060,15 @@ func validateServiceLinkEntry(idx int, item AppServiceLink) error {
 	if color := strings.TrimSpace(item.Color); color != "" && !isValidServiceLinkColor(color) {
 		return fmt.Errorf("service link %d color must be a #RRGGBB value", idx+1)
 	}
+	if permission := normalizeRBACName(item.RequiredPermission); permission != "" {
+		var exists bool
+		if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM permissions WHERE name = $1)`, permission).Scan(&exists); err != nil {
+			return fmt.Errorf("service link %d permission lookup failed", idx+1)
+		}
+		if !exists {
+			return fmt.Errorf("service link %d permission %q does not exist", idx+1, permission)
+		}
+	}
 	return nil
 }
 
@@ -868,21 +1100,30 @@ func normalizeLDAPSyncConfig(cfg *LDAPSyncConfig) {
 	cfg.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPAdminDN, defaults.LDAPAdminDN))
 	cfg.LDAPAdminPassword = strings.TrimSpace(firstNonEmpty(cfg.LDAPAdminPassword, defaults.LDAPAdminPassword))
 	cfg.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.BaseDN, defaults.BaseDN))
+	cfg.GroupSearchBaseDN = strings.TrimSpace(firstNonEmpty(cfg.GroupSearchBaseDN, defaults.GroupSearchBaseDN))
+	cfg.GroupNameAttribute = strings.TrimSpace(firstNonEmpty(cfg.GroupNameAttribute, defaults.GroupNameAttribute))
+	cfg.GroupMemberAttribute = strings.TrimSpace(firstNonEmpty(cfg.GroupMemberAttribute, defaults.GroupMemberAttribute))
 	cfg.ScheduleFrequency = strings.ToLower(strings.TrimSpace(firstNonEmpty(cfg.ScheduleFrequency, defaults.ScheduleFrequency)))
 	cfg.ScheduleTimeOfDay = strings.TrimSpace(firstNonEmpty(cfg.ScheduleTimeOfDay, defaults.ScheduleTimeOfDay))
 	cfg.ScheduleDayOfWeek = strings.ToLower(strings.TrimSpace(firstNonEmpty(cfg.ScheduleDayOfWeek, defaults.ScheduleDayOfWeek)))
 	if cfg.ScheduleMinute < 0 || cfg.ScheduleMinute > 59 {
 		cfg.ScheduleMinute = defaults.ScheduleMinute
 	}
+	cfg.GroupRoleMappings = normalizeLDAPGroupRoleMappings(cfg.GroupRoleMappings)
 }
 
 func validateLDAPSyncConfig(cfg LDAPSyncConfig) error {
 	if err := ldapsync.ValidateConfig(ldapsync.Config{
-		LDAPHost:          cfg.LDAPHost,
-		LDAPAdminDN:       cfg.LDAPAdminDN,
-		LDAPAdminPassword: cfg.LDAPAdminPassword,
-		BaseDN:            cfg.BaseDN,
-		LDAPStartTLS:      cfg.LDAPStartTLS,
+		LDAPHost:             cfg.LDAPHost,
+		LDAPAdminDN:          cfg.LDAPAdminDN,
+		LDAPAdminPassword:    cfg.LDAPAdminPassword,
+		BaseDN:               cfg.BaseDN,
+		LDAPStartTLS:         cfg.LDAPStartTLS,
+		GroupSyncEnabled:     cfg.GroupSyncEnabled,
+		GroupSearchBaseDN:    cfg.GroupSearchBaseDN,
+		GroupNameAttribute:   cfg.GroupNameAttribute,
+		GroupMemberAttribute: cfg.GroupMemberAttribute,
+		GroupRoleMappings:    mapLDAPGroupRoleMappings(cfg.GroupRoleMappings),
 	}); err != nil {
 		return err
 	}
@@ -906,6 +1147,51 @@ func validateLDAPSyncConfig(cfg LDAPSyncConfig) error {
 		}
 	}
 	return nil
+}
+
+func normalizeLDAPGroupRoleMappings(values []LDAPGroupRoleMapping) []LDAPGroupRoleMapping {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]LDAPGroupRoleMapping, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		group := strings.TrimSpace(value.LDAPGroup)
+		role := normalizeRBACName(value.Role)
+		if group == "" || role == "" {
+			continue
+		}
+		key := strings.ToLower(group) + "|" + role
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, LDAPGroupRoleMapping{
+			LDAPGroup: group,
+			Role:      role,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if strings.EqualFold(out[i].LDAPGroup, out[j].LDAPGroup) {
+			return out[i].Role < out[j].Role
+		}
+		return strings.ToLower(out[i].LDAPGroup) < strings.ToLower(out[j].LDAPGroup)
+	})
+	return out
+}
+
+func mapLDAPGroupRoleMappings(values []LDAPGroupRoleMapping) []ldapsync.GroupRoleMapping {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]ldapsync.GroupRoleMapping, 0, len(values))
+	for _, value := range values {
+		out = append(out, ldapsync.GroupRoleMapping{
+			LDAPGroup: strings.TrimSpace(value.LDAPGroup),
+			Role:      normalizeRBACName(value.Role),
+		})
+	}
+	return out
 }
 
 var serviceLinkColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)

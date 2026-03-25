@@ -82,7 +82,7 @@ export const createRecentChangesController = ({
     if (!recentChangesModal || !recentChangesList) {
       return;
     }
-    if (isConfigSection(section)) {
+    if (typeof fetchHistory === 'function') {
       try {
         await fetchHistory(section);
       } catch (error_) {

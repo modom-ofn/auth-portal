@@ -50,8 +50,15 @@ AuthPortal authenticates users directly against their connected media server acc
 
 - **Runtime configuration & admin console**
   - Web-based editing of Providers, Security, MFA, App Settings, and LDAP Sync config with versioning and history
-  - OAuth client management (list/create/update/delete + secret rotation) without leaving the browser
+  - Access Control tab for RBAC roles, permissions, and manual user-role bindings
+  - OAuth client management (list/create/update/delete + secret rotation) with persistent audit history and change reasons
   - Config backup tab with manual exports, scheduled runs (hourly/daily/weekly), retention, and one-click restore/download actions
+
+- **RBAC, app entitlements, and directory mapping**
+  - Database-backed roles, permissions, role-permission mappings, and user-role bindings
+  - Seeded system roles: `admin`, `viewer`, and `user`
+  - Optional LDAP group-to-role synchronization during LDAP sync runs
+  - Permission-gated portal app buttons and permission-backed OAuth scopes for downstream apps
 
 - **First-party OAuth 2.1 / OIDC**
   - Authorization-code + PKCE, optional `offline_access` refresh rotation, RS256-signed ID tokens
@@ -72,9 +79,10 @@ Frame descriptions (alt text):
 6. Admin Security tab for session and authentication controls.
 7. Admin MFA settings tab with enforcement and recovery options.
 8. Admin App Settings tab for portal behavior and branding controls.
-9. Admin OAuth Clients tab showing client cards and management actions.
-10. Admin LDAP Sync tab with connection testing, scheduling, and run history.
-11. Admin Backups tab with exports, scheduling, retention, and restore actions.
+9. Admin OAuth Clients tab showing client cards, scope selection, audit reasons, and management actions.
+10. Admin LDAP Sync tab with connection testing, scheduling, group-role mapping, and run history.
+11. Admin Access Control tab for roles, permissions, and user bindings.
+12. Admin Backups tab with exports, scheduling, retention, and restore actions.
 
 ---
 
@@ -112,8 +120,13 @@ Frame descriptions (alt text):
 
 ## What's New in v2.0.5
 
+- **RBAC is now built into AuthPortal:** AuthPortal now has database-backed roles, permissions, role bindings, and permission middleware instead of relying only on a broad admin flag.
+- **Access Control admin tab:** operators can create custom roles and custom permissions, assign permissions to roles, and manage manual user-role bindings from the browser.
+- **Permission-aware app entitlements:** App Settings service buttons can require a selected custom permission, and downstream OAuth/OIDC clients can request those same permissions as scopes.
+- **OAuth client scope and audit improvements:** OAuth Clients now uses a scope picker backed by the RBAC permission catalog, stores persistent Recent Changes audit history server-side, and captures admin-supplied change reasons for create/update/delete/rotate actions.
 - **LDAP Sync is now first-class in AuthPortal:** the former standalone `ldap-sync` companion workflow is replaced by a built-in `LDAP Sync` admin tab with persisted runtime config.
 - **Manual and scheduled LDAP sync runs:** run syncs on demand or on an hourly/daily/weekly schedule directly from the admin console, with next-run calculation and persisted run history.
+- **LDAP group-to-role mapping:** optional LDAP group synchronization can map directory groups onto RBAC roles during sync.
 - **Connection validation before save/run:** test LDAP connectivity, bind credentials, and Base DN reachability from the UI before committing config.
 - **Safe stale-entry cleanup:** optional deletion of stale LDAP records now only targets entries previously marked as AuthPortal-managed under the configured Base DN.
 - **Improved LDAP observability and UX:** per-user sync failures are logged with the affected username, completion summaries are logged per run, and the admin panel now exposes structured connection-test results, Recent Changes integration, and a cleaner sectioned layout.
@@ -145,6 +158,7 @@ What it does:
 - Supports manual sync and built-in hourly/daily/weekly scheduling.
 - Records recent run history in the admin UI.
 - Optionally deletes stale LDAP entries that were previously marked as managed by AuthPortal.
+- Optionally maps LDAP groups to RBAC roles during sync when group sync is enabled.
 
 What changed from the old workflow:
 
@@ -159,6 +173,7 @@ Operational notes:
 - `Base DN Exists = FAIL` and `Base DN Creatable = PASS` means AuthPortal should be able to create the branch on the first sync.
 - `Base DN Exists = FAIL` and `Base DN Creatable = FAIL` means you need to fix the directory layout or LDAP ACLs first.
 - Stale deletion only applies to entries previously stamped as AuthPortal-managed.
+- When LDAP group sync is enabled, configure the group search base DN, group name/member attributes, and at least one LDAP group-to-role mapping before saving.
 
 ---
 
@@ -425,11 +440,13 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
 - Providers, Security, MFA, App Settings, and LDAP Sync settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
 - Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
-- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation) backed by the `/api/admin/oauth/*` endpoints.
+- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation), persistent recent-change audit history, and change reasons backed by the `/api/admin/oauth/*` endpoints.
+- The Access Control tab exposes RBAC role, permission, and manual binding management backed by the `/api/admin/rbac/*` endpoints.
 
 ### LDAP Sync (new in v2.0.5)
 
 - The **LDAP Sync** tab under `/admin` manages LDAP host/bind/Base-DN settings, StartTLS, optional stale-entry deletion, manual sync runs, and the built-in scheduler.
+- Optional group sync in the same tab can map LDAP groups to AuthPortal RBAC roles.
 - The `Test Connection` action validates connect, bind, Base DN existence, and Base DN creatability before you save or sync.
 - Scheduled runs support `hourly`, `daily`, and `weekly` timing directly in the UI and are reflected in the `Next Scheduled Run` panel state.
 - Recent sync history includes manual and scheduled runs with trigger source, timestamps, result status, entry counts, and summary/error output.
@@ -453,7 +470,16 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - `/oidc/token` handles `authorization_code` and `refresh_token` grants. Refresh tokens rotate on every use and are only issued when the `offline_access` scope is granted.
 - `/oidc/userinfo` returns `sub`, `preferred_username`, and optional email claims based on granted scopes. ID tokens are RS256-signed and echo the incoming `nonce`.
 - Provide signing material with `OIDC_SIGNING_KEY_PATH` (PEM on disk) or inline `OIDC_SIGNING_KEY`; override the advertised issuer with `OIDC_ISSUER` when running behind a reverse proxy.
-- Register clients through the admin console (OAuth tab) or the REST API: `GET/POST /api/admin/oauth/clients`, `PUT/DELETE /api/admin/oauth/clients/{id}`, and `POST /api/admin/oauth/clients/{id}/rotate-secret`.
+- Register clients through the admin console (OAuth tab) or the REST API: `GET/POST /api/admin/oauth/clients`, `PUT/DELETE /api/admin/oauth/clients/{id}`, `POST /api/admin/oauth/clients/{id}/rotate-secret`, `GET /api/admin/oauth/scopes`, and `GET /api/admin/oauth/history`.
+- Custom RBAC permissions can be used as OAuth scopes, which lets downstream apps request app-specific entitlements such as `audiobookshelf.read`.
+
+### RBAC / Access Control (new in v2.0.5)
+
+- AuthPortal now stores roles, permissions, role-permission assignments, and user-role bindings in Postgres.
+- Seeded system roles are `admin`, `viewer`, and `user`; system permissions protect core admin surfaces such as config, LDAP, backups, OAuth, and RBAC management.
+- The **Access Control** tab under `/admin` lets operators create custom permissions and custom roles, assign permissions to roles, and manage manual role bindings for users.
+- App Settings service links can require a selected permission. If no permission is selected, the button is shown to all authorized users.
+- `/whoami` and `/me` now expose the caller's effective roles and permissions for downstream integrations.
 
 ### Multi-factor authentication
 
@@ -508,6 +534,7 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 
 - Token sealing: tokens are encrypted with `DATA_KEY` before DB insert/update. Unseal on read; failures clear the in-memory token.
 - Cookies: Session and pending-MFA cookies honour `SESSION_COOKIE_DOMAIN`; they are HTTP-only, SameSite=Lax, and rotate after successful MFA. `Secure` is automatic when `APP_BASE_URL` is HTTPS, or force it with `FORCE_SECURE_COOKIE=1`.
+- Authorization: admin and downstream-app access is enforced through RBAC permissions, not just a legacy admin boolean. Custom app permissions can gate portal links and OAuth scopes.
 - Rate limits: login endpoints share a per-IP limiter (burst 5, ~10 req/min); MFA enrollment/challenge use a tighter burst 3, ~5 req/min (tune in `main.go`).
 - CSRF-lite: POST routes require same-origin via Origin/Referer.
 - Headers:
@@ -553,6 +580,15 @@ CREATE TABLE IF NOT EXISTS pins (
 - Writes: app upserts into both `users` and `identities` (transition-friendly).
 - Reads: prefer `identities` then fallback to `users` where needed.
 
+### RBAC tables
+
+- `roles`: role catalog with seeded system roles and custom roles.
+- `permissions`: permission catalog containing system permissions plus admin-defined custom permissions.
+- `role_permissions`: many-to-many mapping between roles and permissions.
+- `user_roles`: user-role assignments, including manual and LDAP-synchronized sources.
+
+These tables are created and migrated automatically at startup. Existing legacy admin users are backfilled into the seeded `admin` role during upgrade.
+
 ---
 
 ## Build & Images
@@ -586,8 +622,8 @@ DEBUG plex: resources match via machine id
 - **Core portal**
   - `GET /`  login page (auto-redirects to `/home` if session present).
   - `GET /home`  renders authorized or unauthorized view based on `IsAuthorized`.
-  - `GET /whoami`  JSON: normalized identity and session metadata.
-  - `GET /me`  JSON `{ username, uuid }` when logged in.
+  - `GET /whoami`  JSON: normalized identity, session metadata, effective roles, and effective permissions.
+  - `GET /me`  JSON profile summary including username, uuid, roles, and permissions when logged in.
   - `POST /logout`  clears cookies; same-origin required.
   - `GET /static/*`  static assets.
 
@@ -621,14 +657,25 @@ DEBUG plex: resources match via machine id
   - `GET /api/admin/config`  returns the admin configuration bundle, including Providers, Security, MFA, App Settings, and LDAP Sync.
   - `PUT /api/admin/config/{section}`  update a configuration section with optimistic concurrency.
   - `GET /api/admin/config/history/{section}`  fetch prior revisions.
+  - `GET /api/admin/config/permissions`  list custom permissions allowed in App Settings service-link gating.
   - `GET /api/admin/ldap-sync`  fetch LDAP sync config, scheduler status, and recent runs.
   - `POST /api/admin/ldap-sync/test-connection`  validate LDAP connectivity and Base DN readiness using the submitted form values without saving them.
   - `POST /api/admin/ldap-sync/run`  trigger a manual LDAP sync run.
   - `GET /api/admin/oauth/clients`  list registered OAuth clients.
+  - `GET /api/admin/oauth/history`  fetch persistent OAuth Recent Changes audit history.
+  - `GET /api/admin/oauth/scopes`  list standard OIDC scopes plus custom RBAC permission scopes.
   - `POST /api/admin/oauth/clients`  create a new client.
   - `PUT /api/admin/oauth/clients/{id}`  update client metadata.
   - `DELETE /api/admin/oauth/clients/{id}`  delete a client.
   - `POST /api/admin/oauth/clients/{id}/rotate-secret`  rotate client secret and return the new value.
+  - `GET /api/admin/rbac`  fetch roles, permissions, and current bindings.
+  - `PUT /api/admin/rbac/bindings`  create or replace manual user-role bindings.
+  - `POST /api/admin/rbac/roles`  create a custom role.
+  - `PUT /api/admin/rbac/roles/{name}`  update a role definition.
+  - `DELETE /api/admin/rbac/roles/{name}`  delete a custom role.
+  - `POST /api/admin/rbac/permissions`  create a custom permission.
+  - `PUT /api/admin/rbac/permissions/{name}`  update a custom permission.
+  - `DELETE /api/admin/rbac/permissions/{name}`  delete a custom permission.
   - `GET /api/admin/backups`  return the current schedule metadata plus available backup files.
   - `POST /api/admin/backups`  create a manual backup for the selected sections.
   - `PUT /api/admin/backups/schedule`  update the automated backup schedule (frequency, sections, retention).
@@ -738,18 +785,25 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ## Upgrade Guide (to v2.0.5)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.5` so you pick up the built-in LDAP Sync admin module and scheduler improvements.
+1) Rebuild or pull `modomofn/auth-portal:v2.0.5` so you pick up the RBAC, LDAP Sync, and admin audit improvements.
 2) If you previously used the standalone `ldap-sync` workflow, migrate that configuration into `Admin -> LDAP Sync` and stop relying on the external repo/service.
 3) If your compose/docs still reference `ldap-seed` for `ou=users`, remove that dependency unless you intentionally seed extra LDAP structure outside AuthPortal-managed sync.
-4) Review LDAP behavior before enabling stale deletion:
+4) Review the new Access Control model:
+   - Existing legacy admin users are backfilled into the seeded `admin` role.
+   - Use `Admin -> Access Control` to manage custom roles, custom permissions, and manual user-role bindings.
+   - If you expose downstream apps through App Settings or OAuth, create app-specific permissions first and assign them through roles.
+5) Review LDAP behavior before enabling stale deletion or group-role synchronization:
    - Leave `Delete stale AuthPortal-managed LDAP entries` off until at least one successful built-in sync has updated the entries you want AuthPortal to own.
    - Verify the bind account has permission to create entries under the configured Base DN.
-5) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
-6) Decide on MFA posture:
+   - If you enable LDAP group sync, verify the group search base DN, name/member attributes, and group-to-role mappings first.
+6) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
+7) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.
    - Flip `MFA_ENFORCE=1` if everyone must pass MFA on login; keep `MFA_ENABLE=1` in that case.
-7) Verify end-to-end:
+8) Verify end-to-end:
    - Existing users can log in, enroll, and download recovery codes.
    - Enforced logins reach `/mfa/challenge` and succeed with both TOTP codes and a recovery code.
    - Repeated bad logins or code attempts return HTTP 429 from the per-IP rate limiters.
    - LDAP `Test Connection` passes, a manual LDAP sync succeeds, and scheduled runs appear in `Recent Sync Runs` when enabled.
+   - Access Control role assignments behave as expected for admin surfaces and app-specific entitlements.
+   - OAuth clients can request intended custom permission scopes and their Recent Changes history records the admin-supplied reason.

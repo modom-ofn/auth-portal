@@ -3,18 +3,29 @@
 ## v2.0.5 - 2026-03-13
 
 ### Highlights
+- Added RBAC to AuthPortal with database-backed roles, permissions, role-permission mappings, and user-role bindings; seeded system roles are `admin`, `viewer`, and `user`.
+- Added an `Access Control` admin tab for role CRUD, permission CRUD, and manual user-role binding management, including support for custom downstream-app permissions.
+- Added permission middleware and route enforcement so admin/API access is checked through explicit permissions instead of a broad legacy admin flag.
+- Added permission-aware App Settings service buttons so portal app links can be shown to all users or gated by a selected custom permission.
+- Extended OAuth client management to use the RBAC permission catalog as selectable scopes, enabling downstream apps to request custom entitlements such as app-specific `*.read` permissions.
+- Added persistent server-side OAuth audit history with Recent Changes support and explicit admin-supplied change reasons for create, update, delete, and secret rotation actions.
 - Merged LDAP sync into AuthPortal as a built-in admin module, removing the need for the old standalone `ldap-sync` workflow in the recommended deployment path.
 - Added a dedicated `LDAP Sync` admin tab with persisted config, manual `Run Sync`, connection testing, and Recent Changes integration.
 - Added built-in LDAP scheduling with hourly/daily/weekly cadence, next-run calculation, scheduled/manual run history, and per-run summary reporting in the UI.
+- Added optional LDAP group-to-role mapping and group synchronization so LDAP directory groups can grant or revoke RBAC roles during sync.
 - Added structured LDAP connection-test diagnostics for connect, bind, Base DN existence, and Base DN creatability, including inline status badges and clearer helper text.
 - Added LDAP Sync config import/export support from the tab so operators can move settings between environments without hand-editing JSON.
 - Added optional stale-entry cleanup that only deletes LDAP entries previously marked as AuthPortal-managed under the configured Base DN.
 - Improved LDAP observability: per-user add/update/failure logging, stale-delete failure logging, and final run summary lines now appear in application logs.
+- Hardened RBAC migrations for legacy or partially migrated databases, including `user_roles` compatibility upgrades, missing-column repair, unique/index repair, and sequence recovery during startup.
 - Simplified docs and example compose files by removing the bundled `openldap` / `phpldapadmin` stack; LDAP is now documented as an optional external integration chosen by the operator.
 
 ### Upgrade Notes
-- Bump image tags/config references to `v2.0.5` and rebuild so you pick up the built-in LDAP Sync functionality and scheduler fixes.
+- Bump image tags/config references to `v2.0.5` and rebuild so you pick up RBAC, built-in LDAP Sync, and OAuth audit improvements.
+- Review the new `Access Control` tab after upgrade; existing legacy admin users are migrated into the seeded `admin` role automatically.
+- If you expose downstream apps through the portal or OAuth, define custom permissions/roles first so app links and client scopes can be permission-gated cleanly.
 - If you previously used the standalone `ldap-sync` repo or container, migrate those settings into `Admin -> LDAP Sync` and retire the external workflow.
+- If you plan to use LDAP group sync, verify the group search base DN, group name/member attributes, and group-to-role mappings before enabling scheduled runs.
 - If you enable stale-entry deletion, wait until at least one successful built-in sync has touched the entries you want AuthPortal to own before turning deletion on.
 - Point `LDAP_HOST` and related LDAP variables at your existing directory service; the sample compose no longer ships a bundled LDAP implementation.
 - No manual database migration is required beyond normal startup migrations.

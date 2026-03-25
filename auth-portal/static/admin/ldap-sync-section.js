@@ -16,6 +16,12 @@ export const createLDAPSyncSectionController = ({
   baseDnInput,
   startTlsInput,
   deleteStaleInput,
+  groupSyncEnabledInput,
+  groupSearchBaseDnInput,
+  groupNameAttributeInput,
+  groupMemberAttributeInput,
+  groupRoleMappingList,
+  groupRoleAddBtn,
   scheduleEnabledInput,
   frequencyInput,
   timeInput,
@@ -79,11 +85,17 @@ export const createLDAPSyncSectionController = ({
     if (saveBtn) {
       saveBtn.disabled = busy;
     }
-    [hostInput, adminDnInput, passwordInput, baseDnInput, startTlsInput, deleteStaleInput, scheduleEnabledInput, frequencyInput, timeInput, weekdayInput, minuteInput, reasonInput]
+    if (groupRoleAddBtn) {
+      groupRoleAddBtn.disabled = state.saving || state.testing || state.running;
+    }
+    [hostInput, adminDnInput, passwordInput, baseDnInput, startTlsInput, deleteStaleInput, groupSyncEnabledInput, groupSearchBaseDnInput, groupNameAttributeInput, groupMemberAttributeInput, scheduleEnabledInput, frequencyInput, timeInput, weekdayInput, minuteInput, reasonInput]
       .filter(Boolean)
       .forEach((input) => {
         input.disabled = state.saving || state.testing || state.running;
       });
+    groupRoleMappingList?.querySelectorAll('input, select, button').forEach((control) => {
+      control.disabled = state.saving || state.testing || state.running;
+    });
   };
 
   const updateScheduleVisibility = () => {
@@ -121,6 +133,18 @@ export const createLDAPSyncSectionController = ({
     if (deleteStaleInput) {
       deleteStaleInput.checked = Boolean(config.deleteStaleEntries);
     }
+    if (groupSyncEnabledInput) {
+      groupSyncEnabledInput.checked = Boolean(config.groupSyncEnabled);
+    }
+    if (groupSearchBaseDnInput) {
+      groupSearchBaseDnInput.value = config.groupSearchBaseDn || '';
+    }
+    if (groupNameAttributeInput) {
+      groupNameAttributeInput.value = config.groupNameAttribute || 'cn';
+    }
+    if (groupMemberAttributeInput) {
+      groupMemberAttributeInput.value = config.groupMemberAttribute || 'memberUid';
+    }
     if (scheduleEnabledInput) {
       scheduleEnabledInput.checked = Boolean(config.scheduleEnabled);
     }
@@ -136,7 +160,66 @@ export const createLDAPSyncSectionController = ({
     if (minuteInput) {
       minuteInput.value = typeof config.scheduleMinute === 'number' ? config.scheduleMinute : 15;
     }
+    renderGroupRoleMappings(config.groupRoleMappings || []);
     updateScheduleVisibility();
+  };
+
+  const createGroupMappingRow = (mapping = {}) => {
+    const row = document.createElement('div');
+    row.className = 'rbac-binding-row';
+
+    const groupInput = document.createElement('input');
+    groupInput.type = 'text';
+    groupInput.placeholder = 'cn=admins,ou=groups,dc=example,dc=com';
+    groupInput.value = mapping.ldapGroup || '';
+    groupInput.dataset.field = 'ldapGroup';
+
+    const roleSelect = document.createElement('select');
+    roleSelect.dataset.field = 'role';
+    ['admin', 'viewer', 'user'].forEach((role) => {
+      const option = document.createElement('option');
+      option.value = role;
+      option.textContent = role;
+      roleSelect.appendChild(option);
+    });
+    roleSelect.value = mapping.role || 'viewer';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'danger-btn';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
+      row.remove();
+    });
+
+    row.append(groupInput, roleSelect, removeBtn);
+    return row;
+  };
+
+  const renderGroupRoleMappings = (mappings = []) => {
+    if (!groupRoleMappingList) {
+      return;
+    }
+    groupRoleMappingList.innerHTML = '';
+    const safeMappings = Array.isArray(mappings) && mappings.length ? mappings : [];
+    safeMappings.forEach((mapping) => {
+      groupRoleMappingList.appendChild(createGroupMappingRow(mapping));
+    });
+    if (!safeMappings.length) {
+      groupRoleMappingList.appendChild(createGroupMappingRow());
+    }
+  };
+
+  const readGroupRoleMappings = () => {
+    if (!groupRoleMappingList) {
+      return [];
+    }
+    return Array.from(groupRoleMappingList.querySelectorAll('.rbac-binding-row'))
+      .map((row) => ({
+        ldapGroup: row.querySelector('[data-field="ldapGroup"]')?.value?.trim() || '',
+        role: row.querySelector('[data-field="role"]')?.value?.trim() || '',
+      }))
+      .filter((item) => item.ldapGroup && item.role);
   };
 
   const renderStatus = () => {
@@ -247,6 +330,11 @@ export const createLDAPSyncSectionController = ({
     baseDn: baseDnInput?.value?.trim() || '',
     ldapStartTls: Boolean(startTlsInput?.checked),
     deleteStaleEntries: Boolean(deleteStaleInput?.checked),
+    groupSyncEnabled: Boolean(groupSyncEnabledInput?.checked),
+    groupSearchBaseDn: groupSearchBaseDnInput?.value?.trim() || '',
+    groupNameAttribute: groupNameAttributeInput?.value?.trim() || '',
+    groupMemberAttribute: groupMemberAttributeInput?.value?.trim() || '',
+    groupRoleMappings: readGroupRoleMappings(),
     scheduleEnabled: Boolean(scheduleEnabledInput?.checked),
     scheduleFrequency: frequencyInput?.value || 'daily',
     scheduleTimeOfDay: timeInput?.value || '',
@@ -457,6 +545,11 @@ export const createLDAPSyncSectionController = ({
     }
     if (scheduleEnabledInput) {
       scheduleEnabledInput.addEventListener('change', updateScheduleVisibility);
+    }
+    if (groupRoleAddBtn) {
+      groupRoleAddBtn.addEventListener('click', () => {
+        groupRoleMappingList?.appendChild(createGroupMappingRow());
+      });
     }
   };
 

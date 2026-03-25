@@ -115,12 +115,20 @@ func (m *ldapSyncManager) Run(ctx context.Context, actor, triggerType string) (l
 	cfg := currentRuntimeConfig().LDAPSync
 	startedAt := time.Now().UTC()
 	result, err := m.service.Run(ctx, ldapsync.Config{
-		LDAPHost:           cfg.LDAPHost,
-		LDAPAdminDN:        cfg.LDAPAdminDN,
-		LDAPAdminPassword:  cfg.LDAPAdminPassword,
-		BaseDN:             cfg.BaseDN,
-		LDAPStartTLS:       cfg.LDAPStartTLS,
-		DeleteStaleEntries: cfg.DeleteStaleEntries,
+		LDAPHost:             cfg.LDAPHost,
+		LDAPAdminDN:          cfg.LDAPAdminDN,
+		LDAPAdminPassword:    cfg.LDAPAdminPassword,
+		BaseDN:               cfg.BaseDN,
+		LDAPStartTLS:         cfg.LDAPStartTLS,
+		DeleteStaleEntries:   cfg.DeleteStaleEntries,
+		GroupSyncEnabled:     cfg.GroupSyncEnabled,
+		GroupSearchBaseDN:    cfg.GroupSearchBaseDN,
+		GroupNameAttribute:   cfg.GroupNameAttribute,
+		GroupMemberAttribute: cfg.GroupMemberAttribute,
+		GroupRoleMappings:    mapLDAPGroupRoleMappings(cfg.GroupRoleMappings),
+		ApplyGroupRoleMapping: func(role, group string, usernames []string) (int, int, error) {
+			return syncUsersToRole(role, usernames, "ldap-group", group, actor)
+		},
 	}, actor)
 	finishedAt := time.Now().UTC()
 	if recordErr := m.recordRun(startedAt, finishedAt, actor, triggerType, result, err); recordErr != nil {

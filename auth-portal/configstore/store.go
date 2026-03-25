@@ -22,6 +22,7 @@ const (
 	SectionAppSettings Section = "app-settings"
 	SectionLDAPSync    Section = "ldap-sync"
 	SectionBackups     Section = "backups"
+	SectionOAuth       Section = "oauth"
 
 	// SectionDocumentKey is the default key used to persist a full section document.
 	SectionDocumentKey = "__doc"
@@ -259,6 +260,34 @@ VALUES ($1, $2, $3, $4, now(), NULLIF($5, ''), NULLIF($6, ''))
 	}
 
 	return s.reload(ctx)
+}
+
+// AppendHistory records a history-only audit entry without updating app_config.
+func (s *Store) AppendHistory(ctx context.Context, section Section, payload any, uopts UpdateOptions) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	key := strings.TrimSpace(uopts.Key)
+	if key == "" {
+		key = SectionDocumentKey
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("configstore: marshal history entry for %s: %w", section, err)
+	}
+
+	updatedBy := strings.TrimSpace(uopts.UpdatedBy)
+	reason := strings.TrimSpace(uopts.Reason)
+
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO app_config_history (namespace, key, value, version, updated_at, updated_by, change_reason)
+SELECT $1, $2, $3, COALESCE(MAX(version), 0) + 1, now(), NULLIF($4, ''), NULLIF($5, '')
+  FROM app_config_history
+ WHERE namespace = $1
+   AND key = $2
+`, string(section), key, raw, updatedBy, reason)
+	return err
 }
 
 func (s *Store) reload(ctx context.Context) (Snapshot, error) {

@@ -3,6 +3,8 @@ export const createConfigFormsController = (configFields) => {
     throw new Error('config fields root is required');
   }
 
+  let permissionOptions = [];
+
   const queryField = (id) => configFields.querySelector(`#${id}`);
 
   const setFieldValue = (id, value) => {
@@ -54,7 +56,38 @@ export const createConfigFormsController = (configFields) => {
     empty.hidden = container.querySelectorAll('.service-link-row').length > 0;
   };
 
-  const renderServiceLinkRow = (name = '', url = '', color = '#0a5a35') => {
+  const buildPermissionSelect = (selectedValue = '') => {
+    const select = document.createElement('select');
+    select.className = 'service-link-permission';
+    select.title = 'Optional RBAC permission required before this button is shown on the authorized portal page.';
+
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = 'Show To All Users';
+    select.appendChild(blank);
+
+    permissionOptions.forEach((permission) => {
+      const option = document.createElement('option');
+      option.value = permission.name;
+      option.textContent = permission.name;
+      if (selectedValue && permission.name === selectedValue) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+
+    if (selectedValue && !permissionOptions.some((permission) => permission.name === selectedValue)) {
+      const custom = document.createElement('option');
+      custom.value = selectedValue;
+      custom.textContent = `${selectedValue} (Unavailable)`;
+      custom.selected = true;
+      select.appendChild(custom);
+    }
+
+    return select;
+  };
+
+  const renderServiceLinkRow = (name = '', url = '', color = '#0a5a35', requiredPermission = '') => {
     const row = document.createElement('div');
     row.className = 'service-link-row';
 
@@ -77,7 +110,7 @@ export const createConfigFormsController = (configFields) => {
     const urlLabel = document.createElement('label');
     urlLabel.textContent = 'Button URL';
     const urlInput = document.createElement('input');
-    urlInput.type = 'url';
+    urlInput.type = 'text';
     urlInput.className = 'service-link-url';
     urlInput.placeholder = '/home or https://example.com';
     urlInput.value = url;
@@ -97,6 +130,14 @@ export const createConfigFormsController = (configFields) => {
     colorRow.appendChild(colorLabel);
     colorRow.appendChild(colorInput);
 
+    const permissionRow = document.createElement('div');
+    permissionRow.className = 'config-form-row';
+    const permissionLabel = document.createElement('label');
+    permissionLabel.textContent = 'Required Permission';
+    const permissionInput = buildPermissionSelect(requiredPermission);
+    permissionRow.appendChild(permissionLabel);
+    permissionRow.appendChild(permissionInput);
+
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'danger-btn service-link-remove';
@@ -109,6 +150,7 @@ export const createConfigFormsController = (configFields) => {
     row.appendChild(nameRow);
     row.appendChild(urlRow);
     row.appendChild(colorRow);
+    row.appendChild(permissionRow);
     row.appendChild(removeButton);
     return row;
   };
@@ -124,6 +166,7 @@ export const createConfigFormsController = (configFields) => {
       const name = row.querySelector('.service-link-name')?.value?.trim() || '';
       const url = row.querySelector('.service-link-url')?.value?.trim() || '';
       const color = row.querySelector('.service-link-color')?.value?.trim() || '';
+      const requiredPermission = row.querySelector('.service-link-permission')?.value?.trim() || '';
       if (!name || !url) {
         return;
       }
@@ -132,7 +175,7 @@ export const createConfigFormsController = (configFields) => {
         return;
       }
       seen.add(key);
-      links.push({ name, url, color });
+      links.push({ name, url, color, requiredPermission });
     });
     return links;
   };
@@ -366,7 +409,7 @@ export const createConfigFormsController = (configFields) => {
 
     const list = queryField('service-links-list');
     (Array.isArray(config.serviceLinks) ? config.serviceLinks : []).forEach((link) => {
-      list?.appendChild(renderServiceLinkRow(link?.name || '', link?.url || '', link?.color || '#0a5a35'));
+      list?.appendChild(renderServiceLinkRow(link?.name || '', link?.url || '', link?.color || '#0a5a35', link?.requiredPermission || ''));
     });
     refreshServiceLinkEmptyState();
     const addButton = queryField('service-link-add');
@@ -469,6 +512,16 @@ export const createConfigFormsController = (configFields) => {
     renderSection,
     readSection,
     setDisabled,
+    setPermissionOptions: (values = []) => {
+      permissionOptions = Array.isArray(values)
+        ? values
+          .map((permission) => ({
+            name: (permission?.name || '').trim(),
+            description: (permission?.description || '').trim(),
+          }))
+          .filter((permission) => permission.name)
+        : [];
+    },
     setLoadingMessage: () => {
       configFields.innerHTML = '<p class="muted">Loading configuration.</p>';
     },

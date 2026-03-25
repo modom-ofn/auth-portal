@@ -135,53 +135,8 @@ func setUserAdminByUsername(username string, admin bool, grantedBy string) error
 	if username == "" {
 		return errors.New("username required")
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
-	if admin {
-		res, err := db.ExecContext(ctx, `
-UPDATE users
-   SET is_admin = TRUE,
-       admin_granted_at = COALESCE(admin_granted_at, now()),
-       admin_granted_by = NULLIF($2, ''),
-       updated_at = now(),
-       session_version = session_version + 1
- WHERE username = $1
-`, username, strings.TrimSpace(grantedBy))
-		if err != nil {
-			return err
-		}
-		rows, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if rows == 0 {
-			return sql.ErrNoRows
-		}
-		return nil
-	}
-
-	res, err := db.ExecContext(ctx, `
-UPDATE users
-   SET is_admin = FALSE,
-       admin_granted_at = NULL,
-       admin_granted_by = NULL,
-       updated_at = now(),
-       session_version = session_version + 1
- WHERE username = $1
-`, username)
-	if err != nil {
-		return err
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
+	source := roleAssignmentSource(grantedBy)
+	return setUserRoleByUsername(username, roleAdmin, source, grantedBy, "", admin)
 }
 
 // getUserByUUIDPreferred first tries the identities table, then falls back to
@@ -546,20 +501,34 @@ func userIsAdmin(uuid, username string) (bool, error) {
 
 func userSessionState(uuid, username string) (bool, int64, error) {
 	uuid = strings.TrimSpace(uuid)
-	if uuid != "" {
-		if u, err := getUserByUUIDPreferred(uuid); err == nil {
-			return u.IsAdmin, u.SessionVersion, nil
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			return false, 0, err
-		}
-	}
 	username = strings.TrimSpace(username)
-	if username != "" {
-		if u, err := userByUsername(username); err == nil {
-			return u.IsAdmin, u.SessionVersion, nil
-		} else if !errors.Is(err, sql.ErrNoRows) {
+
+	var (
+		u   User
+		err error
+	)
+	if uuid != "" {
+		u, err = getUserByUUIDPreferred(uuid)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return false, 0, err
 		}
 	}
-	return false, 0, sql.ErrNoRows
+	if u.ID == 0 && username != "" {
+		u, err = userByUsername(username)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return false, 0, sql.ErrNoRows
+			}
+			return false, 0, err
+		}
+	}
+	if u.ID == 0 {
+		return false, 0, sql.ErrNoRows
+	}
+
+	hasAdminAccess, _, err := userHasPermission(uuid, username, permissionAdminAccess)
+	if err != nil {
+		return false, 0, err
+	}
+	return hasAdminAccess, u.SessionVersion, nil
 }

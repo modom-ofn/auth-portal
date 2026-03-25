@@ -1,8 +1,20 @@
 import { buildAPIError } from './admin-errors.js';
 
 const requestJSON = async (url, options = {}) => {
-  const res = await fetch(url, { credentials: 'same-origin', ...options });
-  const json = await res.json();
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json');
+  }
+  const res = await fetch(url, { credentials: 'same-origin', ...options, headers });
+  const raw = await res.text();
+  let json = null;
+  if (raw) {
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      json = { ok: false, error: raw };
+    }
+  }
   return { res, json };
 };
 
@@ -84,11 +96,13 @@ export const createAdminAPI = () => {
     return json;
   };
 
-  const deleteOAuthClient = async (clientId) => {
+  const deleteOAuthClient = async (clientId, payload = {}) => {
     const { res, json } = await requestJSON(
       `/api/admin/oauth/clients/${encodeURIComponent(clientId)}`,
       {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       },
     );
     if (!res.ok || !json?.ok) {
@@ -97,11 +111,13 @@ export const createAdminAPI = () => {
     return json;
   };
 
-  const rotateOAuthSecret = async (clientId) => {
+  const rotateOAuthSecret = async (clientId, payload = {}) => {
     const { res, json } = await requestJSON(
       `/api/admin/oauth/clients/${encodeURIComponent(clientId)}/rotate-secret`,
       {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       },
     );
     if (!res.ok || !json?.ok) {
@@ -168,6 +184,164 @@ export const createAdminAPI = () => {
     return json;
   };
 
+  const getOAuthHistory = async (limit = 25) => {
+    const { res, json } = await requestJSON(
+      `/api/admin/oauth/history?limit=${Number(limit) || 25}`,
+    );
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'History fetch failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const getConfigPermissions = async () => {
+    const { res, json } = await requestJSON('/api/admin/config/permissions');
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Permission catalog fetch failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const listOAuthScopes = async () => {
+    const { res, json } = await requestJSON('/api/admin/oauth/scopes');
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Scope catalog fetch failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const getRBAC = async () => {
+    const { res, json } = await requestJSON('/api/admin/rbac');
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'RBAC fetch failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const updateRBACBinding = async (payload) => {
+    const { res, json } = await requestJSON('/api/admin/rbac/bindings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'RBAC save failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const createRBACRole = async (payload) => {
+    const { res, json } = await requestJSON('/api/admin/rbac/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Role save failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const updateRBACRole = async (name, payload) => {
+    const { res, json } = await requestJSON(`/api/admin/rbac/roles/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Role save failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const deleteRBACRole = async (name) => {
+    const { res, json } = await requestJSON(`/api/admin/rbac/roles/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Role delete failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const createRBACPermission = async (payload) => {
+    const { res, json } = await requestJSON('/api/admin/rbac/permissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Permission save failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const updateRBACPermission = async (name, payload) => {
+    const { res, json } = await requestJSON(`/api/admin/rbac/permissions/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Permission save failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const deleteRBACPermission = async (name) => {
+    const { res, json } = await requestJSON(`/api/admin/rbac/permissions/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Permission delete failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
   const createBackup = async (payload) => {
     const { res, json } = await requestJSON('/api/admin/backups', {
       method: 'POST',
@@ -222,8 +396,11 @@ export const createAdminAPI = () => {
   return {
     getConfig,
     getConfigHistory,
+    getConfigPermissions,
     updateConfig,
     listOAuthClients,
+    getOAuthHistory,
+    listOAuthScopes,
     createOAuthClient,
     updateOAuthClient,
     deleteOAuthClient,
@@ -232,6 +409,14 @@ export const createAdminAPI = () => {
     getLDAPSync,
     testLDAPSyncConnection,
     runLDAPSync,
+    getRBAC,
+    updateRBACBinding,
+    createRBACRole,
+    updateRBACRole,
+    deleteRBACRole,
+    createRBACPermission,
+    updateRBACPermission,
+    deleteRBACPermission,
     createBackup,
     updateBackupSchedule,
     deleteBackup,
