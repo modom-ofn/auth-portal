@@ -179,6 +179,7 @@ func dbChecker(db *sql.DB) health.Checker {
 
 func main() {
 	appTimeZone, appLocation = resolveLocation(appTimeZone)
+	installAdminLogBuffer()
 
 	db = mustInitDB(os.Getenv("DATABASE_URL"))
 	var runtimeCfg RuntimeConfig
@@ -545,6 +546,8 @@ func registerAdminRoutes(r *mux.Router) {
 	adminAPI.Handle("/config/history/{section}", adminProtected(permissionConfigRead, http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
 	adminAPI.Handle("/oauth/clients", adminProtected(permissionOAuthRead, http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
 	adminAPI.Handle("/oauth/history", adminProtected(permissionOAuthRead, http.HandlerFunc(adminOAuthHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/logs/history", adminProtected(permissionAdminAccess, http.HandlerFunc(adminLogsHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/logs/stream", adminProtected(permissionAdminAccess, http.HandlerFunc(adminLogsStreamHandler))).Methods("GET")
 	adminAPI.Handle("/oauth/scopes", adminProtected(permissionOAuthRead, http.HandlerFunc(adminOAuthScopeCatalogHandler))).Methods("GET")
 	adminAPI.Handle("/oauth/clients", adminProtected(permissionOAuthWrite, http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
 	adminAPI.Handle("/oauth/clients/{id}", adminProtected(permissionOAuthWrite, http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")

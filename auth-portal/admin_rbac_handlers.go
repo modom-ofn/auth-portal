@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"auth-portal/configstore"
+
 	"github.com/gorilla/mux"
 )
 
@@ -25,11 +27,13 @@ type adminRBACRoleRequest struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Permissions []string `json:"permissions"`
+	Reason      string   `json:"reason,omitempty"`
 }
 
 type adminRBACPermissionRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 func loadAdminRBACResponse() (adminRBACResponse, error) {
@@ -96,6 +100,11 @@ func adminRBACBindingUpsertHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	details := strings.Join(normalizeAdminStringList(req.Roles), ", ")
+	if details == "" {
+		details = "manual roles cleared"
+	}
+	recordAdminAudit(r.Context(), configstore.SectionRBAC, actor, "Manual role binding updated", req.Username, details, req.Reason)
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
@@ -130,6 +139,7 @@ func adminRBACRoleCreateHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionRBAC, actorFromRequest(r), "Role created", req.Name, strings.Join(normalizeAdminStringList(req.Permissions), ", "), req.Reason)
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
@@ -168,6 +178,7 @@ func adminRBACRoleUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionRBAC, actorFromRequest(r), "Role updated", req.Name, strings.Join(normalizeAdminStringList(req.Permissions), ", "), req.Reason)
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
@@ -183,7 +194,8 @@ func adminRBACRoleDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := deleteRoleDefinition(strings.TrimSpace(mux.Vars(r)["name"])); err != nil {
+	name := strings.TrimSpace(mux.Vars(r)["name"])
+	if err := deleteRoleDefinition(name); err != nil {
 		status := http.StatusInternalServerError
 		if strings.Contains(strings.ToLower(err.Error()), "required") ||
 			strings.Contains(strings.ToLower(err.Error()), "unknown") ||
@@ -193,6 +205,7 @@ func adminRBACRoleDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionRBAC, actorFromRequest(r), "Role deleted", name, "", "")
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
@@ -223,6 +236,7 @@ func adminRBACPermissionCreateHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionRBAC, actorFromRequest(r), "Permission created", req.Name, strings.TrimSpace(req.Description), req.Reason)
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
@@ -257,6 +271,7 @@ func adminRBACPermissionUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionRBAC, actorFromRequest(r), "Permission updated", req.Name, strings.TrimSpace(req.Description), req.Reason)
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
@@ -272,7 +287,8 @@ func adminRBACPermissionDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := deletePermissionDefinition(strings.TrimSpace(mux.Vars(r)["name"])); err != nil {
+	name := strings.TrimSpace(mux.Vars(r)["name"])
+	if err := deletePermissionDefinition(name); err != nil {
 		status := http.StatusInternalServerError
 		if strings.Contains(strings.ToLower(err.Error()), "required") ||
 			strings.Contains(strings.ToLower(err.Error()), "unknown") ||
@@ -282,6 +298,7 @@ func adminRBACPermissionDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionRBAC, actorFromRequest(r), "Permission deleted", name, "", "")
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {

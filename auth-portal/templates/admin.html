@@ -28,6 +28,7 @@
             <button type="button" class="admin-tab ghost-btn" data-section="ldap-sync">LDAP Sync</button>
             <button type="button" class="admin-tab ghost-btn" data-section="access-control">Access Control</button>
             <button type="button" class="admin-tab ghost-btn" data-section="backups">Backups</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="logs">Logs</button>
         </aside>
 
         <section class="admin-content">
@@ -556,16 +557,83 @@
                     </div>
                 </div>
 
-                <div id="history-panel" class="panel history-panel">
+                <div id="logs-panel" class="panel" hidden>
                     <div class="panel-header">
-                        <h3>Recent Changes</h3>
+                        <h2>Logs</h2>
                         <div class="panel-header-actions">
-                            <button type="button" id="recent-changes-btn" class="ghost-btn">View All</button>
+                            <button type="button" id="logs-history-refresh" class="ghost-btn">Refresh</button>
                         </div>
                     </div>
-                    <ul id="history-list" class="history-list">
-                        <li>Loading.</li>
-                    </ul>
+                    <p class="panel-helper">Review admin audit activity across the console and inspect the live application log stream when needed.</p>
+
+                    <section class="logs-section">
+                        <div class="logs-section-header">
+                            <h3>Recent Changes</h3>
+                            <span id="logs-history-summary" class="muted">Loading.</span>
+                        </div>
+                        <div class="logs-filters">
+                            <div class="form-row">
+                                <label for="logs-filter-section">Tab</label>
+                                <select id="logs-filter-section">
+                                    <option value="">All tabs</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="logs-filter-user">User</label>
+                                <select id="logs-filter-user">
+                                    <option value="">All users</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="logs-sort-order">Sort</label>
+                                <select id="logs-sort-order">
+                                    <option value="desc">Newest first</option>
+                                    <option value="asc">Oldest first</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="backup-table-wrapper logs-table-wrapper">
+                            <table class="backup-table logs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Changed</th>
+                                        <th>Tab</th>
+                                        <th>User</th>
+                                        <th>Action</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="logs-history-rows">
+                                    <tr><td colspan="5" class="muted">Loading recent changes.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="logs-section">
+                        <div class="logs-section-header">
+                            <h3>Log Stream</h3>
+                            <span id="logs-stream-status" class="muted">Stream is off.</span>
+                        </div>
+                        <div class="logs-stream-controls">
+                            <div class="form-row">
+                                <label for="logs-stream-interval">Auto refresh</label>
+                                <select id="logs-stream-interval">
+                                    <option value="5000">Every 5 seconds</option>
+                                    <option value="10000">Every 10 seconds</option>
+                                    <option value="30000">Every 30 seconds</option>
+                                    <option value="60000">Every 60 seconds</option>
+                                </select>
+                            </div>
+                            <div class="logs-stream-actions">
+                                <button type="button" id="logs-stream-start" class="success-btn">Start</button>
+                                <button type="button" id="logs-stream-pause" class="ghost-btn">Pause</button>
+                                <button type="button" id="logs-stream-refresh" class="ghost-btn">Refresh</button>
+                            </div>
+                        </div>
+                        <div id="logs-stream-empty" class="muted">Log stream is off. Start the stream to load entries.</div>
+                        <pre id="logs-stream-output" class="logs-stream-output" hidden></pre>
+                    </section>
                 </div>
             </div>
         </section>
@@ -577,19 +645,6 @@
             <button type="button" id="help-modal-close" class="icon-btn close-btn" aria-label="Close help" title="Close">×</button>
             <h3 id="help-modal-title">Configuration Help</h3>
             <div id="help-modal-body" class="modal-body"></div>
-        </div>
-    </dialog>
-
-    <dialog id="recent-changes-modal" class="modal" hidden aria-labelledby="recent-changes-modal-title">
-        <div class="modal-backdrop" data-recent-close></div>
-        <div class="modal-dialog">
-            <button type="button" id="recent-changes-modal-close" class="icon-btn close-btn" aria-label="Close recent changes" title="Close">×</button>
-            <h3 id="recent-changes-modal-title">Recent Changes</h3>
-            <div class="modal-body">
-                <ul id="recent-changes-list" class="history-list recent-changes-list">
-                    <li>Loading.</li>
-                </ul>
-            </div>
         </div>
     </dialog>
 

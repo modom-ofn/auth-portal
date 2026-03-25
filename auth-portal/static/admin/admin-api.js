@@ -198,6 +198,34 @@ export const createAdminAPI = () => {
     return json;
   };
 
+  const getLogsHistory = async (limit = 100) => {
+    const { res, json } = await requestJSON(
+      `/api/admin/logs/history?limit=${Number(limit) || 100}`,
+    );
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Logs history fetch failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
+  const getLogStream = async ({ cursor = 0, limit = 100 } = {}) => {
+    const { res, json } = await requestJSON(
+      `/api/admin/logs/stream?cursor=${Number(cursor) || 0}&limit=${Number(limit) || 100}`,
+    );
+    if (!res.ok || !json?.ok) {
+      throw buildAPIError({
+        fallback: 'Log stream fetch failed',
+        status: res.status,
+        serverError: json?.error,
+      });
+    }
+    return json;
+  };
+
   const getConfigPermissions = async () => {
     const { res, json } = await requestJSON('/api/admin/config/permissions');
     if (!res.ok || !json?.ok) {
@@ -400,6 +428,8 @@ export const createAdminAPI = () => {
     updateConfig,
     listOAuthClients,
     getOAuthHistory,
+    getLogsHistory,
+    getLogStream,
     listOAuthScopes,
     createOAuthClient,
     updateOAuthClient,

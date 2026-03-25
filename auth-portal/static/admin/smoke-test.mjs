@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createSectionRouter } from './section-router.js';
 import { createConfigSectionController } from './config-section.js';
 import { createHelpModalController } from './help-modal.js';
-import { createRecentChangesController } from './recent-changes.js';
+import { createLogsSectionController } from './logs-section.js';
 import { createOAuthSectionController } from './oauth-section.js';
 import { createLDAPSyncSectionController } from './ldap-sync-section.js';
 import { createBackupsSectionController } from './backups-section.js';
@@ -160,7 +160,7 @@ const runConfigSmoke = async () => {
   assert.equal(recorded, 'providers:Configuration saved');
 };
 
-const runHelpAndRecentSmoke = () => {
+const runHelpAndLogsSmoke = () => {
   const helpBtn = makeEl();
   const help = createHelpModalController({
     button: helpBtn,
@@ -178,22 +178,32 @@ const runHelpAndRecentSmoke = () => {
   help.updateButton('oauth');
   assert.equal(helpBtn.hidden, true);
 
-  const historyState = { providers: [] };
-  const recent = createRecentChangesController({
-    recentChangesBtn: makeEl(),
-    recentChangesModal: makeEl(),
-    recentChangesModalClose: makeEl(),
-    recentChangesModalTitle: makeEl(),
-    recentChangesList: { ...makeEl(), innerHTML: '', appendChild() {} },
-    labels: { providers: 'Providers' },
-    isConfigSection: () => false,
-    fetchHistory: async () => {},
-    nowISO: () => '2026-03-08T00:00:00Z',
-    getCurrentSection: () => 'providers',
-    historyState,
+  const logs = createLogsSectionController({
+    api: {
+      async getLogsHistory() {
+        return { entries: [] };
+      },
+      async getLogStream() {
+        return { cursor: 0, entries: [] };
+      },
+    },
+    panel: makeEl(),
+    refreshBtn: makeEl(),
+    historySummaryEl: makeEl(),
+    sectionFilterEl: { ...makeEl(), value: '', innerHTML: '', appendChild() {}, addEventListener() {} },
+    userFilterEl: { ...makeEl(), value: '', innerHTML: '', appendChild() {}, addEventListener() {} },
+    sortOrderEl: { ...makeEl(), value: 'desc', addEventListener() {} },
+    historyRows: { ...makeEl(), innerHTML: '', appendChild() {} },
+    streamStatusEl: makeEl(),
+    streamIntervalEl: { ...makeEl(), value: '5000' },
+    streamStartBtn: makeEl(),
+    streamPauseBtn: makeEl(),
+    streamRefreshBtn: makeEl(),
+    streamEmptyEl: makeEl(),
+    streamOutputEl: { ...makeEl(), hidden: true, scrollTop: 0, scrollHeight: 0 },
+    showStatus() {},
   });
-  recent.recordLocalActivity('providers', 'Changed');
-  assert.equal(historyState.providers.length, 1);
+  assert.equal(typeof logs.load, 'function');
 };
 
 const runConstructionSmoke = () => {
@@ -201,6 +211,8 @@ const runConstructionSmoke = () => {
   const methods = [
     'getConfig',
     'getConfigHistory',
+    'getLogsHistory',
+    'getLogStream',
     'updateConfig',
     'listOAuthClients',
     'createOAuthClient',
@@ -317,7 +329,7 @@ const runConstructionSmoke = () => {
 const run = async () => {
   await runRouterSmoke();
   await runConfigSmoke();
-  runHelpAndRecentSmoke();
+  runHelpAndLogsSmoke();
   runConstructionSmoke();
   console.log('admin smoke tests passed');
 };

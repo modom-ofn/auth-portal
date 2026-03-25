@@ -23,6 +23,7 @@ const (
 	SectionLDAPSync    Section = "ldap-sync"
 	SectionBackups     Section = "backups"
 	SectionOAuth       Section = "oauth"
+	SectionRBAC        Section = "rbac"
 
 	// SectionDocumentKey is the default key used to persist a full section document.
 	SectionDocumentKey = "__doc"
