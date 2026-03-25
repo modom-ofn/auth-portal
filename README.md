@@ -142,7 +142,7 @@ Frame descriptions (alt text):
 - **Authorized User service buttons:** removed legacy single-link fields, added add/remove/edit support with per-button colors, and updated authorized portal rendering to only use service-button entries.
 - **Portal styling simplification:** removed custom image/mode upload flows and standardized to secure color-only controls for page background and modal color.
 - **Provider login reliability hardening:** reduced Plex pin-polling failure behavior during 429 rate-limit windows to prevent stale popup flows ending in `Auth failed`.
-- **Container hardening:** runtime image moved to `dhi.io/alpine-base:3.23-alpine3.23-dev`; compose defaults updated to local hardened builds.
+- **Container hardening:** runtime image moved to `dhi.io/alpine-base:3.23-alpine3.23` with a hardened Docker builder image (`dhi.io/golang:1.26.1-alpine3.23-dev`); compose defaults updated to local hardened builds.
 
 ---
 
@@ -593,10 +593,11 @@ These tables are created and migrated automatically at startup. Existing legacy 
 
 ## Build & Images
 
-- Go: `1.26.1` on `alpine:3.23` (builder stage).
+- Go: `1.26.1` on Docker Hardened Images `dhi.io/golang:1.26.1-alpine3.23-dev` (builder stage).
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.26`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
-- Runtime: `dhi.io/alpine-base:3.23-alpine3.23-dev`, installs CA certs + tzdata, runs as non-root `uid 10001`.
+- Builder: `dhi.io/golang:1.26.1-alpine3.23-dev`.
+- Runtime: `dhi.io/alpine-base:3.23-alpine3.23`, keeps CA certs in-base, copies tzdata from the builder stage, and runs as non-root `uid 65532`.
 
 ---
 

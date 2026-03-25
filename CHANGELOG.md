@@ -3,6 +3,7 @@
 ## v2.0.5 - 2026-03-13
 
 ### Highlights
+- Switched the builder stage to `dhi.io/golang:1.26.1-alpine3.23-dev` and the final runtime to `dhi.io/alpine-base:3.23-alpine3.23`, removing the explicit `openssl` install from shipped layers to clear the `CVE-2026-2673` scan finding.
 - Added RBAC to AuthPortal with database-backed roles, permissions, role-permission mappings, and user-role bindings; seeded system roles are `admin`, `viewer`, and `user`.
 - Added an `Access Control` admin tab for role CRUD, permission CRUD, and manual user-role binding management, including support for custom downstream-app permissions.
 - Added permission middleware and route enforcement so admin/API access is checked through explicit permissions instead of a broad legacy admin flag.
