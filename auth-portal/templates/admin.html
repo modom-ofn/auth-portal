@@ -26,6 +26,7 @@
             <button type="button" class="admin-tab ghost-btn" data-section="app-settings">App Settings</button>
             <button type="button" class="admin-tab ghost-btn" data-section="oauth">OAuth Clients</button>
             <button type="button" class="admin-tab ghost-btn" data-section="ldap-sync">LDAP Sync</button>
+            <button type="button" class="admin-tab ghost-btn" data-section="access-control">Access Control</button>
             <button type="button" class="admin-tab ghost-btn" data-section="backups">Backups</button>
         </aside>
 
@@ -52,11 +53,13 @@
                     </div>
                 </form>
 
-                <div id="oauth-panel" class="panel" hidden>
-                    <div class="panel-header">
-                        <h2>OAuth Clients</h2>
-                        <button type="button" id="oauth-clients-reload" class="ghost-btn">Refresh</button>
-                    </div>
+                    <div id="oauth-panel" class="panel" hidden>
+                        <div class="panel-header">
+                            <h2>OAuth Clients</h2>
+                            <div class="panel-header-actions">
+                                <button type="button" id="oauth-clients-reload" class="ghost-btn">Refresh</button>
+                            </div>
+                        </div>
                     <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
                     <div id="oauth-secret-banner" class="secret-banner" hidden></div>
                     <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
@@ -73,9 +76,18 @@
                             <span class="field-hint">Enter one URI per line.</span>
                         </div>
                         <div class="form-row">
-                            <label for="oauth-client-scopes">Scopes</label>
-                            <textarea id="oauth-client-scopes" rows="2" placeholder="openid profile email offline_access"></textarea>
-                            <span class="field-hint">Whitespace or newline separated. Defaults to <code>openid profile email</code>.</span>
+                            <label for="oauth-client-scope-picker">Scopes</label>
+                            <div class="oauth-scope-picker">
+                                <select id="oauth-client-scope-picker"></select>
+                                <button id="oauth-client-scope-add" type="button" class="ghost-btn">Add Scope</button>
+                            </div>
+                            <div id="oauth-client-scope-selected" class="oauth-scope-selected"></div>
+                            <span class="field-hint">Choose from standard OIDC scopes and RBAC permissions. New RBAC permissions created in Access Control appear here.</span>
+                        </div>
+                        <div class="form-row">
+                            <label for="oauth-client-reason">Change Reason</label>
+                            <textarea id="oauth-client-reason" rows="2" maxlength="200" placeholder="Why are you creating or updating this client?"></textarea>
+                            <span class="field-hint">Saved with the OAuth audit history.</span>
                         </div>
                         <div class="oauth-form-actions">
                             <button id="oauth-client-save" type="submit" class="primary-btn">Save Client</button>
@@ -239,6 +251,41 @@
                                 </div>
                             </section>
 
+                            <section class="ldap-sync-section ldap-sync-section-muted">
+                                <div class="ldap-sync-section-head">
+                                    <div class="ldap-sync-section-title">
+                                        <h3>LDAP Group Role Mapping</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Optional LDAP group to RBAC role synchronization settings." title="Optional LDAP group to RBAC role synchronization settings." data-tooltip="Enable this to read LDAP groups during sync and map group membership onto AuthPortal roles. Group membership updates manual assignments only through the dedicated ldap-group source; manual bindings remain separate.">i</button>
+                                    </div>
+                                </div>
+                                <div class="ldap-sync-toggle-group">
+                                    <label class="ldap-sync-toggle" title="When enabled, LDAP sync will evaluate configured groups and apply matching AuthPortal roles."><input id="ldap-sync-group-sync-enabled" type="checkbox" title="When enabled, LDAP sync will evaluate configured groups and apply matching AuthPortal roles."> <span>Enable LDAP group to role synchronization</span></label>
+                                </div>
+                                <div class="ldap-sync-settings-grid">
+                                    <div class="form-row">
+                                        <label for="ldap-sync-group-base-dn">Group Search Base DN</label>
+                                        <input id="ldap-sync-group-base-dn" type="text" placeholder="ou=groups,dc=authportal,dc=local">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="ldap-sync-group-name-attribute">Group Name Attribute</label>
+                                        <input id="ldap-sync-group-name-attribute" type="text" placeholder="cn">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="ldap-sync-group-member-attribute">Group Member Attribute</label>
+                                        <input id="ldap-sync-group-member-attribute" type="text" placeholder="memberUid">
+                                    </div>
+                                </div>
+                                <div class="rbac-binding-editor">
+                                    <div class="rbac-binding-row rbac-binding-row-header">
+                                        <span>LDAP Group</span>
+                                        <span>Role</span>
+                                        <span></span>
+                                    </div>
+                                    <div id="ldap-group-role-mapping-list" class="rbac-binding-list"></div>
+                                    <button type="button" id="ldap-group-role-add-btn" class="ghost-btn">Add Mapping</button>
+                                </div>
+                            </section>
+
                             <section class="ldap-sync-section">
                                 <div class="ldap-sync-section-head">
                                     <div class="ldap-sync-section-title">
@@ -275,6 +322,149 @@
                                         <tr>
                                             <td colspan="5" class="muted">No LDAP sync runs recorded yet.</td>
                                         </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+                <div id="access-control-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <h2>Access Control</h2>
+                        <button type="button" id="access-control-refresh" class="ghost-btn">Refresh</button>
+                    </div>
+                    <p class="panel-helper">Manage manual RBAC role bindings. LDAP-driven role assignments are configured in the LDAP Sync tab and appear here as effective roles.</p>
+                    <div class="access-control-layout">
+                        <section class="ldap-sync-section">
+                            <div class="ldap-sync-section-head">
+                                <div class="ldap-sync-section-title">
+                                    <h3>Role Catalog</h3>
+                                </div>
+                            </div>
+                            <form id="rbac-role-form" class="oauth-form" autocomplete="off">
+                                <div class="panel-helper access-binding-helper">
+                                    Create custom roles from the existing permission set. Built-in roles <code>admin</code>, <code>viewer</code>, and <code>user</code> are protected and cannot be renamed or deleted.
+                                </div>
+                                <div class="form-row">
+                                    <label for="rbac-role-name">Role Name</label>
+                                    <input id="rbac-role-name" type="text" placeholder="music-reader" required>
+                                </div>
+                                <div class="form-row">
+                                    <label for="rbac-role-description">Description</label>
+                                    <input id="rbac-role-description" type="text" placeholder="Read-only access to music features">
+                                </div>
+                                <div class="form-row">
+                                    <label>Permissions</label>
+                                    <div id="rbac-permission-checkboxes" class="backup-sections"></div>
+                                </div>
+                                <div class="admin-actions">
+                                    <input id="rbac-role-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                    <button id="rbac-role-reset" type="button" class="ghost-btn">New Role</button>
+                                    <button id="rbac-role-save" type="submit" class="primary-btn">Save Role</button>
+                                </div>
+                            </form>
+                            <div class="backup-table-wrapper">
+                                <table class="backup-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Role</th>
+                                            <th>Description</th>
+                                            <th>Permissions</th>
+                                            <th class="actions-col"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rbac-role-rows">
+                                        <tr><td colspan="4" class="muted">Loading roles.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section class="ldap-sync-section">
+                            <div class="ldap-sync-section-head">
+                                <div class="ldap-sync-section-title">
+                                    <h3>Permission Catalog</h3>
+                                </div>
+                            </div>
+                            <form id="rbac-permission-form" class="oauth-form" autocomplete="off">
+                                <div class="panel-helper access-binding-helper">
+                                    Create app-specific permissions such as <code>music.read</code> or <code>audiobookshelf.read</code>. Built-in platform permissions are protected.
+                                </div>
+                                <div class="form-row">
+                                    <label for="rbac-permission-name">Permission Name</label>
+                                    <input id="rbac-permission-name" type="text" placeholder="music.read" required>
+                                </div>
+                                <div class="form-row">
+                                    <label for="rbac-permission-description">Description</label>
+                                    <input id="rbac-permission-description" type="text" placeholder="Access the Music app">
+                                </div>
+                                <div class="admin-actions">
+                                    <input id="rbac-permission-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                    <button id="rbac-permission-reset" type="button" class="ghost-btn">New Permission</button>
+                                    <button id="rbac-permission-save" type="submit" class="primary-btn">Save Permission</button>
+                                </div>
+                            </form>
+                            <div class="backup-table-wrapper">
+                                <table class="backup-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Permission</th>
+                                            <th>Description</th>
+                                            <th class="actions-col"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rbac-permission-rows">
+                                        <tr><td colspan="3" class="muted">Loading permissions.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section class="ldap-sync-section">
+                            <div class="ldap-sync-section-head">
+                                <div class="ldap-sync-section-title">
+                                    <h3>Manual Role Binding</h3>
+                                </div>
+                            </div>
+                            <form id="rbac-binding-form" class="oauth-form" autocomplete="off">
+                                <div class="panel-helper access-binding-helper">
+                                    Select a user from the table below to edit an existing binding, or enter a username to create one. Clearing all manual roles removes the manual binding for that user.
+                                </div>
+                                <div class="form-row">
+                                    <label for="rbac-binding-username">Username</label>
+                                    <input id="rbac-binding-username" type="text" placeholder="alice" required>
+                                </div>
+                                <div class="form-row">
+                                    <label>Manual Roles</label>
+                                    <div id="rbac-role-checkboxes" class="backup-sections"></div>
+                                </div>
+                                <div class="admin-actions">
+                                    <input id="rbac-binding-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                    <button id="rbac-binding-reset" type="button" class="ghost-btn">New Binding</button>
+                                    <button id="rbac-binding-save" type="submit" class="primary-btn">Save Role Binding</button>
+                                </div>
+                            </form>
+                        </section>
+
+                        <section class="ldap-sync-section">
+                            <div class="ldap-sync-section-head">
+                                <div class="ldap-sync-section-title">
+                                    <h3>User Bindings</h3>
+                                </div>
+                            </div>
+                            <div class="backup-table-wrapper">
+                                <table class="backup-table">
+                                    <thead>
+                                        <tr>
+                                            <th>User</th>
+                                            <th>Manual Roles</th>
+                                            <th>Effective Roles</th>
+                                            <th>Permissions</th>
+                                            <th class="actions-col"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rbac-user-rows">
+                                        <tr><td colspan="5" class="muted">Loading bindings.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -409,6 +599,11 @@
             <button type="button" id="oauth-detail-close" class="icon-btn close-btn" aria-label="Close OAuth details" title="Close">×</button>
             <h3 id="oauth-detail-title">OAuth Client Details</h3>
             <div id="oauth-detail-body" class="modal-body"></div>
+            <div class="form-row oauth-detail-reason-row">
+                <label for="oauth-detail-reason">Change Reason</label>
+                <textarea id="oauth-detail-reason" rows="2" maxlength="200" placeholder="Why are you rotating the secret or deleting this client?"></textarea>
+                <span class="field-hint">Required only if you want a specific reason recorded in audit history.</span>
+            </div>
             <div class="oauth-detail-actions">
                 <button type="button" id="oauth-detail-edit" class="primary-btn">Edit</button>
                 <button type="button" id="oauth-detail-rotate" class="success-btn">Rotate Secret</button>

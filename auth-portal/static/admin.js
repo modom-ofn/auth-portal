@@ -2,6 +2,7 @@ import { createConfigFormsController } from './admin/config-forms.js';
 import { createRecentChangesController } from './admin/recent-changes.js';
 import { createOAuthSectionController } from './admin/oauth-section.js';
 import { createLDAPSyncSectionController } from './admin/ldap-sync-section.js';
+import { createAccessControlSectionController } from './admin/access-control-section.js';
 import { createBackupsSectionController } from './admin/backups-section.js';
 import { createHelpModalController } from './admin/help-modal.js';
 import { createConfigSectionController } from './admin/config-section.js';
@@ -31,7 +32,10 @@ import { createAdminAPI } from './admin/admin-api.js';
   const oauthId = document.getElementById('oauth-client-id');
   const oauthName = document.getElementById('oauth-client-name');
   const oauthRedirects = document.getElementById('oauth-client-redirects');
-  const oauthScopes = document.getElementById('oauth-client-scopes');
+  const oauthScopePicker = document.getElementById('oauth-client-scope-picker');
+  const oauthScopeAdd = document.getElementById('oauth-client-scope-add');
+  const oauthScopeSelected = document.getElementById('oauth-client-scope-selected');
+  const oauthReason = document.getElementById('oauth-client-reason');
   const oauthCancel = document.getElementById('oauth-client-cancel');
   const oauthSave = document.getElementById('oauth-client-save');
   const oauthSecretBanner = document.getElementById('oauth-secret-banner');
@@ -39,6 +43,7 @@ import { createAdminAPI } from './admin/admin-api.js';
   const oauthDetailClose = document.getElementById('oauth-detail-close');
   const oauthDetailTitle = document.getElementById('oauth-detail-title');
   const oauthDetailBody = document.getElementById('oauth-detail-body');
+  const oauthDetailReason = document.getElementById('oauth-detail-reason');
   const oauthDetailEdit = document.getElementById('oauth-detail-edit');
   const oauthDetailRotate = document.getElementById('oauth-detail-rotate');
   const oauthDetailDelete = document.getElementById('oauth-detail-delete');
@@ -70,6 +75,12 @@ import { createAdminAPI } from './admin/admin-api.js';
   const ldapSyncBaseDn = document.getElementById('ldap-sync-base-dn');
   const ldapSyncStartTLS = document.getElementById('ldap-sync-starttls');
   const ldapSyncDeleteStale = document.getElementById('ldap-sync-delete-stale');
+  const ldapSyncGroupSyncEnabled = document.getElementById('ldap-sync-group-sync-enabled');
+  const ldapSyncGroupBaseDn = document.getElementById('ldap-sync-group-base-dn');
+  const ldapSyncGroupNameAttribute = document.getElementById('ldap-sync-group-name-attribute');
+  const ldapSyncGroupMemberAttribute = document.getElementById('ldap-sync-group-member-attribute');
+  const ldapGroupRoleMappingList = document.getElementById('ldap-group-role-mapping-list');
+  const ldapGroupRoleAddBtn = document.getElementById('ldap-group-role-add-btn');
   const ldapSyncScheduleEnabled = document.getElementById('ldap-sync-schedule-enabled');
   const ldapSyncFrequency = document.getElementById('ldap-sync-frequency');
   const ldapSyncTime = document.getElementById('ldap-sync-time');
@@ -92,6 +103,31 @@ import { createAdminAPI } from './admin/admin-api.js';
   const ldapSyncTestBaseExists = document.getElementById('ldap-sync-test-base-exists');
   const ldapSyncTestBaseCreatable = document.getElementById('ldap-sync-test-base-creatable');
   const ldapSyncRunRows = document.getElementById('ldap-sync-run-rows');
+
+  const accessControlPanel = document.getElementById('access-control-panel');
+  const accessControlRefresh = document.getElementById('access-control-refresh');
+  const rbacRoleForm = document.getElementById('rbac-role-form');
+  const rbacRoleName = document.getElementById('rbac-role-name');
+  const rbacRoleDescription = document.getElementById('rbac-role-description');
+  const rbacPermissionCheckboxes = document.getElementById('rbac-permission-checkboxes');
+  const rbacRoleReason = document.getElementById('rbac-role-reason');
+  const rbacRoleReset = document.getElementById('rbac-role-reset');
+  const rbacRoleSave = document.getElementById('rbac-role-save');
+  const rbacPermissionForm = document.getElementById('rbac-permission-form');
+  const rbacPermissionName = document.getElementById('rbac-permission-name');
+  const rbacPermissionDescription = document.getElementById('rbac-permission-description');
+  const rbacPermissionReason = document.getElementById('rbac-permission-reason');
+  const rbacPermissionReset = document.getElementById('rbac-permission-reset');
+  const rbacPermissionSave = document.getElementById('rbac-permission-save');
+  const rbacRoleRows = document.getElementById('rbac-role-rows');
+  const rbacPermissionRows = document.getElementById('rbac-permission-rows');
+  const rbacUserRows = document.getElementById('rbac-user-rows');
+  const rbacBindingForm = document.getElementById('rbac-binding-form');
+  const rbacBindingUsername = document.getElementById('rbac-binding-username');
+  const rbacRoleCheckboxes = document.getElementById('rbac-role-checkboxes');
+  const rbacBindingReason = document.getElementById('rbac-binding-reason');
+  const rbacBindingReset = document.getElementById('rbac-binding-reset');
+  const rbacBindingSave = document.getElementById('rbac-binding-save');
 
   const backupsPanel = document.getElementById('backups-panel');
   const backupRefreshBtn = document.getElementById('backups-refresh-btn');
@@ -136,6 +172,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     mfa: 'MFA',
     'app-settings': 'App Settings',
     'ldap-sync': 'LDAP Sync',
+    'access-control': 'Access Control',
     backups: 'Backups',
     oauth: 'OAuth Clients',
   };
@@ -145,7 +182,7 @@ import { createAdminAPI } from './admin/admin-api.js';
 
   const state = {
     data: { providers: null, security: null, mfa: null, 'app-settings': null },
-    history: { providers: [], security: [], mfa: [], 'app-settings': [], oauth: [], 'ldap-sync': [], backups: [] },
+    history: { providers: [], security: [], mfa: [], 'app-settings': [], oauth: [], 'ldap-sync': [], 'access-control': [], backups: [] },
     loadedAt: null,
   };
 
@@ -287,7 +324,16 @@ import { createAdminAPI } from './admin/admin-api.js';
     inlineHistoryList: historyList,
     labels,
     isConfigSection: configSection.isConfigSection,
-    fetchHistory: async (section) => configSection.fetchHistory(section),
+    fetchHistory: async (section) => {
+      if (configSection.isConfigSection(section)) {
+        await configSection.fetchHistory(section);
+        return;
+      }
+      if (section === 'oauth') {
+        const json = await api.getOAuthHistory(25);
+        state.history.oauth = json.entries || [];
+      }
+    },
     nowISO,
     getCurrentSection,
     historyState: state.history,
@@ -315,7 +361,10 @@ import { createAdminAPI } from './admin/admin-api.js';
     idInput: oauthId,
     nameInput: oauthName,
     redirectsInput: oauthRedirects,
-    scopesInput: oauthScopes,
+    scopePicker: oauthScopePicker,
+    scopeAddBtn: oauthScopeAdd,
+    selectedScopesRoot: oauthScopeSelected,
+    reasonInput: oauthReason,
     cancelBtn: oauthCancel,
     saveBtn: oauthSave,
     secretBanner: oauthSecretBanner,
@@ -323,6 +372,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     detailCloseBtn: oauthDetailClose,
     detailTitle: oauthDetailTitle,
     detailBody: oauthDetailBody,
+    detailReasonInput: oauthDetailReason,
     detailEditBtn: oauthDetailEdit,
     detailRotateBtn: oauthDetailRotate,
     detailDeleteBtn: oauthDetailDelete,
@@ -348,6 +398,12 @@ import { createAdminAPI } from './admin/admin-api.js';
     baseDnInput: ldapSyncBaseDn,
     startTlsInput: ldapSyncStartTLS,
     deleteStaleInput: ldapSyncDeleteStale,
+    groupSyncEnabledInput: ldapSyncGroupSyncEnabled,
+    groupSearchBaseDnInput: ldapSyncGroupBaseDn,
+    groupNameAttributeInput: ldapSyncGroupNameAttribute,
+    groupMemberAttributeInput: ldapSyncGroupMemberAttribute,
+    groupRoleMappingList: ldapGroupRoleMappingList,
+    groupRoleAddBtn: ldapGroupRoleAddBtn,
     scheduleEnabledInput: ldapSyncScheduleEnabled,
     frequencyInput: ldapSyncFrequency,
     timeInput: ldapSyncTime,
@@ -370,6 +426,37 @@ import { createAdminAPI } from './admin/admin-api.js';
     testBaseExistsEl: ldapSyncTestBaseExists,
     testBaseCreatableEl: ldapSyncTestBaseCreatable,
     runRows: ldapSyncRunRows,
+    showStatus: (message, type) => status.show(message, type),
+    recordActivity: (section, message, reason = '') =>
+      recentChanges.recordLocalActivity(section, message, reason),
+  });
+
+  const accessControlSection = createAccessControlSectionController({
+    api,
+    panel: accessControlPanel,
+    refreshBtn: accessControlRefresh,
+    roleForm: rbacRoleForm,
+    roleNameInput: rbacRoleName,
+    roleDescriptionInput: rbacRoleDescription,
+    permissionCheckboxes: rbacPermissionCheckboxes,
+    roleReasonInput: rbacRoleReason,
+    roleResetBtn: rbacRoleReset,
+    roleSaveBtn: rbacRoleSave,
+    roleRows: rbacRoleRows,
+    permissionForm: rbacPermissionForm,
+    permissionNameInput: rbacPermissionName,
+    permissionDescriptionInput: rbacPermissionDescription,
+    permissionReasonInput: rbacPermissionReason,
+    permissionResetBtn: rbacPermissionReset,
+    permissionSaveBtn: rbacPermissionSave,
+    permissionRows: rbacPermissionRows,
+    userRows: rbacUserRows,
+    form: rbacBindingForm,
+    usernameInput: rbacBindingUsername,
+    roleCheckboxes: rbacRoleCheckboxes,
+    reasonInput: rbacBindingReason,
+    resetBtn: rbacBindingReset,
+    saveBtn: rbacBindingSave,
     showStatus: (message, type) => status.show(message, type),
     recordActivity: (section, message, reason = '') =>
       recentChanges.recordLocalActivity(section, message, reason),
@@ -421,6 +508,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     historyPanel,
     oauthPanel,
     ldapSyncPanel,
+    accessControlPanel,
     backupsPanel,
     initialSection,
     isConfigSection: configSection.isConfigSection,
@@ -437,6 +525,13 @@ import { createAdminAPI } from './admin/admin-api.js';
     },
     onOAuthSection: async () => {
       await oauthSection.loadClients();
+      try {
+        const json = await api.getOAuthHistory(25);
+        state.history.oauth = json.entries || [];
+        recentChanges.refresh('oauth');
+      } catch (error_) {
+        console.error('OAuth history fetch failed', error_);
+      }
     },
     onLDAPSyncSection: async () => {
       oauthSection.clearSecretBanner();
@@ -447,6 +542,11 @@ import { createAdminAPI } from './admin/admin-api.js';
         console.error('LDAP sync history fetch failed', error_);
       }
       recentChanges.refresh('ldap-sync');
+    },
+    onAccessControlSection: async () => {
+      oauthSection.clearSecretBanner();
+      await accessControlSection.load();
+      recentChanges.refresh('access-control');
     },
     onBackupsSection: async () => {
       oauthSection.clearSecretBanner();
@@ -464,6 +564,7 @@ import { createAdminAPI } from './admin/admin-api.js';
 
   oauthSection.bind();
   ldapSyncSection.bind();
+  accessControlSection.bind();
 
   helpModalController.bind();
 

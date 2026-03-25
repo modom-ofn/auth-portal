@@ -4,6 +4,7 @@ export const createSectionRouter = ({
   historyPanel,
   oauthPanel,
   ldapSyncPanel,
+  accessControlPanel,
   backupsPanel,
   initialSection = 'providers',
   isConfigSection,
@@ -12,15 +13,17 @@ export const createSectionRouter = ({
   onConfigSection,
   onOAuthSection,
   onLDAPSyncSection,
+  onAccessControlSection,
   onBackupsSection,
 }) => {
   let currentSection = initialSection;
 
   const panelVisibility = {
-    config: { config: false, history: false, oauth: true, ldapSync: true, backups: true },
-    oauth: { config: true, history: true, oauth: false, ldapSync: true, backups: true },
-    'ldap-sync': { config: true, history: false, oauth: true, ldapSync: false, backups: true },
-    backups: { config: true, history: false, oauth: true, ldapSync: true, backups: false },
+    config: { config: false, history: false, oauth: true, ldapSync: true, accessControl: true, backups: true },
+    oauth: { config: true, history: false, oauth: false, ldapSync: true, accessControl: true, backups: true },
+    'ldap-sync': { config: true, history: false, oauth: true, ldapSync: false, accessControl: true, backups: true },
+    'access-control': { config: true, history: false, oauth: true, ldapSync: true, accessControl: false, backups: true },
+    backups: { config: true, history: false, oauth: true, ldapSync: true, accessControl: true, backups: false },
   };
 
   const setActiveTab = () => {
@@ -41,6 +44,9 @@ export const createSectionRouter = ({
     }
     if (ldapSyncPanel) {
       ldapSyncPanel.hidden = visibility.ldapSync;
+    }
+    if (accessControlPanel) {
+      accessControlPanel.hidden = visibility.accessControl;
     }
     if (backupsPanel) {
       backupsPanel.hidden = visibility.backups;
@@ -77,6 +83,7 @@ export const createSectionRouter = ({
     const specialSections = {
       oauth: { panel: oauthPanel, handler: onOAuthSection },
       'ldap-sync': { panel: ldapSyncPanel, handler: onLDAPSyncSection },
+      'access-control': { panel: accessControlPanel, handler: onAccessControlSection },
       backups: { panel: backupsPanel, handler: onBackupsSection },
     };
     const special = specialSections[section];

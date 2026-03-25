@@ -57,9 +57,10 @@ type MFAConfig struct {
 }
 
 type AppServiceLink struct {
-	Name  string `json:"name"`
-	URL   string `json:"url"`
-	Color string `json:"color,omitempty"`
+	Name               string `json:"name"`
+	URL                string `json:"url"`
+	Color              string `json:"color,omitempty"`
+	RequiredPermission string `json:"requiredPermission,omitempty"`
 }
 
 // AppSettingsConfig captures miscellaneous portal presentation controls.
@@ -74,17 +75,27 @@ type AppSettingsConfig struct {
 }
 
 type LDAPSyncConfig struct {
-	LDAPHost           string `json:"ldapHost"`
-	LDAPAdminDN        string `json:"ldapAdminDn"`
-	LDAPAdminPassword  string `json:"ldapAdminPassword"`
-	BaseDN             string `json:"baseDn"`
-	LDAPStartTLS       bool   `json:"ldapStartTls"`
-	DeleteStaleEntries bool   `json:"deleteStaleEntries"`
-	ScheduleEnabled    bool   `json:"scheduleEnabled"`
-	ScheduleFrequency  string `json:"scheduleFrequency"`
-	ScheduleTimeOfDay  string `json:"scheduleTimeOfDay"`
-	ScheduleDayOfWeek  string `json:"scheduleDayOfWeek"`
-	ScheduleMinute     int    `json:"scheduleMinute"`
+	LDAPHost             string                 `json:"ldapHost"`
+	LDAPAdminDN          string                 `json:"ldapAdminDn"`
+	LDAPAdminPassword    string                 `json:"ldapAdminPassword"`
+	BaseDN               string                 `json:"baseDn"`
+	LDAPStartTLS         bool                   `json:"ldapStartTls"`
+	DeleteStaleEntries   bool                   `json:"deleteStaleEntries"`
+	GroupSyncEnabled     bool                   `json:"groupSyncEnabled"`
+	GroupSearchBaseDN    string                 `json:"groupSearchBaseDn,omitempty"`
+	GroupNameAttribute   string                 `json:"groupNameAttribute,omitempty"`
+	GroupMemberAttribute string                 `json:"groupMemberAttribute,omitempty"`
+	ScheduleEnabled      bool                   `json:"scheduleEnabled"`
+	ScheduleFrequency    string                 `json:"scheduleFrequency"`
+	ScheduleTimeOfDay    string                 `json:"scheduleTimeOfDay"`
+	ScheduleDayOfWeek    string                 `json:"scheduleDayOfWeek"`
+	ScheduleMinute       int                    `json:"scheduleMinute"`
+	GroupRoleMappings    []LDAPGroupRoleMapping `json:"groupRoleMappings,omitempty"`
+}
+
+type LDAPGroupRoleMapping struct {
+	LDAPGroup string `json:"ldapGroup"`
+	Role      string `json:"role"`
 }
 
 // RuntimeConfig represents all typed configuration sections with revision metadata.
@@ -236,17 +247,21 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 
 func defaultLDAPSyncConfig() LDAPSyncConfig {
 	return LDAPSyncConfig{
-		LDAPHost:           strings.TrimSpace(envOr("LDAP_HOST", "ldap://openldap:389")),
-		LDAPAdminDN:        strings.TrimSpace(envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local")),
-		LDAPAdminPassword:  strings.TrimSpace(envOr("LDAP_ADMIN_PASSWORD", "")),
-		BaseDN:             strings.TrimSpace(envOr("BASE_DN", "ou=users,dc=authportal,dc=local")),
-		LDAPStartTLS:       envBool("LDAP_STARTTLS", false),
-		DeleteStaleEntries: envBool("LDAP_DELETE_STALE_ENTRIES", false),
-		ScheduleEnabled:    envBool("LDAP_SYNC_SCHEDULE_ENABLED", false),
-		ScheduleFrequency:  strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_FREQUENCY", "daily"))),
-		ScheduleTimeOfDay:  strings.TrimSpace(envOr("LDAP_SYNC_SCHEDULE_TIME", "02:15")),
-		ScheduleDayOfWeek:  strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_DAY", "sunday"))),
-		ScheduleMinute:     15,
+		LDAPHost:             strings.TrimSpace(envOr("LDAP_HOST", "ldap://openldap:389")),
+		LDAPAdminDN:          strings.TrimSpace(envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local")),
+		LDAPAdminPassword:    strings.TrimSpace(envOr("LDAP_ADMIN_PASSWORD", "")),
+		BaseDN:               strings.TrimSpace(envOr("BASE_DN", "ou=users,dc=authportal,dc=local")),
+		LDAPStartTLS:         envBool("LDAP_STARTTLS", false),
+		DeleteStaleEntries:   envBool("LDAP_DELETE_STALE_ENTRIES", false),
+		GroupSyncEnabled:     envBool("LDAP_GROUP_SYNC_ENABLED", false),
+		GroupSearchBaseDN:    strings.TrimSpace(envOr("LDAP_GROUP_SEARCH_BASE_DN", "")),
+		GroupNameAttribute:   strings.TrimSpace(envOr("LDAP_GROUP_NAME_ATTRIBUTE", "cn")),
+		GroupMemberAttribute: strings.TrimSpace(envOr("LDAP_GROUP_MEMBER_ATTRIBUTE", "memberUid")),
+		ScheduleEnabled:      envBool("LDAP_SYNC_SCHEDULE_ENABLED", false),
+		ScheduleFrequency:    strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_FREQUENCY", "daily"))),
+		ScheduleTimeOfDay:    strings.TrimSpace(envOr("LDAP_SYNC_SCHEDULE_TIME", "02:15")),
+		ScheduleDayOfWeek:    strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_DAY", "sunday"))),
+		ScheduleMinute:       15,
 	}
 }
 
@@ -407,12 +422,16 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	cfg.LDAPSync.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminDN, defaults.LDAPSync.LDAPAdminDN))
 	cfg.LDAPSync.LDAPAdminPassword = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminPassword, defaults.LDAPSync.LDAPAdminPassword))
 	cfg.LDAPSync.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.BaseDN, defaults.LDAPSync.BaseDN))
+	cfg.LDAPSync.GroupSearchBaseDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.GroupSearchBaseDN, defaults.LDAPSync.GroupSearchBaseDN))
+	cfg.LDAPSync.GroupNameAttribute = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.GroupNameAttribute, defaults.LDAPSync.GroupNameAttribute))
+	cfg.LDAPSync.GroupMemberAttribute = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.GroupMemberAttribute, defaults.LDAPSync.GroupMemberAttribute))
 	cfg.LDAPSync.ScheduleFrequency = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleFrequency, defaults.LDAPSync.ScheduleFrequency))
 	cfg.LDAPSync.ScheduleTimeOfDay = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleTimeOfDay, defaults.LDAPSync.ScheduleTimeOfDay))
 	cfg.LDAPSync.ScheduleDayOfWeek = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleDayOfWeek, defaults.LDAPSync.ScheduleDayOfWeek))
 	if cfg.LDAPSync.ScheduleMinute < 0 || cfg.LDAPSync.ScheduleMinute > 59 {
 		cfg.LDAPSync.ScheduleMinute = defaults.LDAPSync.ScheduleMinute
 	}
+	cfg.LDAPSync.GroupRoleMappings = normalizeLDAPGroupRoleMappings(cfg.LDAPSync.GroupRoleMappings)
 
 	// Keep provider package configuration in sync with live runtime settings.
 	// Without this, switching providers in Admin can leave auth flows using stale

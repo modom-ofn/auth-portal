@@ -10,7 +10,10 @@ export const createOAuthSectionController = ({
   idInput,
   nameInput,
   redirectsInput,
-  scopesInput,
+  scopePicker,
+  scopeAddBtn,
+  selectedScopesRoot,
+  reasonInput,
   cancelBtn,
   saveBtn,
   secretBanner,
@@ -18,6 +21,7 @@ export const createOAuthSectionController = ({
   detailCloseBtn,
   detailTitle,
   detailBody,
+  detailReasonInput,
   detailEditBtn,
   detailRotateBtn,
   detailDeleteBtn,
@@ -25,8 +29,11 @@ export const createOAuthSectionController = ({
   showStatus,
   recordActivity,
 }) => {
+  const defaultScopes = ['openid', 'profile', 'email'];
   const state = {
     clients: [],
+    availableScopes: [...defaultScopes, 'offline_access'],
+    selectedScopes: [...defaultScopes],
     loading: false,
     detailOpen: false,
     selectedClientId: '',
@@ -36,12 +43,6 @@ export const createOAuthSectionController = ({
     (value || '')
       .split(/\r?\n/)
       .map((item) => item.trim())
-      .filter(Boolean);
-
-  const parseScopes = (value) =>
-    (value || '')
-      .split(/[\s,]+/)
-      .map((scope) => scope.trim())
       .filter(Boolean);
 
   const createDateFormatter = () => {
@@ -80,6 +81,78 @@ export const createOAuthSectionController = ({
 
   const findClientById = (clientId) => state.clients.find((client) => client.clientId === clientId) || null;
 
+  const normalizeScopes = (values = []) => Array.from(new Set((values || [])
+    .map((scope) => (scope || '').trim())
+    .filter(Boolean)));
+
+  const renderScopePicker = () => {
+    if (!scopePicker) {
+      return;
+    }
+    scopePicker.innerHTML = '';
+    state.availableScopes.forEach((scope) => {
+      const option = document.createElement('option');
+      option.value = scope;
+      option.textContent = scope;
+      scopePicker.appendChild(option);
+    });
+  };
+
+  const renderSelectedScopes = () => {
+    if (!selectedScopesRoot) {
+      return;
+    }
+    selectedScopesRoot.innerHTML = '';
+    if (!state.selectedScopes.length) {
+      const empty = document.createElement('div');
+      empty.className = 'field-hint';
+      empty.textContent = 'No scopes selected.';
+      selectedScopesRoot.appendChild(empty);
+      return;
+    }
+    state.selectedScopes.forEach((scope) => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'ghost-btn oauth-scope-pill';
+      pill.textContent = scope;
+
+      const remove = document.createElement('span');
+      remove.className = 'oauth-scope-remove';
+      remove.textContent = '×';
+      pill.appendChild(remove);
+
+      pill.addEventListener('click', () => {
+        state.selectedScopes = state.selectedScopes.filter((item) => item !== scope);
+        renderSelectedScopes();
+      });
+      selectedScopesRoot.appendChild(pill);
+    });
+  };
+
+  const setSelectedScopes = (scopes) => {
+    state.selectedScopes = normalizeScopes(scopes);
+    renderSelectedScopes();
+  };
+
+  const addSelectedScope = (scope) => {
+    scope = (scope || '').trim();
+    if (!scope) {
+      return;
+    }
+    state.selectedScopes = normalizeScopes([...state.selectedScopes, scope]);
+    renderSelectedScopes();
+  };
+
+  const loadAvailableScopes = async () => {
+    const json = await api.listOAuthScopes();
+    const permissionScopes = Array.isArray(json.scopes)
+      ? json.scopes.map((scope) => scope?.name || '').filter(Boolean)
+      : [];
+    state.availableScopes = normalizeScopes([...defaultScopes, 'offline_access', ...permissionScopes]);
+    renderScopePicker();
+    renderSelectedScopes();
+  };
+
   const resetForm = () => {
     if (!form) {
       return;
@@ -88,6 +161,10 @@ export const createOAuthSectionController = ({
     if (idInput) {
       idInput.value = '';
     }
+    if (reasonInput) {
+      reasonInput.value = '';
+    }
+    setSelectedScopes(defaultScopes);
     if (saveBtn) {
       saveBtn.textContent = 'Save Client';
     }
@@ -111,9 +188,7 @@ export const createOAuthSectionController = ({
     if (redirectsInput) {
       redirectsInput.value = (client.redirectUris || []).join('\n');
     }
-    if (scopesInput) {
-      scopesInput.value = (client.scopes || []).join(' ');
-    }
+    setSelectedScopes(client.scopes || defaultScopes);
     if (saveBtn) {
       saveBtn.textContent = 'Update Client';
     }
@@ -140,6 +215,16 @@ export const createOAuthSectionController = ({
     secretBanner.hidden = false;
     secretBanner.className = 'secret-banner show';
   };
+
+  const clearDetailReason = () => {
+    if (detailReasonInput) {
+      detailReasonInput.value = '';
+    }
+  };
+
+  const currentFormReason = () => reasonInput?.value?.trim() || '';
+
+  const currentDetailReason = () => detailReasonInput?.value?.trim() || '';
 
   const setLoading = (isLoading) => {
     if (!emptyState) {
@@ -229,6 +314,7 @@ export const createOAuthSectionController = ({
     }
     detailModal.hidden = true;
     state.detailOpen = false;
+    clearDetailReason();
     document.body.classList.remove('modal-open');
     document.removeEventListener('keydown', onKeydown);
   };
@@ -275,14 +361,16 @@ export const createOAuthSectionController = ({
     if (!client?.clientId) {
       return;
     }
+    const reason = currentDetailReason();
     await withClientAction(client.clientId, actionBtn, 'Secret rotation', async () => {
       showStatus('Rotating client secret.', 'info');
-      const json = await api.rotateOAuthSecret(client.clientId);
+      const json = await api.rotateOAuthSecret(client.clientId, { reason });
       const displayName = client.name || client.clientId;
       showSecretBanner(`New secret for ${displayName}: ${json.clientSecret}`);
-      recordActivity('oauth', 'Client secret rotated', displayName);
+      recordActivity('oauth', 'Client secret rotated', reason || displayName);
       showStatus('Client secret rotated.', 'success');
       await loadClients();
+      clearDetailReason();
     });
   };
 
@@ -290,6 +378,7 @@ export const createOAuthSectionController = ({
     if (!client?.clientId) {
       return;
     }
+    const reason = currentDetailReason();
     const confirmDelete = globalThis.confirm(
       `Delete OAuth client "${client.name || client.clientId}"? This action cannot be undone.`,
     );
@@ -298,8 +387,8 @@ export const createOAuthSectionController = ({
     }
     await withClientAction(client.clientId, actionBtn, 'Delete', async () => {
       showStatus('Deleting client.', 'info');
-      await api.deleteOAuthClient(client.clientId);
-      recordActivity('oauth', 'Client deleted', client.name || client.clientId);
+      await api.deleteOAuthClient(client.clientId, { reason });
+      recordActivity('oauth', 'Client deleted', reason || client.name || client.clientId);
       showStatus('Client deleted.', 'success');
       closeDetailModal();
       await loadClients();
@@ -406,6 +495,7 @@ export const createOAuthSectionController = ({
     }
     setLoading(true);
     try {
+      await loadAvailableScopes();
       const json = await api.listOAuthClients();
       state.clients = Array.isArray(json.clients) ? json.clients : [];
       renderClients();
@@ -455,7 +545,8 @@ export const createOAuthSectionController = ({
         const payload = {
           name: nameInput?.value?.trim() || '',
           redirectUris: parseRedirectList(redirectsInput?.value || ''),
-          scopes: parseScopes(scopesInput?.value || ''),
+          scopes: normalizeScopes(state.selectedScopes),
+          reason: currentFormReason(),
         };
         const clientId = idInput?.value?.trim() || '';
 
@@ -475,7 +566,7 @@ export const createOAuthSectionController = ({
 
           showStatus(clientId ? 'Client updated.' : 'Client created.', 'success');
           const activityName = json.client?.name || payload.name || clientId || 'client';
-          recordActivity('oauth', clientId ? 'Client updated' : 'Client created', activityName);
+          recordActivity('oauth', clientId ? 'Client updated' : 'Client created', payload.reason || activityName);
 
           if (json.clientSecret) {
             showSecretBanner(`Client secret for ${activityName}: ${json.clientSecret}`);
@@ -548,6 +639,10 @@ export const createOAuthSectionController = ({
         await deleteClient(client, detailDeleteBtn);
       });
     }
+
+    scopeAddBtn?.addEventListener('click', () => {
+      addSelectedScope(scopePicker?.value || '');
+    });
   };
 
   return {

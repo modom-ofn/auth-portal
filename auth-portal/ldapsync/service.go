@@ -26,12 +26,23 @@ var ErrRunInProgress = errors.New("ldap sync already running")
 const managedByDescriptionValue = "managed_by=authportal"
 
 type Config struct {
-	LDAPHost           string `json:"ldapHost"`
-	LDAPAdminDN        string `json:"ldapAdminDn"`
-	LDAPAdminPassword  string `json:"ldapAdminPassword"`
-	BaseDN             string `json:"baseDn"`
-	LDAPStartTLS       bool   `json:"ldapStartTls"`
-	DeleteStaleEntries bool   `json:"deleteStaleEntries"`
+	LDAPHost              string                                                         `json:"ldapHost"`
+	LDAPAdminDN           string                                                         `json:"ldapAdminDn"`
+	LDAPAdminPassword     string                                                         `json:"ldapAdminPassword"`
+	BaseDN                string                                                         `json:"baseDn"`
+	LDAPStartTLS          bool                                                           `json:"ldapStartTls"`
+	DeleteStaleEntries    bool                                                           `json:"deleteStaleEntries"`
+	GroupSyncEnabled      bool                                                           `json:"groupSyncEnabled"`
+	GroupSearchBaseDN     string                                                         `json:"groupSearchBaseDn,omitempty"`
+	GroupNameAttribute    string                                                         `json:"groupNameAttribute,omitempty"`
+	GroupMemberAttribute  string                                                         `json:"groupMemberAttribute,omitempty"`
+	GroupRoleMappings     []GroupRoleMapping                                             `json:"groupRoleMappings,omitempty"`
+	ApplyGroupRoleMapping func(role, group string, usernames []string) (int, int, error) `json:"-"`
+}
+
+type GroupRoleMapping struct {
+	LDAPGroup string `json:"ldapGroup"`
+	Role      string `json:"role"`
 }
 
 type Result struct {
@@ -141,6 +152,25 @@ func ValidateConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.BaseDN) == "" {
 		return errors.New("base DN is required")
 	}
+	if cfg.GroupSyncEnabled {
+		if strings.TrimSpace(cfg.GroupSearchBaseDN) == "" {
+			return errors.New("group search base DN is required when LDAP group sync is enabled")
+		}
+		if strings.TrimSpace(cfg.GroupNameAttribute) == "" {
+			return errors.New("group name attribute is required when LDAP group sync is enabled")
+		}
+		if strings.TrimSpace(cfg.GroupMemberAttribute) == "" {
+			return errors.New("group member attribute is required when LDAP group sync is enabled")
+		}
+		if len(cfg.GroupRoleMappings) == 0 {
+			return errors.New("at least one LDAP group role mapping is required when LDAP group sync is enabled")
+		}
+		for _, mapping := range cfg.GroupRoleMappings {
+			if strings.TrimSpace(mapping.LDAPGroup) == "" || strings.TrimSpace(mapping.Role) == "" {
+				return errors.New("LDAP group mappings must include both ldapGroup and role")
+			}
+		}
+	}
 	return nil
 }
 
@@ -207,6 +237,13 @@ func (s *Service) run(ctx context.Context, cfg Config) (Result, error) {
 	result := Result{UsersConsidered: len(users)}
 	s.syncAuthorizedUsers(conn, baseDN, users, &result)
 
+	if cfg.GroupSyncEnabled && cfg.ApplyGroupRoleMapping != nil {
+		added, removed, failed := syncGroupRoleMappings(conn, cfg, cfg.ApplyGroupRoleMapping)
+		result.EntriesUpdated += added
+		result.EntriesDeleted += removed
+		result.FailedEntries += failed
+	}
+
 	if cfg.DeleteStaleEntries {
 		deleted, failed, err := deleteStaleManagedEntries(conn, strings.TrimSpace(cfg.BaseDN), users)
 		result.EntriesDeleted += deleted
@@ -226,6 +263,130 @@ func (s *Service) run(ctx context.Context, cfg Config) (Result, error) {
 	)
 	log.Printf("LDAP sync completed: %s", result.Summary)
 	return result, nil
+}
+
+func syncGroupRoleMappings(conn *ldap.Conn, cfg Config, apply func(role, group string, usernames []string) (int, int, error)) (int, int, int) {
+	totalAdded := 0
+	totalRemoved := 0
+	failed := 0
+	for _, mapping := range cfg.GroupRoleMappings {
+		usernames, err := lookupGroupMembers(conn, cfg, mapping.LDAPGroup)
+		if err != nil {
+			log.Printf("LDAP role mapping lookup failed for group %q role %q: %v", mapping.LDAPGroup, mapping.Role, err)
+			failed++
+			continue
+		}
+		added, removed, err := apply(strings.TrimSpace(mapping.Role), strings.TrimSpace(mapping.LDAPGroup), usernames)
+		if err != nil {
+			log.Printf("LDAP role mapping apply failed for group %q role %q: %v", mapping.LDAPGroup, mapping.Role, err)
+			failed++
+			continue
+		}
+		totalAdded += added
+		totalRemoved += removed
+	}
+	return totalAdded, totalRemoved, failed
+}
+
+func lookupGroupMembers(conn *ldap.Conn, cfg Config, group string) ([]string, error) {
+	entry, err := findGroupEntry(conn, cfg, group)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return nil, nil
+	}
+	values := entry.GetAttributeValues(strings.TrimSpace(cfg.GroupMemberAttribute))
+	if len(values) == 0 {
+		return nil, nil
+	}
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if username := normalizeGroupMemberUsername(value); username != "" {
+			set[username] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for username := range set {
+		out = append(out, username)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func findGroupEntry(conn *ldap.Conn, cfg Config, group string) (*ldap.Entry, error) {
+	group = strings.TrimSpace(group)
+	baseDN := strings.TrimSpace(cfg.GroupSearchBaseDN)
+	nameAttr := strings.TrimSpace(cfg.GroupNameAttribute)
+	if group == "" || baseDN == "" || nameAttr == "" {
+		return nil, nil
+	}
+
+	if looksLikeDN(group) {
+		req := ldap.NewSearchRequest(
+			group,
+			ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
+			"(objectClass=*)",
+			[]string{nameAttr, cfg.GroupMemberAttribute},
+			nil,
+		)
+		res, err := conn.Search(req)
+		if err != nil {
+			if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		if len(res.Entries) == 0 {
+			return nil, nil
+		}
+		return res.Entries[0], nil
+	}
+
+	req := ldap.NewSearchRequest(
+		baseDN,
+		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 1, 0, false,
+		fmt.Sprintf("(%s=%s)", nameAttr, ldapEscapeFilterValue(group)),
+		[]string{nameAttr, cfg.GroupMemberAttribute},
+		nil,
+	)
+	res, err := conn.Search(req)
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Entries) == 0 {
+		return nil, nil
+	}
+	return res.Entries[0], nil
+}
+
+func normalizeGroupMemberUsername(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if !looksLikeDN(value) {
+		return value
+	}
+	parts := strings.Split(value, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		lower := strings.ToLower(part)
+		for _, key := range []string{"uid=", "cn=", "sAMAccountName=", "samaccountname="} {
+			if strings.HasPrefix(lower, strings.ToLower(key)) {
+				pieces := strings.SplitN(part, "=", 2)
+				if len(pieces) == 2 {
+					return strings.TrimSpace(pieces[1])
+				}
+			}
+		}
+	}
+	return value
+}
+
+func looksLikeDN(value string) bool {
+	value = strings.TrimSpace(value)
+	return strings.Contains(value, "=") && strings.Contains(value, ",")
 }
 
 func (s *Service) loadAuthorizedUsers(ctx context.Context) (map[string]*rowUser, error) {

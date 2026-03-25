@@ -53,21 +53,35 @@ func extraLink() (urlStr, text string) {
 }
 
 type portalServiceButton struct {
-	Text      string
-	URL       string
-	Color     string
-	TextColor string
+	Text               string
+	URL                string
+	Color              string
+	TextColor          string
+	RequiredPermission string
 }
 
-func serviceButtons() []portalServiceButton {
+func serviceButtons(permissions []string) []portalServiceButton {
 	cfg := currentRuntimeConfig().AppSettings
 	buttons := make([]portalServiceButton, 0, len(cfg.ServiceLinks))
 	seen := make(map[string]struct{}, len(cfg.ServiceLinks))
-	appendButton := func(text, rawURL, color string) {
+	permissionSet := make(map[string]struct{}, len(permissions))
+	for _, permission := range permissions {
+		permission = normalizeRBACName(permission)
+		if permission != "" {
+			permissionSet[permission] = struct{}{}
+		}
+	}
+	appendButton := func(text, rawURL, color, requiredPermission string) {
 		safeURL := sanitizeDisplayURL(rawURL)
 		safeText := strings.TrimSpace(text)
 		if safeURL == "" || safeText == "" {
 			return
+		}
+		requiredPermission = normalizeRBACName(requiredPermission)
+		if requiredPermission != "" {
+			if _, ok := permissionSet[requiredPermission]; !ok {
+				return
+			}
 		}
 		safeColor := sanitizeHexColor(color)
 		key := strings.ToLower(safeText) + "|" + safeURL
@@ -80,14 +94,15 @@ func serviceButtons() []portalServiceButton {
 			textColor = readableTextForHex(safeColor)
 		}
 		buttons = append(buttons, portalServiceButton{
-			Text:      safeText,
-			URL:       safeURL,
-			Color:     safeColor,
-			TextColor: textColor,
+			Text:               safeText,
+			URL:                safeURL,
+			Color:              safeColor,
+			TextColor:          textColor,
+			RequiredPermission: requiredPermission,
 		})
 	}
 	for _, item := range cfg.ServiceLinks {
-		appendButton(item.Name, item.URL, item.Color)
+		appendButton(item.Name, item.URL, item.Color, item.RequiredPermission)
 	}
 	return buttons
 }
@@ -277,11 +292,21 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {
+	roles, roleErr := userRoles(uuidFrom(r.Context()), usernameFrom(r.Context()))
+	if roleErr != nil {
+		log.Printf("me: role lookup failed: %v", roleErr)
+	}
+	permissions, permErr := userPermissions(uuidFrom(r.Context()), usernameFrom(r.Context()))
+	if permErr != nil {
+		log.Printf("me: permission lookup failed: %v", permErr)
+	}
 	w.Header().Set(headerContentType, contentTypeJSON)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"username": usernameFrom(r.Context()),
-		"uuid":     uuidFrom(r.Context()),
-		"admin":    adminFrom(r.Context()),
+		"username":    usernameFrom(r.Context()),
+		"uuid":        uuidFrom(r.Context()),
+		"admin":       adminFrom(r.Context()),
+		"roles":       roles,
+		"permissions": permissions,
 	})
 }
 
@@ -291,18 +316,20 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 // render the correct login button.
 func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 	type resp struct {
-		OK              bool   `json:"ok"`
-		Authenticated   bool   `json:"authenticated"`
-		Provider        string `json:"provider"`
-		ProviderDisplay string `json:"providerDisplay"`
-		Username        string `json:"username,omitempty"`
-		UUID            string `json:"uuid,omitempty"`
-		Email           string `json:"email,omitempty"`
-		MediaAccess     bool   `json:"mediaAccess"`
-		LoginPath       string `json:"loginPath"`
-		IssuedAt        string `json:"issuedAt,omitempty"`
-		Expiry          string `json:"expiry,omitempty"`
-		Admin           bool   `json:"admin"`
+		OK              bool     `json:"ok"`
+		Authenticated   bool     `json:"authenticated"`
+		Provider        string   `json:"provider"`
+		ProviderDisplay string   `json:"providerDisplay"`
+		Username        string   `json:"username,omitempty"`
+		UUID            string   `json:"uuid,omitempty"`
+		Email           string   `json:"email,omitempty"`
+		MediaAccess     bool     `json:"mediaAccess"`
+		LoginPath       string   `json:"loginPath"`
+		IssuedAt        string   `json:"issuedAt,omitempty"`
+		Expiry          string   `json:"expiry,omitempty"`
+		Admin           bool     `json:"admin"`
+		Roles           []string `json:"roles,omitempty"`
+		Permissions     []string `json:"permissions,omitempty"`
 	}
 
 	key, display := providerUI()
@@ -323,6 +350,16 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 	out.IssuedAt = ident.IssuedAt
 	out.Expiry = ident.Expiry
 	out.Admin = ident.Admin || adminFrom(r.Context())
+	if roles, err := userRoles(ident.UUID, ident.Username); err == nil {
+		out.Roles = roles
+	} else {
+		log.Printf("whoami role lookup failed for %s (%s): %v", ident.Username, ident.UUID, err)
+	}
+	if permissions, err := userPermissions(ident.UUID, ident.Username); err == nil {
+		out.Permissions = permissions
+	} else {
+		log.Printf("whoami permission lookup failed for %s (%s): %v", ident.Username, ident.UUID, err)
+	}
 
 	if authorized, err := activeProvider().IsAuthorized(ident.UUID, ident.Username); err != nil {
 		log.Printf("whoami authz check failed for %s (%s): %v", ident.Username, ident.UUID, err)
@@ -427,7 +464,11 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	cardColor, cardMode := portalModalPresentation()
 
 	if authorized {
-		serviceLinks := serviceButtons()
+		permissions, permErr := userPermissions(uid, uname)
+		if permErr != nil {
+			log.Printf("home: permission lookup failed for %s (%s): %v", uname, uid, permErr)
+		}
+		serviceLinks := serviceButtons(permissions)
 		render(w, "portal_authorized.html", map[string]any{
 			"Username":            uname,
 			"ProviderName":        providerDisplay, // exact casing
