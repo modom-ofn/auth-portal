@@ -341,7 +341,7 @@ func embyGetUserDetail(serverURL, token, userID string) (embyUserDetail, error) 
 func embyAuthenticate(serverURL, clientID, username, password string) (mediaAuthResp, error) {
 	base := strings.TrimSuffix(serverURL, "/")
 	if Debugf != nil {
-		Debugf("emby/auth start server=%s user=%q", base, username)
+		Debugf("emby/auth start server=%s user=%q", redactURLForLog(base), username)
 	}
 	// Try the form-style keys first (matches Emby Web patterns)
 	out, err := mediaAuthAttempt("emby", base, EmbyAppName, EmbyAppVersion, clientID, map[string]string{
