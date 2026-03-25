@@ -474,7 +474,21 @@
                 </div>
                 <div id="backups-panel" class="panel" hidden>
                     <div class="panel-header">
-                        <h2>Backups</h2>
+                        <div class="backup-title-block">
+                            <h2>Backups</h2>
+                            <div class="backup-status-grid">
+                                <div class="backup-status-card">
+                                    <span class="backup-status-label">Last Run</span>
+                                    <span id="backup-last-run" class="backup-status-value">-</span>
+                                    <span class="backup-status-note">Shown in {{.AppTimeZone}}</span>
+                                </div>
+                                <div class="backup-status-card">
+                                    <span class="backup-status-label">Next Run</span>
+                                    <span id="backup-next-run" class="backup-status-value">-</span>
+                                    <span class="backup-status-note">Shown in {{.AppTimeZone}}</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="backup-header-actions">
                             <button type="button" id="backups-refresh-btn" class="ghost-btn">Refresh</button>
                             <button type="button" id="backups-run-btn" class="success-btn">Run Backup</button>
@@ -534,10 +548,6 @@
                             <div class="backup-schedule-actions">
                                 <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
                                 <button type="submit" id="backup-schedule-save" class="primary-btn">Save Schedule</button>
-                                <div class="backup-run-meta">
-                                    <span>Last run ({{.AppTimeZone}}): <span id="backup-last-run">-</span></span>
-                                    <span>Next run ({{.AppTimeZone}}): <span id="backup-next-run">-</span></span>
-                                </div>
                             </div>
                     </form>
                     <div id="backup-empty" class="muted">No backups created yet.</div>
