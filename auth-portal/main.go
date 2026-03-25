@@ -27,6 +27,11 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// appVersion is the application version string. Override at build time via:
+//
+//	go build -ldflags "-X main.appVersion=v2.0.6"
+var appVersion = "v2.0.5"
+
 var (
 	db                                     *sql.DB
 	configStore                            *configstore.Store

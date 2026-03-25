@@ -54,7 +54,7 @@
                 </button>
             </nav>
             <div class="admin-sidebar-footer">
-                <span class="admin-sidebar-version">Admin Console</span>
+                <a class="admin-sidebar-version" href="https://github.com/modom-ofn/auth-portal/" target="_blank" rel="noopener noreferrer">{{.AppVersion}}</a>
             </div>
         </aside>
         <div class="admin-main-area">
@@ -77,73 +77,112 @@
 
             <main class="admin-content">
                 <div class="admin-panels">
+
+                <!-- ================================================================
+                     TABS: Providers · Security · MFA · App Settings
+                     Panel is shared; JS swaps content and title based on active tab.
+                     ================================================================ -->
                 <form id="config-form" class="panel" autocomplete="off">
                     <div class="panel-header">
-                        <h2 id="panel-title">Providers</h2>
-                        <div class="panel-header-actions">
-                            <span id="version-badge" class="version-badge">v-</span>
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2 id="panel-title">Providers</h2>
                         </div>
+                        <span id="version-badge" class="version-badge" hidden></span>
                     </div>
                     <p class="panel-helper">Edit this section using the form fields below. Provide a short reason before saving.</p>
-                    <div class="config-tools">
-                        <button type="button" id="config-export-btn" class="ghost-btn">Export</button>
-                        <button type="button" id="config-import-btn" class="ghost-btn">Import</button>
-                        <input type="file" id="config-import-input" accept="application/json" hidden>
-                    </div>
-                    <div id="config-fields" class="config-fields" aria-live="polite"></div>
-                    <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
-                    <div class="admin-actions">
-                        <input id="reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
-                        <button id="save-btn" type="submit" class="primary-btn">Save Changes</button>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title"><h3>Settings</h3></div>
+                                <div class="config-tools">
+                                    <button type="button" id="config-export-btn" class="ghost-btn">Export</button>
+                                    <button type="button" id="config-import-btn" class="ghost-btn">Import</button>
+                                    <input type="file" id="config-import-input" accept="application/json" hidden>
+                                </div>
+                            </div>
+                            <div id="config-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title"><h3>Save Changes</h3></div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="save-btn" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
                     </div>
                 </form>
 
+                <!-- ================================================================
+                     TAB: OAuth Clients
+                     ================================================================ -->
                     <div id="oauth-panel" class="panel" hidden>
                         <div class="panel-header">
-                            <h2>OAuth Clients</h2>
+                            <div class="panel-title-block">
+                                <span class="panel-kicker">OIDC · OAuth 2.0</span>
+                                <h2>OAuth Clients</h2>
+                            </div>
                             <div class="panel-header-actions">
                                 <button type="button" id="oauth-clients-reload" class="ghost-btn">Refresh</button>
                             </div>
                         </div>
-                    <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
-                    <div id="oauth-secret-banner" class="secret-banner" hidden></div>
-                    <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
-                    <div id="oauth-client-cards" class="oauth-client-cards" hidden></div>
-                    <form id="oauth-client-form" class="oauth-form" autocomplete="off">
-                        <input type="hidden" id="oauth-client-id">
-                        <div class="form-row">
-                            <label for="oauth-client-name">Display Name</label>
-                            <input id="oauth-client-name" type="text" required placeholder="Example Application">
+                        <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
+                        <div class="panel-layout">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title"><h3>Registered Clients</h3></div>
+                                </div>
+                                <div id="oauth-secret-banner" class="secret-banner" hidden></div>
+                                <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
+                                <div id="oauth-client-cards" class="oauth-client-cards" hidden></div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title"><h3>Client Configuration</h3></div>
+                                </div>
+                                <form id="oauth-client-form" class="oauth-form" autocomplete="off">
+                                    <input type="hidden" id="oauth-client-id">
+                                    <div class="form-row">
+                                        <label for="oauth-client-name">Display Name</label>
+                                        <input id="oauth-client-name" type="text" required placeholder="Example Application">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="oauth-client-redirects">Redirect URIs</label>
+                                        <textarea id="oauth-client-redirects" rows="3" placeholder="https://example.com/callback" required></textarea>
+                                        <span class="field-hint">Enter one URI per line.</span>
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="oauth-client-scope-picker">Scopes</label>
+                                        <div class="oauth-scope-picker">
+                                            <select id="oauth-client-scope-picker"></select>
+                                            <button id="oauth-client-scope-add" type="button" class="ghost-btn">Add Scope</button>
+                                        </div>
+                                        <div id="oauth-client-scope-selected" class="oauth-scope-selected"></div>
+                                        <span class="field-hint">Choose from standard OIDC scopes and RBAC permissions. New RBAC permissions created in Access Control appear here.</span>
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="oauth-client-reason">Change Reason</label>
+                                        <textarea id="oauth-client-reason" rows="2" maxlength="200" placeholder="Why are you creating or updating this client?"></textarea>
+                                        <span class="field-hint">Saved with the OAuth audit history.</span>
+                                    </div>
+                                    <div class="oauth-form-actions">
+                                        <button id="oauth-client-save" type="submit" class="primary-btn">Save Client</button>
+                                        <button id="oauth-client-cancel" type="button" class="ghost-btn" hidden>Cancel Edit</button>
+                                    </div>
+                                </form>
+                            </section>
                         </div>
-                        <div class="form-row">
-                            <label for="oauth-client-redirects">Redirect URIs</label>
-                            <textarea id="oauth-client-redirects" rows="3" placeholder="https://example.com/callback" required></textarea>
-                            <span class="field-hint">Enter one URI per line.</span>
-                        </div>
-                        <div class="form-row">
-                            <label for="oauth-client-scope-picker">Scopes</label>
-                            <div class="oauth-scope-picker">
-                                <select id="oauth-client-scope-picker"></select>
-                                <button id="oauth-client-scope-add" type="button" class="ghost-btn">Add Scope</button>
-                            </div>
-                            <div id="oauth-client-scope-selected" class="oauth-scope-selected"></div>
-                            <span class="field-hint">Choose from standard OIDC scopes and RBAC permissions. New RBAC permissions created in Access Control appear here.</span>
-                        </div>
-                        <div class="form-row">
-                            <label for="oauth-client-reason">Change Reason</label>
-                            <textarea id="oauth-client-reason" rows="2" maxlength="200" placeholder="Why are you creating or updating this client?"></textarea>
-                            <span class="field-hint">Saved with the OAuth audit history.</span>
-                        </div>
-                        <div class="oauth-form-actions">
-                            <button id="oauth-client-save" type="submit" class="primary-btn">Save Client</button>
-                            <button id="oauth-client-cancel" type="button" class="ghost-btn" hidden>Cancel Edit</button>
-                        </div>
-                    </form>
-                </div>
+                    </div>
+                <!-- ================================================================
+                     TAB: LDAP Sync
+                     ================================================================ -->
                 <div id="ldap-sync-panel" class="panel" hidden>
                     <div class="panel-header">
-                        <div class="ldap-sync-title-block">
-                            <span class="ldap-sync-kicker">Directory Bridge</span>
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Directory Bridge</span>
                             <h2>LDAP Sync</h2>
                         </div>
                         <div class="ldap-sync-header-actions">
@@ -158,10 +197,10 @@
                         <button type="button" id="ldap-sync-import-btn" class="ghost-btn">Import</button>
                         <input type="file" id="ldap-sync-import-input" accept="application/json" hidden>
                     </div>
-                    <div class="ldap-sync-layout">
-                        <section class="ldap-sync-section">
-                            <div class="ldap-sync-section-head">
-                                <div class="ldap-sync-section-title">
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
                                     <h3>Sync Overview</h3>
                                     <button type="button" class="section-info-icon" aria-label="Current run state, timestamps, and latest connection test results." title="Current run state, timestamps, and latest connection test results." data-tooltip="Current run state, timestamps, and latest connection test results.">i</button>
                                 </div>
@@ -211,9 +250,9 @@
                         </section>
 
                         <form id="ldap-sync-form" class="oauth-form ldap-sync-form" autocomplete="off">
-                            <section class="ldap-sync-section">
-                                <div class="ldap-sync-section-head">
-                                    <div class="ldap-sync-section-title">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
                                         <h3>Connection Settings</h3>
                                         <button type="button" class="section-info-icon" aria-label="Credentials and directory location used for LDAP sync and connection tests." title="Credentials and directory location used for LDAP sync and connection tests." data-tooltip="Credentials and directory location used for LDAP sync and connection tests.">i</button>
                                     </div>
@@ -243,9 +282,9 @@
                                 <p class="field-hint">Only entries previously stamped as managed by AuthPortal are eligible for deletion.</p>
                             </section>
 
-                            <section class="ldap-sync-section ldap-sync-section-muted">
-                                <div class="ldap-sync-section-head">
-                                    <div class="ldap-sync-section-title">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
                                         <h3>Automatic Sync</h3>
                                         <button type="button" class="section-info-icon" aria-label="Control scheduled LDAP sync timing using the saved connection settings above." title="Control scheduled LDAP sync timing using the saved connection settings above." data-tooltip="Control scheduled LDAP sync timing using the saved connection settings above.">i</button>
                                     </div>
@@ -296,9 +335,9 @@
                                 </div>
                             </section>
 
-                            <section class="ldap-sync-section ldap-sync-section-muted">
-                                <div class="ldap-sync-section-head">
-                                    <div class="ldap-sync-section-title">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
                                         <h3>LDAP Group Role Mapping</h3>
                                         <button type="button" class="section-info-icon" aria-label="Optional LDAP group to RBAC role synchronization settings." title="Optional LDAP group to RBAC role synchronization settings." data-tooltip="Enable this to read LDAP groups during sync and map group membership onto AuthPortal roles. Group membership updates manual assignments only through the dedicated ldap-group source; manual bindings remain separate.">i</button>
                                     </div>
@@ -331,9 +370,9 @@
                                 </div>
                             </section>
 
-                            <section class="ldap-sync-section">
-                                <div class="ldap-sync-section-head">
-                                    <div class="ldap-sync-section-title">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
                                         <h3>Save Changes</h3>
                                         <button type="button" class="section-info-icon" aria-label="Document why you changed LDAP Sync settings before applying them." title="Document why you changed LDAP Sync settings before applying them." data-tooltip="Document why you changed LDAP Sync settings before applying them.">i</button>
                                     </div>
@@ -345,9 +384,9 @@
                             </section>
                         </form>
 
-                        <section class="ldap-sync-section">
-                            <div class="ldap-sync-section-head">
-                                <div class="ldap-sync-section-title">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
                                     <h3>Recent Sync Runs</h3>
                                     <button type="button" class="section-info-icon" aria-label="Latest manual and scheduled LDAP sync outcomes." title="Latest manual and scheduled LDAP sync outcomes." data-tooltip="Latest manual and scheduled LDAP sync outcomes.">i</button>
                                 </div>
@@ -373,16 +412,24 @@
                         </section>
                     </div>
                 </div>
+                <!-- ================================================================
+                     TAB: Access Control
+                     ================================================================ -->
                 <div id="access-control-panel" class="panel" hidden>
                     <div class="panel-header">
-                        <h2>Access Control</h2>
-                        <button type="button" id="access-control-refresh" class="ghost-btn">Refresh</button>
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Role-Based Access</span>
+                            <h2>Access Control</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="access-control-refresh" class="ghost-btn">Refresh</button>
+                        </div>
                     </div>
                     <p class="panel-helper">Manage manual RBAC role bindings. LDAP-driven role assignments are configured in the LDAP Sync tab and appear here as effective roles.</p>
-                    <div class="access-control-layout">
-                        <section class="ldap-sync-section">
-                            <div class="ldap-sync-section-head">
-                                <div class="ldap-sync-section-title">
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
                                     <h3>Role Catalog</h3>
                                 </div>
                             </div>
@@ -425,9 +472,9 @@
                             </div>
                         </section>
 
-                        <section class="ldap-sync-section">
-                            <div class="ldap-sync-section-head">
-                                <div class="ldap-sync-section-title">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
                                     <h3>Permission Catalog</h3>
                                 </div>
                             </div>
@@ -465,9 +512,9 @@
                             </div>
                         </section>
 
-                        <section class="ldap-sync-section">
-                            <div class="ldap-sync-section-head">
-                                <div class="ldap-sync-section-title">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
                                     <h3>Manual Role Binding</h3>
                                 </div>
                             </div>
@@ -491,9 +538,9 @@
                             </form>
                         </section>
 
-                        <section class="ldap-sync-section">
-                            <div class="ldap-sync-section-head">
-                                <div class="ldap-sync-section-title">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
                                     <h3>User Bindings</h3>
                                 </div>
                             </div>
@@ -516,9 +563,13 @@
                         </section>
                     </div>
                 </div>
+                <!-- ================================================================
+                     TAB: Backups
+                     ================================================================ -->
                 <div id="backups-panel" class="panel" hidden>
                     <div class="panel-header">
-                        <div class="backup-title-block">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Data Protection</span>
                             <h2>Backups</h2>
                             <div class="backup-status-grid">
                                 <div class="backup-status-card">
@@ -533,175 +584,193 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="backup-header-actions">
+                        <div class="panel-header-actions">
                             <button type="button" id="backups-refresh-btn" class="ghost-btn">Refresh</button>
                             <button type="button" id="backups-run-btn" class="success-btn">Run Backup</button>
                         </div>
                     </div>
                     <p class="panel-helper">Schedule or create configuration backups. Files are written to <code>./backups</code> inside the container.</p>
-                    <form id="backup-schedule-form" class="backup-schedule" autocomplete="off">
-                        <div class="backup-toggle">
-                            <label>
-                                <input type="checkbox" id="backup-schedule-enabled">
-                                Enable automatic backups
-                            </label>
-                            <span class="muted">Selected sections are included in scheduled runs.</span>
-                        </div>
-                        <div class="backup-schedule-grid">
-                            <div class="backup-schedule-row">
-                                <label for="backup-frequency">Frequency</label>
-                                <select id="backup-frequency">
-                                    <option value="daily">Daily</option>
-                                    <option value="weekly">Weekly</option>
-                                    <option value="hourly">Hourly</option>
-                                </select>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title"><h3>Schedule</h3></div>
                             </div>
-                            <div class="backup-schedule-row" data-frequency-row="daily weekly">
-                                <label for="backup-time">Run at ({{.AppTimeZone}})</label>
-                                <input type="time" id="backup-time" value="02:00">
+                            <form id="backup-schedule-form" class="backup-schedule" autocomplete="off">
+                                <div class="backup-toggle">
+                                    <label>
+                                        <input type="checkbox" id="backup-schedule-enabled">
+                                        Enable automatic backups
+                                    </label>
+                                    <span class="muted">Selected sections are included in scheduled runs.</span>
+                                </div>
+                                <div class="backup-schedule-grid">
+                                    <div class="backup-schedule-row">
+                                        <label for="backup-frequency">Frequency</label>
+                                        <select id="backup-frequency">
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="hourly">Hourly</option>
+                                        </select>
+                                    </div>
+                                    <div class="backup-schedule-row" data-frequency-row="daily weekly">
+                                        <label for="backup-time">Run at ({{.AppTimeZone}})</label>
+                                        <input type="time" id="backup-time" value="02:00">
+                                    </div>
+                                    <div class="backup-schedule-row" data-frequency-row="weekly">
+                                        <label for="backup-weekday">Day</label>
+                                        <select id="backup-weekday">
+                                            <option value="sunday">Sunday</option>
+                                            <option value="monday">Monday</option>
+                                            <option value="tuesday">Tuesday</option>
+                                            <option value="wednesday">Wednesday</option>
+                                            <option value="thursday">Thursday</option>
+                                            <option value="friday">Friday</option>
+                                            <option value="saturday">Saturday</option>
+                                        </select>
+                                    </div>
+                                    <div class="backup-schedule-row" data-frequency-row="hourly">
+                                        <label for="backup-minute">Minute past the hour</label>
+                                        <input type="number" id="backup-minute" min="0" max="59" value="0">
+                                    </div>
+                                    <div class="backup-schedule-row">
+                                        <label for="backup-retention">Retention (files)</label>
+                                        <input type="number" id="backup-retention" min="0" value="30">
+                                    </div>
+                                </div>
+                                <fieldset class="backup-sections">
+                                    <legend>Include sections</legend>
+                                    <label><input type="checkbox" class="backup-section-checkbox" value="providers" checked> Providers</label>
+                                    <label><input type="checkbox" class="backup-section-checkbox" value="security" checked> Security</label>
+                                    <label><input type="checkbox" class="backup-section-checkbox" value="mfa" checked> MFA</label>
+                                    <label><input type="checkbox" class="backup-section-checkbox" value="app-settings" checked> App Settings</label>
+                                    <label><input type="checkbox" class="backup-section-checkbox" value="ldap-sync" checked> LDAP Sync</label>
+                                </fieldset>
+                                <div class="backup-schedule-actions">
+                                    <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                    <button type="submit" id="backup-schedule-save" class="primary-btn">Save Schedule</button>
+                                </div>
+                            </form>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title"><h3>Backup Files</h3></div>
                             </div>
-                            <div class="backup-schedule-row" data-frequency-row="weekly">
-                                <label for="backup-weekday">Day</label>
-                                <select id="backup-weekday">
-                                    <option value="sunday">Sunday</option>
-                                    <option value="monday">Monday</option>
-                                    <option value="tuesday">Tuesday</option>
-                                    <option value="wednesday">Wednesday</option>
-                                    <option value="thursday">Thursday</option>
-                                    <option value="friday">Friday</option>
-                                    <option value="saturday">Saturday</option>
-                                </select>
+                            <div id="backup-empty" class="muted">No backups created yet.</div>
+                            <div id="backup-table-wrapper" class="backup-table-wrapper" hidden>
+                                <table class="backup-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Created</th>
+                                            <th>Size</th>
+                                            <th>Sections</th>
+                                            <th>Created By</th>
+                                            <th class="actions-col"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="backup-rows"></tbody>
+                                </table>
                             </div>
-                            <div class="backup-schedule-row" data-frequency-row="hourly">
-                                <label for="backup-minute">Minute past the hour</label>
-                                <input type="number" id="backup-minute" min="0" max="59" value="0">
-                            </div>
-                            <div class="backup-schedule-row">
-                                <label for="backup-retention">Retention (files)</label>
-                                <input type="number" id="backup-retention" min="0" value="30">
-                            </div>
-                        </div>
-                        <fieldset class="backup-sections">
-                            <legend>Include sections</legend>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="providers" checked> Providers</label>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="security" checked> Security</label>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="mfa" checked> MFA</label>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="app-settings" checked> App Settings</label>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="ldap-sync" checked> LDAP Sync</label>
-                        </fieldset>
-                            <div class="backup-schedule-actions">
-                                <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
-                                <button type="submit" id="backup-schedule-save" class="primary-btn">Save Schedule</button>
-                            </div>
-                    </form>
-                    <div id="backup-empty" class="muted">No backups created yet.</div>
-                    <div id="backup-table-wrapper" class="backup-table-wrapper" hidden>
-                        <table class="backup-table">
-                            <thead>
-                                <tr>
-                                    <th>Created</th>
-                                    <th>Size</th>
-                                    <th>Sections</th>
-                                    <th>Created By</th>
-                                    <th class="actions-col"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="backup-rows"></tbody>
-                        </table>
+                        </section>
                     </div>
                 </div>
 
+                <!-- ================================================================
+                     TAB: Logs
+                     ================================================================ -->
                 <div id="logs-panel" class="panel" hidden>
                     <div class="panel-header">
-                        <h2>Logs</h2>
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Audit &amp; Diagnostics</span>
+                            <h2>Logs</h2>
+                        </div>
                         <div class="panel-header-actions">
                             <button type="button" id="logs-history-refresh" class="ghost-btn">Refresh</button>
                         </div>
                     </div>
                     <p class="panel-helper">Review admin audit activity across the console and inspect the live application log stream when needed.</p>
-
-                    <section class="logs-section">
-                        <div class="logs-section-header">
-                            <h3>Recent Changes</h3>
-                            <span id="logs-history-summary" class="muted">Loading.</span>
-                        </div>
-                        <div class="logs-filters">
-                            <div class="form-row">
-                                <label for="logs-filter-section">Tab</label>
-                                <select id="logs-filter-section">
-                                    <option value="">All tabs</option>
-                                </select>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title"><h3>Recent Changes</h3></div>
+                                <span id="logs-history-summary" class="muted">Loading.</span>
                             </div>
-                            <div class="form-row">
-                                <label for="logs-filter-user">User</label>
-                                <select id="logs-filter-user">
-                                    <option value="">All users</option>
-                                </select>
+                            <div class="logs-filters">
+                                <div class="form-row">
+                                    <label for="logs-filter-section">Tab</label>
+                                    <select id="logs-filter-section">
+                                        <option value="">All tabs</option>
+                                    </select>
+                                </div>
+                                <div class="form-row">
+                                    <label for="logs-filter-user">User</label>
+                                    <select id="logs-filter-user">
+                                        <option value="">All users</option>
+                                    </select>
+                                </div>
+                                <div class="form-row">
+                                    <label for="logs-sort-order">Sort</label>
+                                    <select id="logs-sort-order">
+                                        <option value="desc">Newest first</option>
+                                        <option value="asc">Oldest first</option>
+                                    </select>
+                                </div>
+                                <div class="form-row">
+                                    <label for="logs-page-size">Rows</label>
+                                    <select id="logs-page-size">
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="all">All</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="form-row">
-                                <label for="logs-sort-order">Sort</label>
-                                <select id="logs-sort-order">
-                                    <option value="desc">Newest first</option>
-                                    <option value="asc">Oldest first</option>
-                                </select>
+                            <div class="backup-table-wrapper logs-table-wrapper">
+                                <table class="backup-table logs-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Changed</th>
+                                            <th>Tab</th>
+                                            <th>User</th>
+                                            <th>Action</th>
+                                            <th>Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="logs-history-rows">
+                                        <tr><td colspan="5" class="muted">Loading recent changes.</td></tr>
+                                    </tbody>
+                                </table>
                             </div>
-                            <div class="form-row">
-                                <label for="logs-page-size">Rows</label>
-                                <select id="logs-page-size">
-                                    <option value="10" selected>10</option>
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="all">All</option>
-                                </select>
+                            <div class="logs-pagination">
+                                <button type="button" id="logs-page-prev" class="ghost-btn">Previous</button>
+                                <span id="logs-page-status" class="muted">Page 1 of 1</span>
+                                <button type="button" id="logs-page-next" class="ghost-btn">Next</button>
                             </div>
-                        </div>
-                        <div class="backup-table-wrapper logs-table-wrapper">
-                            <table class="backup-table logs-table">
-                                <thead>
-                                    <tr>
-                                        <th>Changed</th>
-                                        <th>Tab</th>
-                                        <th>User</th>
-                                        <th>Action</th>
-                                        <th>Details</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="logs-history-rows">
-                                    <tr><td colspan="5" class="muted">Loading recent changes.</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="logs-pagination">
-                            <button type="button" id="logs-page-prev" class="ghost-btn">Previous</button>
-                            <span id="logs-page-status" class="muted">Page 1 of 1</span>
-                            <button type="button" id="logs-page-next" class="ghost-btn">Next</button>
-                        </div>
-                    </section>
-
-                    <section class="logs-section">
-                        <div class="logs-section-header">
-                            <h3>Log Stream</h3>
-                            <span id="logs-stream-status" class="muted">Stream is off.</span>
-                        </div>
-                        <div class="logs-stream-controls">
-                            <div class="form-row">
-                                <label for="logs-stream-interval">Auto refresh</label>
-                                <select id="logs-stream-interval">
-                                    <option value="5000">Every 5 seconds</option>
-                                    <option value="10000">Every 10 seconds</option>
-                                    <option value="30000">Every 30 seconds</option>
-                                    <option value="60000">Every 60 seconds</option>
-                                </select>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title"><h3>Log Stream</h3></div>
+                                <span id="logs-stream-status" class="muted">Stream is off.</span>
                             </div>
-                            <div class="logs-stream-actions">
-                                <button type="button" id="logs-stream-start" class="success-btn">Start</button>
-                                <button type="button" id="logs-stream-pause" class="ghost-btn">Pause</button>
-                                <button type="button" id="logs-stream-refresh" class="ghost-btn">Refresh</button>
+                            <div class="logs-stream-controls">
+                                <div class="form-row">
+                                    <label for="logs-stream-interval">Auto refresh</label>
+                                    <select id="logs-stream-interval">
+                                        <option value="5000">Every 5 seconds</option>
+                                        <option value="10000">Every 10 seconds</option>
+                                        <option value="30000">Every 30 seconds</option>
+                                        <option value="60000">Every 60 seconds</option>
+                                    </select>
+                                </div>
+                                <div class="logs-stream-actions">
+                                    <button type="button" id="logs-stream-start" class="success-btn">Start</button>
+                                    <button type="button" id="logs-stream-pause" class="ghost-btn">Pause</button>
+                                    <button type="button" id="logs-stream-refresh" class="ghost-btn">Refresh</button>
+                                </div>
                             </div>
-                        </div>
-                        <div id="logs-stream-empty" class="muted">Log stream is off. Start the stream to load entries.</div>
-                        <pre id="logs-stream-output" class="logs-stream-output" hidden></pre>
-                    </section>
+                            <div id="logs-stream-empty" class="muted">Log stream is off. Start the stream to load entries.</div>
+                            <pre id="logs-stream-output" class="logs-stream-output" hidden></pre>
+                        </section>
+                    </div>
                 </div>
             </div>
             </main>
@@ -712,6 +781,9 @@
         </div>
     </div>
 
+    <!-- ================================================================
+         DIALOGS (rendered outside the main layout)
+         ================================================================ -->
     <dialog id="help-modal" class="modal" hidden aria-labelledby="help-modal-title">
         <div class="modal-backdrop" data-help-close></div>
         <div class="modal-dialog">

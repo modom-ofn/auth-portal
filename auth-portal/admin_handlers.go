@@ -626,6 +626,7 @@ func adminPageHandler(w http.ResponseWriter, _ *http.Request) {
 		"ProviderDisplay": mediaProviderDisplay,
 		"ConfigLoadedAt":  cfg.loadedAt().Format(time.RFC3339),
 		"AppTimeZone":     appTimeZone,
+		"AppVersion":      appVersion,
 	})
 }
 
