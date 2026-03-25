@@ -6,33 +6,77 @@
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="admin-page" data-app-timezone="{{.AppTimeZone}}">
-    <header class="admin-header">
-        <div>
-            <h1>AuthPortal Admin Console</h1>
-            <p class="muted">Active Provider: <span class="highlight">{{.ProviderDisplay}}</span> &bull; Last refreshed <span id="loaded-at">{{.ConfigLoadedAt}}</span></p>
-        </div>
-        <div class="admin-header-actions">
-            <a class="admin-home-link ghost-btn" href="/home">Back to Portal</a>
-        </div>
-    </header>
-
-    <div id="status-banner" class="status-banner"></div>
-
-    <main class="admin-main">
-        <aside class="admin-nav">
-            <button type="button" class="admin-tab ghost-btn active" data-section="providers">Providers</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="security">Security</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="mfa">MFA</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="app-settings">App Settings</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="oauth">OAuth Clients</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="ldap-sync">LDAP Sync</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="access-control">Access Control</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="backups">Backups</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="logs">Logs</button>
+    <div class="admin-layout" id="admin-layout">
+        <aside class="admin-sidebar">
+            <div class="admin-sidebar-header">
+                <svg class="admin-sidebar-logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M16 3 L28 8 V16 C28 23 22 27.5 16 30 C10 27.5 4 23 4 16 V8 Z" fill="rgba(24,209,231,.12)" stroke="#18d1e7" stroke-width="1.5"/>
+                    <text x="16" y="20.5" text-anchor="middle" fill="#18d1e7" font-size="10" font-weight="700" font-family="system-ui,-apple-system,sans-serif">AP</text>
+                </svg>
+                <span class="admin-sidebar-title">AuthPortal</span>
+            </div>
+            <nav class="admin-sidebar-nav">
+                <button type="button" class="admin-tab active" data-section="providers">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span>Providers</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="security">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Security</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="mfa">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2 9 14M15 8l3 3"/></svg>
+                    <span>MFA</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="app-settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                    <span>App Settings</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="oauth">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    <span>OAuth Clients</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="ldap-sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    <span>LDAP Sync</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="access-control">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>Access Control</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="backups">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>
+                    <span>Backups</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="logs">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    <span>Logs</span>
+                </button>
+            </nav>
+            <div class="admin-sidebar-footer">
+                <span class="admin-sidebar-version">Admin Console</span>
+            </div>
         </aside>
+        <div class="admin-main-area">
+            <header class="admin-header">
+                <div class="admin-header-left">
+                    <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                    <div>
+                        <h1>Admin Console</h1>
+                        <p class="muted">Provider: <span class="highlight">{{.ProviderDisplay}}</span> &bull; Last refreshed <span id="loaded-at">{{.ConfigLoadedAt}}</span></p>
+                    </div>
+                </div>
+                <div class="admin-header-actions">
+                    <a class="admin-home-link ghost-btn" href="/home">Back to Portal</a>
+                </div>
+            </header>
 
-        <section class="admin-content">
-            <div class="admin-panels">
+            <div id="status-banner" class="status-banner"></div>
+
+            <main class="admin-content">
+                <div class="admin-panels">
                 <form id="config-form" class="panel" autocomplete="off">
                     <div class="panel-header">
                         <h2 id="panel-title">Providers</h2>
@@ -660,8 +704,13 @@
                     </section>
                 </div>
             </div>
-        </section>
-    </main>
+            </main>
+
+            <footer class="admin-footer">
+                <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>
+            </footer>
+        </div>
+    </div>
 
     <dialog id="help-modal" class="modal" hidden aria-labelledby="help-modal-title">
         <div class="modal-backdrop" data-help-close></div>
@@ -690,10 +739,6 @@
             </div>
         </div>
     </dialog>
-
-    <footer class="admin-footer">
-        <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>
-    </footer>
 
     <script type="module" src="/static/admin.js"></script>
 </body>

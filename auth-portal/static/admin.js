@@ -11,6 +11,25 @@ import { createLoadedAtController, createStatusBannerController } from './admin/
 import { createAdminAPI } from './admin/admin-api.js';
 
 (() => {
+  // ---- Sidebar collapse toggle ----
+  const sidebarToggleBtn = document.getElementById('sidebar-toggle');
+  const adminLayout = document.getElementById('admin-layout');
+  if (sidebarToggleBtn && adminLayout) {
+    const COLLAPSED_KEY = 'admin-sidebar-collapsed';
+    if (localStorage.getItem(COLLAPSED_KEY) === '1') {
+      adminLayout.dataset.collapsed = '';
+    }
+    sidebarToggleBtn.addEventListener('click', () => {
+      if ('collapsed' in adminLayout.dataset) {
+        delete adminLayout.dataset.collapsed;
+        localStorage.removeItem(COLLAPSED_KEY);
+      } else {
+        adminLayout.dataset.collapsed = '';
+        localStorage.setItem(COLLAPSED_KEY, '1');
+      }
+    });
+  }
+
   const tabs = Array.from(document.querySelectorAll('.admin-tab'));
   const configForm = document.getElementById('config-form');
   const configFields = document.getElementById('config-fields');
