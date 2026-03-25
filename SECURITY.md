@@ -8,7 +8,7 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.5` (latest: `v2.0.5`) | ✅ Supported | Receives all security and high-priority bug fixes, including RBAC, LDAP sync, and OAuth/OIDC hardening updates. |
+| `v2.0.5` (latest: `v2.0.5`) | ✅ Supported | Receives all security and high-priority bug fixes, including RBAC, LDAP sync, OAuth/OIDC hardening, and admin logging updates. |
 | `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
 | `< v2.0.4` | ❌ End-of-life | Please upgrade to a supported release. |
 
@@ -63,7 +63,9 @@ If you spot an issue or have questions about these scans, please open an issue o
 - **CSRF-lite controls:** every state-changing route (start-web, forward, MFA APIs, logout) passes through an Origin/Referer validator that builds an allowlist from APP_BASE_URL and proxy headers.
 - **Security headers:** all responses carry X-Frame-Options, X-Content-Type-Options, Referrer-Policy, a restrictive CSP, and conditional Strict-Transport-Security (or forceable via FORCE_HSTS).
 - **Config governance:** provider/security/MFA/App Settings/LDAP Sync config lives in Postgres with optimistic versioning, in-browser history, scheduled backups, and download/restore flows for recovery.
+- **Admin audit visibility:** the Logs tab aggregates persisted admin audit history across supported modules and exposes a buffered live log stream only to authenticated admins.
 - **LDAP sync safety rails:** built-in LDAP Sync supports connection testing before save/run, optional LDAP group-to-role mapping, logs per-user failures, tracks scheduled/manual runs, and only deletes stale entries that were previously marked as AuthPortal-managed under the configured Base DN.
 - **Token privacy for OIDC:** access/refresh tokens are stored as deterministic SHA-256 digests, limiting exposure if databases or logs leak.
 - **OAuth governance:** OAuth client changes now produce persistent server-side audit history with operator-supplied change reasons, and custom OAuth scopes are validated against the RBAC permission catalog before they can be assigned or granted.
+- **Operational logging caution:** because the admin Logs tab can surface recent application log lines in-browser, operators should avoid writing secrets to logs and should keep `admin.access` assignments tightly scoped.
 - **Runtime hygiene:** containers are built with Docker Hardened Images for both build and runtime (`dhi.io/golang:1.26.1-alpine3.23-dev` -> `dhi.io/alpine-base:3.23-alpine3.23`), keep only CA certs/tzdata in the final layer, and run as non-root UID 65532 to shrink the attack surface.
