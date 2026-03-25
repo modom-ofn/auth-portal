@@ -352,7 +352,7 @@ func renderJellyfinLogin(w http.ResponseWriter, status int, prefill, message str
 func jellyfinAuthenticate(serverURL, clientID, username, password string) (mediaAuthResp, error) {
 	base := strings.TrimSuffix(serverURL, "/")
 	if Debugf != nil {
-		Debugf("jellyfin/auth start server=%s user=%q", base, username)
+		Debugf("jellyfin/auth start server=%s user=%q", redactURLForLog(base), username)
 	}
 	out, err := mediaAuthAttempt("jellyfin", base, JellyfinAppName, JellyfinAppVersion, clientID, map[string]string{
 		"Username": username,

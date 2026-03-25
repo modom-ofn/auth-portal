@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"auth-portal/configstore"
+
 	"github.com/gorilla/mux"
 )
 
@@ -60,6 +62,7 @@ type adminBackupScheduleRequest struct {
 	Minute    int      `json:"minute"`
 	Sections  []string `json:"sections"`
 	Retention int      `json:"retention"`
+	Reason    string   `json:"reason,omitempty"`
 }
 
 func adminBackupsListHandler(w http.ResponseWriter, r *http.Request) {
@@ -116,6 +119,7 @@ func adminBackupsCreateHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "failed to create backup"})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionBackups, actorFromRequest(r), "Backup created", meta.Name, strings.Join(meta.Sections, ", "), "")
 
 	respondJSON(w, http.StatusCreated, map[string]any{
 		"ok":     true,
@@ -164,6 +168,7 @@ func adminBackupsScheduleUpdate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionBackups, actor, "Backup schedule updated", updated.Frequency, strings.Join(updated.Sections, ", "), req.Reason)
 
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":       true,
@@ -185,6 +190,7 @@ func adminBackupsDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionBackups, actorFromRequest(r), "Backup deleted", name, "", "")
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -204,6 +210,7 @@ func adminBackupsRestoreHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
+	recordAdminAudit(r.Context(), configstore.SectionBackups, actorFromRequest(r), "Backup restored", name, "", "")
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":     true,
 		"config": buildAdminConfigResponse(cfg),

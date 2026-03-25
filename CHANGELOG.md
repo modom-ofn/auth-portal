@@ -1,5 +1,14 @@
 # AuthPortal Changelog
 
+## Unreleased
+
+### Highlights
+- Added a dedicated `Logs` admin tab that replaces the older fragmented Recent Changes experience with a single consolidated audit table.
+- Added tab and user filters plus date sorting for recent-change review so operators can quickly isolate admin activity.
+- Added a live admin log stream viewer with explicit start, pause, manual refresh, and configurable auto-refresh behavior; the stream stays off by default until an admin starts it.
+- Added `/api/admin/logs/history` and `/api/admin/logs/stream` endpoints to back the new Logs UI.
+- Expanded persistent server-side audit coverage so Access Control and Backups actions now appear in consolidated admin history alongside config, OAuth, and LDAP-related entries.
+
 ## v2.0.5 - 2026-03-13
 
 ### Highlights

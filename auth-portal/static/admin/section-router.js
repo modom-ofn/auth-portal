@@ -1,11 +1,11 @@
 export const createSectionRouter = ({
   tabs,
   configPanel,
-  historyPanel,
   oauthPanel,
   ldapSyncPanel,
   accessControlPanel,
   backupsPanel,
+  logsPanel,
   initialSection = 'providers',
   isConfigSection,
   hasSectionData,
@@ -15,15 +15,17 @@ export const createSectionRouter = ({
   onLDAPSyncSection,
   onAccessControlSection,
   onBackupsSection,
+  onLogsSection,
 }) => {
   let currentSection = initialSection;
 
   const panelVisibility = {
-    config: { config: false, history: false, oauth: true, ldapSync: true, accessControl: true, backups: true },
-    oauth: { config: true, history: false, oauth: false, ldapSync: true, accessControl: true, backups: true },
-    'ldap-sync': { config: true, history: false, oauth: true, ldapSync: false, accessControl: true, backups: true },
-    'access-control': { config: true, history: false, oauth: true, ldapSync: true, accessControl: false, backups: true },
-    backups: { config: true, history: false, oauth: true, ldapSync: true, accessControl: true, backups: false },
+    config: { config: false, oauth: true, ldapSync: true, accessControl: true, backups: true, logs: true },
+    oauth: { config: true, oauth: false, ldapSync: true, accessControl: true, backups: true, logs: true },
+    'ldap-sync': { config: true, oauth: true, ldapSync: false, accessControl: true, backups: true, logs: true },
+    'access-control': { config: true, oauth: true, ldapSync: true, accessControl: false, backups: true, logs: true },
+    backups: { config: true, oauth: true, ldapSync: true, accessControl: true, backups: false, logs: true },
+    logs: { config: true, oauth: true, ldapSync: true, accessControl: true, backups: true, logs: false },
   };
 
   const setActiveTab = () => {
@@ -36,9 +38,6 @@ export const createSectionRouter = ({
     if (configPanel) {
       configPanel.hidden = visibility.config;
     }
-    if (historyPanel) {
-      historyPanel.hidden = visibility.history;
-    }
     if (oauthPanel) {
       oauthPanel.hidden = visibility.oauth;
     }
@@ -50,6 +49,9 @@ export const createSectionRouter = ({
     }
     if (backupsPanel) {
       backupsPanel.hidden = visibility.backups;
+    }
+    if (logsPanel) {
+      logsPanel.hidden = visibility.logs;
     }
   };
 
@@ -85,6 +87,7 @@ export const createSectionRouter = ({
       'ldap-sync': { panel: ldapSyncPanel, handler: onLDAPSyncSection },
       'access-control': { panel: accessControlPanel, handler: onAccessControlSection },
       backups: { panel: backupsPanel, handler: onBackupsSection },
+      logs: { panel: logsPanel, handler: onLogsSection },
     };
     const special = specialSections[section];
     if (!special?.panel || typeof special.handler !== 'function') {

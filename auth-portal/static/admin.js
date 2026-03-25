@@ -1,9 +1,9 @@
 import { createConfigFormsController } from './admin/config-forms.js';
-import { createRecentChangesController } from './admin/recent-changes.js';
 import { createOAuthSectionController } from './admin/oauth-section.js';
 import { createLDAPSyncSectionController } from './admin/ldap-sync-section.js';
 import { createAccessControlSectionController } from './admin/access-control-section.js';
 import { createBackupsSectionController } from './admin/backups-section.js';
+import { createLogsSectionController } from './admin/logs-section.js';
 import { createHelpModalController } from './admin/help-modal.js';
 import { createConfigSectionController } from './admin/config-section.js';
 import { createSectionRouter } from './admin/section-router.js';
@@ -15,8 +15,6 @@ import { createAdminAPI } from './admin/admin-api.js';
   const configForm = document.getElementById('config-form');
   const configFields = document.getElementById('config-fields');
   const configEditor = document.getElementById('config-editor');
-  const historyPanel = document.getElementById('history-panel');
-  const historyList = document.getElementById('history-list');
   const panelTitle = document.getElementById('panel-title');
   const versionBadge = document.getElementById('version-badge');
   const reasonInput = document.getElementById('reason-input');
@@ -55,11 +53,6 @@ import { createAdminAPI } from './admin/admin-api.js';
   const helpModalClose = document.getElementById('help-modal-close');
   const helpModalTitle = document.getElementById('help-modal-title');
   const helpModalBody = document.getElementById('help-modal-body');
-  const recentChangesBtn = document.getElementById('recent-changes-btn');
-  const recentChangesModal = document.getElementById('recent-changes-modal');
-  const recentChangesModalClose = document.getElementById('recent-changes-modal-close');
-  const recentChangesModalTitle = document.getElementById('recent-changes-modal-title');
-  const recentChangesList = document.getElementById('recent-changes-list');
 
   const ldapSyncPanel = document.getElementById('ldap-sync-panel');
   const ldapSyncRefreshBtn = document.getElementById('ldap-sync-refresh-btn');
@@ -148,14 +141,31 @@ import { createAdminAPI } from './admin/admin-api.js';
   const backupEmptyState = document.getElementById('backup-empty');
   const backupSectionCheckboxes = Array.from(document.querySelectorAll('.backup-section-checkbox'));
   const backupFrequencyRows = Array.from(document.querySelectorAll('[data-frequency-row]'));
+
+  const logsPanel = document.getElementById('logs-panel');
+  const logsHistoryRefresh = document.getElementById('logs-history-refresh');
+  const logsHistorySummary = document.getElementById('logs-history-summary');
+  const logsFilterSection = document.getElementById('logs-filter-section');
+  const logsFilterUser = document.getElementById('logs-filter-user');
+  const logsSortOrder = document.getElementById('logs-sort-order');
+  const logsPageSize = document.getElementById('logs-page-size');
+  const logsHistoryRows = document.getElementById('logs-history-rows');
+  const logsPagePrev = document.getElementById('logs-page-prev');
+  const logsPageStatus = document.getElementById('logs-page-status');
+  const logsPageNext = document.getElementById('logs-page-next');
+  const logsStreamStatus = document.getElementById('logs-stream-status');
+  const logsStreamInterval = document.getElementById('logs-stream-interval');
+  const logsStreamStart = document.getElementById('logs-stream-start');
+  const logsStreamPause = document.getElementById('logs-stream-pause');
+  const logsStreamRefresh = document.getElementById('logs-stream-refresh');
+  const logsStreamEmpty = document.getElementById('logs-stream-empty');
+  const logsStreamOutput = document.getElementById('logs-stream-output');
   const appTimeZone = document.body?.dataset?.appTimezone || 'UTC';
 
   if (
     !configForm ||
     !configFields ||
     !configEditor ||
-    !historyPanel ||
-    !historyList ||
     !panelTitle ||
     !versionBadge ||
     !reasonInput ||
@@ -175,6 +185,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     'access-control': 'Access Control',
     backups: 'Backups',
     oauth: 'OAuth Clients',
+    logs: 'Logs',
   };
   const initialSection = 'providers';
   let sectionRouter = null;
@@ -290,10 +301,10 @@ import { createAdminAPI } from './admin/admin-api.js';
     },
   };
 
-  const nowISO = () => new Date().toISOString();
   const status = createStatusBannerController(statusBanner);
   const loadedAt = createLoadedAtController(loadedAtEl);
   const api = createAdminAPI();
+  const recordActivity = () => {};
 
   const configForms = createConfigFormsController(configFields);
 
@@ -312,32 +323,9 @@ import { createAdminAPI } from './admin/admin-api.js';
     state,
     showStatus: (message, type) => status.show(message, type),
     updateLoadedAt: () => loadedAt.update(state.loadedAt),
-    recordActivity: (...args) => recentChanges.recordLocalActivity(...args),
+    recordActivity,
   });
 
-  const recentChanges = createRecentChangesController({
-    recentChangesBtn,
-    recentChangesModal,
-    recentChangesModalClose,
-    recentChangesModalTitle,
-    recentChangesList,
-    inlineHistoryList: historyList,
-    labels,
-    isConfigSection: configSection.isConfigSection,
-    fetchHistory: async (section) => {
-      if (configSection.isConfigSection(section)) {
-        await configSection.fetchHistory(section);
-        return;
-      }
-      if (section === 'oauth') {
-        const json = await api.getOAuthHistory(25);
-        state.history.oauth = json.entries || [];
-      }
-    },
-    nowISO,
-    getCurrentSection,
-    historyState: state.history,
-  });
   const helpModalController = createHelpModalController({
     button: helpBtn,
     modal: helpModal,
@@ -378,8 +366,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     detailDeleteBtn: oauthDetailDelete,
     appTimeZone,
     showStatus: (message, type) => status.show(message, type),
-    recordActivity: (section, message, reason = '') =>
-      recentChanges.recordLocalActivity(section, message, reason),
+    recordActivity,
   });
 
   const ldapSyncSection = createLDAPSyncSectionController({
@@ -427,8 +414,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     testBaseCreatableEl: ldapSyncTestBaseCreatable,
     runRows: ldapSyncRunRows,
     showStatus: (message, type) => status.show(message, type),
-    recordActivity: (section, message, reason = '') =>
-      recentChanges.recordLocalActivity(section, message, reason),
+    recordActivity,
   });
 
   const accessControlSection = createAccessControlSectionController({
@@ -458,8 +444,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     resetBtn: rbacBindingReset,
     saveBtn: rbacBindingSave,
     showStatus: (message, type) => status.show(message, type),
-    recordActivity: (section, message, reason = '') =>
-      recentChanges.recordLocalActivity(section, message, reason),
+    recordActivity,
   });
 
   const backupsSection = createBackupsSectionController({
@@ -485,8 +470,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     frequencyRows: backupFrequencyRows,
     appTimeZone,
     showStatus: (message, type) => status.show(message, type),
-    recordActivity: (section, message, reason = '') =>
-      recentChanges.recordLocalActivity(section, message, reason),
+    recordActivity,
     onRestoreConfig: async (config) => {
       configSection.applyConfigResponse(config);
       try {
@@ -497,66 +481,78 @@ import { createAdminAPI } from './admin/admin-api.js';
       const section = getCurrentSection();
       if (configSection.isConfigSection(section)) {
         configSection.renderSection(section);
-        recentChanges.refresh(section);
       }
     },
+  });
+
+  const logsSection = createLogsSectionController({
+    api,
+    panel: logsPanel,
+    refreshBtn: logsHistoryRefresh,
+    historySummaryEl: logsHistorySummary,
+    sectionFilterEl: logsFilterSection,
+    userFilterEl: logsFilterUser,
+    sortOrderEl: logsSortOrder,
+    pageSizeEl: logsPageSize,
+    historyRows: logsHistoryRows,
+    pagePrevBtn: logsPagePrev,
+    pageStatusEl: logsPageStatus,
+    pageNextBtn: logsPageNext,
+    streamStatusEl: logsStreamStatus,
+    streamIntervalEl: logsStreamInterval,
+    streamStartBtn: logsStreamStart,
+    streamPauseBtn: logsStreamPause,
+    streamRefreshBtn: logsStreamRefresh,
+    streamEmptyEl: logsStreamEmpty,
+    streamOutputEl: logsStreamOutput,
+    appTimeZone,
+    showStatus: (message, type) => status.show(message, type),
   });
 
   sectionRouter = createSectionRouter({
     tabs,
     configPanel: configForm,
-    historyPanel,
     oauthPanel,
     ldapSyncPanel,
     accessControlPanel,
     backupsPanel,
+    logsPanel,
     initialSection,
     isConfigSection: configSection.isConfigSection,
     hasSectionData: (section) => Boolean(state.data[section]),
     onSectionChange: async (section) => {
       helpModalController.updateButton(section);
-      recentChanges.updateButton(section);
+      if (section !== 'logs') {
+        logsSection.cleanup();
+      }
       status.clear();
     },
     onConfigSection: async (section) => {
       oauthSection.clearSecretBanner();
       await configSection.loadSection(section);
-      recentChanges.refresh(section);
     },
     onOAuthSection: async () => {
       await oauthSection.loadClients();
-      try {
-        const json = await api.getOAuthHistory(25);
-        state.history.oauth = json.entries || [];
-        recentChanges.refresh('oauth');
-      } catch (error_) {
-        console.error('OAuth history fetch failed', error_);
-      }
     },
     onLDAPSyncSection: async () => {
       oauthSection.clearSecretBanner();
       await ldapSyncSection.load();
-      try {
-        await configSection.fetchHistory('ldap-sync');
-      } catch (error_) {
-        console.error('LDAP sync history fetch failed', error_);
-      }
-      recentChanges.refresh('ldap-sync');
     },
     onAccessControlSection: async () => {
       oauthSection.clearSecretBanner();
       await accessControlSection.load();
-      recentChanges.refresh('access-control');
     },
     onBackupsSection: async () => {
       oauthSection.clearSecretBanner();
-      recentChanges.refresh('backups');
       if (backupsSection.isLoaded()) {
         backupsSection.render();
         return;
       }
       await backupsSection.load();
-      recentChanges.refresh('backups');
+    },
+    onLogsSection: async () => {
+      oauthSection.clearSecretBanner();
+      await logsSection.load();
     },
   });
 
@@ -565,10 +561,9 @@ import { createAdminAPI } from './admin/admin-api.js';
   oauthSection.bind();
   ldapSyncSection.bind();
   accessControlSection.bind();
+  logsSection.bind();
 
   helpModalController.bind();
-
-  recentChanges.bind();
 
   if (exportBtn) {
     exportBtn.addEventListener('click', () => {
@@ -588,6 +583,5 @@ import { createAdminAPI } from './admin/admin-api.js';
   sectionRouter.bind();
   sectionRouter.init();
   helpModalController.updateButton(getCurrentSection());
-  recentChanges.updateButton(getCurrentSection());
   sectionRouter.activate(getCurrentSection());
 })();
