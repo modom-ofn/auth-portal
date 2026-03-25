@@ -591,6 +591,15 @@
                                     <option value="asc">Oldest first</option>
                                 </select>
                             </div>
+                            <div class="form-row">
+                                <label for="logs-page-size">Rows</label>
+                                <select id="logs-page-size">
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="all">All</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="backup-table-wrapper logs-table-wrapper">
                             <table class="backup-table logs-table">
@@ -607,6 +616,11 @@
                                     <tr><td colspan="5" class="muted">Loading recent changes.</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="logs-pagination">
+                            <button type="button" id="logs-page-prev" class="ghost-btn">Previous</button>
+                            <span id="logs-page-status" class="muted">Page 1 of 1</span>
+                            <button type="button" id="logs-page-next" class="ghost-btn">Next</button>
                         </div>
                     </section>
 

@@ -8,7 +8,11 @@ export const createLogsSectionController = ({
   sectionFilterEl,
   userFilterEl,
   sortOrderEl,
+  pageSizeEl,
   historyRows,
+  pagePrevBtn,
+  pageStatusEl,
+  pageNextBtn,
   streamStatusEl,
   streamIntervalEl,
   streamStartBtn,
@@ -23,6 +27,7 @@ export const createLogsSectionController = ({
     loaded: false,
     loadingHistory: false,
     historyEntries: [],
+    currentPage: 1,
     streamActive: false,
     streamLoading: false,
     streamCursor: 0,
@@ -103,6 +108,45 @@ export const createLogsSectionController = ({
     return filtered;
   };
 
+  const getPageSize = () => {
+    const raw = String(pageSizeEl?.value || '10').toLowerCase();
+    if (raw === 'all') {
+      return 0;
+    }
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+  };
+
+  const getPaginatedHistory = () => {
+    const entries = getFilteredHistory();
+    const pageSize = getPageSize();
+    if (pageSize === 0) {
+      return {
+        entries,
+        totalEntries: entries.length,
+        pageSize,
+        totalPages: 1,
+        currentPage: 1,
+        startIndex: entries.length ? 1 : 0,
+        endIndex: entries.length,
+      };
+    }
+
+    const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+    const currentPage = Math.min(state.currentPage, totalPages);
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    return {
+      entries: entries.slice(start, end),
+      totalEntries: entries.length,
+      pageSize,
+      totalPages,
+      currentPage,
+      startIndex: entries.length ? start + 1 : 0,
+      endIndex: Math.min(end, entries.length),
+    };
+  };
+
   const populateHistoryFilters = () => {
     if (sectionFilterEl) {
       const current = sectionFilterEl.value;
@@ -143,7 +187,9 @@ export const createLogsSectionController = ({
     if (!historyRows) {
       return;
     }
-    const entries = getFilteredHistory();
+    const paginated = getPaginatedHistory();
+    state.currentPage = paginated.currentPage;
+    const entries = paginated.entries;
     historyRows.innerHTML = '';
     if (!entries.length) {
       historyRows.innerHTML = '<tr><td colspan="5" class="muted">No matching log entries.</td></tr>';
@@ -161,7 +207,24 @@ export const createLogsSectionController = ({
       });
     }
     if (historySummaryEl) {
-      historySummaryEl.textContent = `${entries.length} entries shown`;
+      if (paginated.totalEntries === 0) {
+        historySummaryEl.textContent = '0 entries shown';
+      } else if (paginated.pageSize === 0) {
+        historySummaryEl.textContent = `${paginated.totalEntries} entries shown`;
+      } else {
+        historySummaryEl.textContent = `${paginated.startIndex}-${paginated.endIndex} of ${paginated.totalEntries} entries`;
+      }
+    }
+    if (pageStatusEl) {
+      pageStatusEl.textContent = paginated.pageSize === 0
+        ? 'Showing all entries'
+        : `Page ${paginated.currentPage} of ${paginated.totalPages}`;
+    }
+    if (pagePrevBtn) {
+      pagePrevBtn.disabled = paginated.pageSize === 0 || paginated.currentPage <= 1;
+    }
+    if (pageNextBtn) {
+      pageNextBtn.disabled = paginated.pageSize === 0 || paginated.currentPage >= paginated.totalPages;
     }
   };
 
@@ -217,6 +280,7 @@ export const createLogsSectionController = ({
     try {
       const json = await api.getLogsHistory(200);
       state.historyEntries = Array.isArray(json.entries) ? json.entries : [];
+      state.currentPage = 1;
       populateHistoryFilters();
       renderHistory();
       state.loaded = true;
@@ -283,8 +347,21 @@ export const createLogsSectionController = ({
     refreshBtn?.addEventListener('click', async () => {
       await fetchHistory(true);
     });
-    [sectionFilterEl, userFilterEl, sortOrderEl].filter(Boolean).forEach((input) => {
-      input.addEventListener('change', renderHistory);
+    [sectionFilterEl, userFilterEl, sortOrderEl, pageSizeEl].filter(Boolean).forEach((input) => {
+      input.addEventListener('change', () => {
+        state.currentPage = 1;
+        renderHistory();
+      });
+    });
+    pagePrevBtn?.addEventListener('click', () => {
+      if (state.currentPage > 1) {
+        state.currentPage -= 1;
+        renderHistory();
+      }
+    });
+    pageNextBtn?.addEventListener('click', () => {
+      state.currentPage += 1;
+      renderHistory();
     });
     streamStartBtn?.addEventListener('click', async () => {
       await startStream();

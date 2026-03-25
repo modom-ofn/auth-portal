@@ -148,7 +148,11 @@ import { createAdminAPI } from './admin/admin-api.js';
   const logsFilterSection = document.getElementById('logs-filter-section');
   const logsFilterUser = document.getElementById('logs-filter-user');
   const logsSortOrder = document.getElementById('logs-sort-order');
+  const logsPageSize = document.getElementById('logs-page-size');
   const logsHistoryRows = document.getElementById('logs-history-rows');
+  const logsPagePrev = document.getElementById('logs-page-prev');
+  const logsPageStatus = document.getElementById('logs-page-status');
+  const logsPageNext = document.getElementById('logs-page-next');
   const logsStreamStatus = document.getElementById('logs-stream-status');
   const logsStreamInterval = document.getElementById('logs-stream-interval');
   const logsStreamStart = document.getElementById('logs-stream-start');
@@ -489,7 +493,11 @@ import { createAdminAPI } from './admin/admin-api.js';
     sectionFilterEl: logsFilterSection,
     userFilterEl: logsFilterUser,
     sortOrderEl: logsSortOrder,
+    pageSizeEl: logsPageSize,
     historyRows: logsHistoryRows,
+    pagePrevBtn: logsPagePrev,
+    pageStatusEl: logsPageStatus,
+    pageNextBtn: logsPageNext,
     streamStatusEl: logsStreamStatus,
     streamIntervalEl: logsStreamInterval,
     streamStartBtn: logsStreamStart,

@@ -361,6 +361,7 @@ a:hover{opacity:.9}
 .logs-filters,.logs-stream-controls{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:end;}
 .logs-filters .form-row,.logs-stream-controls .form-row{display:flex;flex-direction:column;gap:.4rem;}
 .logs-filters select,.logs-stream-controls select{background:#0b1220;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:.6rem .85rem;}
+.logs-pagination{display:flex;align-items:center;justify-content:flex-end;gap:.75rem;flex-wrap:wrap;}
 .logs-stream-actions{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;}
 .logs-table-wrapper{margin-top:0;}
 .logs-table{min-width:880px;}
