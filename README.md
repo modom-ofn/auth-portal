@@ -4,8 +4,7 @@
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Go Version](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
-[![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
-
+[![AI-Assisted Development](https://img.shields.io/badge/AI--Assisted_Development-Yes-6c757d)](#ai-assisted-development)
 [![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=modom-ofn_auth-portal)
 [![SonarCloud Bugs](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=bugs)](https://sonarcloud.io/component_measures?id=modom-ofn_auth-portal&metric=reliability_rating&view=list)
 [![SonarCloud Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=vulnerabilities)](https://sonarcloud.io/project/security_hotspots?id=modom-ofn_auth-portal)
@@ -114,6 +113,7 @@ Frame descriptions (alt text):
 - [Customization](#customization)
 - [Security best practices](#security-best-practices)
 - [Security scans and code analysis](#security-scans-and-code-analysis)
+- [AI-Assisted Development](#ai-assisted-development)
 - [Contributing](#contributing)
 - [License](#license)
 - [Upgrade Guide (to v2.0.5)](#upgrade-guide-to-v205)
@@ -784,6 +784,26 @@ pip install pre-commit
 pre-commit install
 pre-commit run --all-files
 ```
+
+---
+
+## AI-Assisted Development
+
+AuthPortal is developed with AI assistance as part of the delivery workflow, but not as a substitute for engineering judgment. I currently use OpenAI Codex to help with core framework and backend work, and Claude Code to help accelerate frontend interface work.
+
+That said, I remain responsible for every change that lands in this repository. AI-generated code is treated as a draft, not an authority.
+
+What that means in practice:
+
+- I review all generated changes before they are committed or pushed.
+- I test changes locally before publishing updates.
+- I validate behavior against the actual application flow, not just the generated diff.
+- I use automated scanning and analysis to catch issues early, but I do not rely on automation alone.
+- I will revise or reject AI-generated output when it does not meet the project standard.
+
+I have more than 25 years of experience across infrastructure, application support, and migrations/deployments. That experience is what governs the decisions in this project. AI helps me move faster, but it does not replace accountability, operational caution, or hands-on verification.
+
+If you are cautious about AI use in open source, that caution is reasonable. The goal here is to be transparent about the workflow: AI is used to speed delivery, while review, testing, and release responsibility stay with me.
 
 ---
 
