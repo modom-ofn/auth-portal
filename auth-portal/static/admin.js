@@ -38,6 +38,65 @@ import { createAdminAPI } from './admin/admin-api.js';
     });
   }
 
+  // ---- Theme toggle ----
+  const themeMenu = document.getElementById('theme-menu');
+  const themeToggleBtn = document.getElementById('theme-toggle');
+  const themeMenuDropdown = document.getElementById('theme-menu-dropdown');
+  const adminPageEl = document.querySelector('.admin-page');
+  const THEME_KEY = 'admin-theme';
+  const THEME_TITLES = { system: 'Theme: system (follows OS)', dark: 'Theme: dark', light: 'Theme: light' };
+
+  const applyTheme = (theme) => {
+    if (!adminPageEl) return;
+    if (theme === 'system') {
+      delete adminPageEl.dataset.theme;
+    } else {
+      adminPageEl.dataset.theme = theme;
+    }
+    if (themeToggleBtn) {
+      themeToggleBtn.querySelector('.theme-icon-system').hidden = theme !== 'system';
+      themeToggleBtn.querySelector('.theme-icon-dark').hidden = theme !== 'dark';
+      themeToggleBtn.querySelector('.theme-icon-light').hidden = theme !== 'light';
+      themeToggleBtn.title = THEME_TITLES[theme] || 'Toggle theme';
+    }
+    if (themeMenuDropdown) {
+      themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.themeValue === theme);
+      });
+    }
+  };
+
+  applyTheme(localStorage.getItem(THEME_KEY) || 'system');
+
+  if (themeMenu && themeToggleBtn && themeMenuDropdown) {
+    const openThemeMenu = () => {
+      themeMenuDropdown.hidden = false;
+      themeToggleBtn.setAttribute('aria-expanded', 'true');
+    };
+    const closeThemeMenu = () => {
+      themeMenuDropdown.hidden = true;
+      themeToggleBtn.setAttribute('aria-expanded', 'false');
+    };
+    themeToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      themeMenuDropdown.hidden ? openThemeMenu() : closeThemeMenu();
+    });
+    themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const chosen = item.dataset.themeValue;
+        localStorage.setItem(THEME_KEY, chosen);
+        applyTheme(chosen);
+        closeThemeMenu();
+      });
+    });
+    document.addEventListener('click', (e) => {
+      if (!themeMenu.contains(e.target)) closeThemeMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeThemeMenu();
+    });
+  }
+
   // ---- Sidebar collapse toggle ----
   const sidebarToggleBtn = document.getElementById('sidebar-toggle');
   const adminLayout = document.getElementById('admin-layout');

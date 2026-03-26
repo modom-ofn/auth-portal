@@ -54,7 +54,7 @@
                 </button>
             </nav>
             <div class="admin-sidebar-footer">
-                <a class="admin-sidebar-version" href="https://github.com/modom-ofn/auth-portal/" target="_blank" rel="noopener noreferrer">{{.AppVersion}}</a>
+                <a class="admin-sidebar-version" href="https://github.com/modom-ofn/auth-portal/" target="_blank" rel="noopener noreferrer">AuthPortal {{.AppVersion}} created by Modom.</a>
             </div>
         </aside>
         <div class="admin-main-area">
@@ -69,6 +69,27 @@
                     </div>
                 </div>
                 <div class="admin-header-actions">
+                    <div class="theme-menu" id="theme-menu">
+                        <button type="button" class="theme-toggle" id="theme-toggle" aria-haspopup="true" aria-expanded="false" title="Theme: system (follows OS)">
+                            <svg class="theme-icon-system" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                            <svg class="theme-icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                            <svg class="theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                        </button>
+                        <div class="theme-menu-dropdown" id="theme-menu-dropdown" hidden>
+                            <button type="button" class="theme-menu-item" data-theme-value="light">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                                Light
+                            </button>
+                            <button type="button" class="theme-menu-item" data-theme-value="dark">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                                Dark
+                            </button>
+                            <button type="button" class="theme-menu-item" data-theme-value="system">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                                System
+                            </button>
+                        </div>
+                    </div>
                     <div class="user-menu" id="user-menu">
                         <button type="button" class="user-menu-trigger ghost-btn" id="user-menu-trigger" aria-haspopup="true" aria-expanded="false">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -795,6 +816,7 @@
 
             <footer class="admin-footer">
                 <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>
+                <a class="admin-sidebar-version" href="https://github.com/modom-ofn/auth-portal/" target="_blank" rel="noopener noreferrer">AuthPortal {{.AppVersion}} created by Modom.</a>
             </footer>
         </div>
     </div>
