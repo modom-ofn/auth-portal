@@ -69,7 +69,25 @@
                     </div>
                 </div>
                 <div class="admin-header-actions">
-                    <a class="admin-home-link ghost-btn" href="/home">Back to Portal</a>
+                    <div class="user-menu" id="user-menu">
+                        <button type="button" class="user-menu-trigger ghost-btn" id="user-menu-trigger" aria-haspopup="true" aria-expanded="false">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            <span>{{.CurrentUser}}</span>
+                            <svg class="user-menu-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div class="user-menu-dropdown" id="user-menu-dropdown" hidden>
+                            <a class="user-menu-item" href="/home">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                Back to Portal
+                            </a>
+                            <form class="user-menu-logout" method="POST" action="/logout">
+                                <button type="submit" class="user-menu-item user-menu-item-danger">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                    Logout
+                                </button>
+                            </form>
+                        </div>
+                    </div>
                 </div>
             </header>
 
@@ -589,7 +607,7 @@
                             <button type="button" id="backups-run-btn" class="success-btn">Run Backup</button>
                         </div>
                     </div>
-                    <p class="panel-helper">Schedule or create configuration backups. Files are written to <code>./backups</code> inside the container.</p>
+                    <p class="panel-helper">Schedule or create configuration backups. Files are written to <code>./app/backups</code> inside the container.</p>
                     <div class="panel-layout">
                         <section class="panel-section">
                             <div class="panel-section-head">

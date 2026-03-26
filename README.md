@@ -434,7 +434,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
 - `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
-- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./backups` relative to the binary).
+- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./app/backups` relative to the binary).
 - `LDAP_DELETE_STALE_ENTRIES`  when set to `true`, scheduled or manual LDAP syncs may delete stale entries previously marked as AuthPortal-managed under the configured LDAP base DN.
 - `LDAP_SYNC_SCHEDULE_ENABLED` / `LDAP_SYNC_SCHEDULE_FREQUENCY` / `LDAP_SYNC_SCHEDULE_TIME` / `LDAP_SYNC_SCHEDULE_DAY`  bootstrap defaults for the built-in LDAP scheduler; once saved in Admin, the persisted runtime config takes precedence.
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
@@ -459,7 +459,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 ### Backups
 
 - The **Backups** tab under `/admin` lets you export the current config documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
-- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
+- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./app/backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
 - Scheduled backup settings now live in the config store (section `backups`), so your cadence, selected sections, and retention persist across container rebuilds and are auditable like other config updates.
 - Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
 - The same functionality is exposed via the REST API (`/api/admin/backups*`); see [HTTP Routes](#http-routes) below for endpoint details.

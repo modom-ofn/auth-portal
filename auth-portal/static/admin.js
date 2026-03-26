@@ -11,6 +11,33 @@ import { createLoadedAtController, createStatusBannerController } from './admin/
 import { createAdminAPI } from './admin/admin-api.js';
 
 (() => {
+  // ---- User menu dropdown ----
+  const userMenu = document.getElementById('user-menu');
+  const userMenuTrigger = document.getElementById('user-menu-trigger');
+  const userMenuDropdown = document.getElementById('user-menu-dropdown');
+  if (userMenu && userMenuTrigger && userMenuDropdown) {
+    const openMenu = () => {
+      userMenuDropdown.hidden = false;
+      userMenu.classList.add('open');
+      userMenuTrigger.setAttribute('aria-expanded', 'true');
+    };
+    const closeMenu = () => {
+      userMenuDropdown.hidden = true;
+      userMenu.classList.remove('open');
+      userMenuTrigger.setAttribute('aria-expanded', 'false');
+    };
+    userMenuTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userMenuDropdown.hidden ? openMenu() : closeMenu();
+    });
+    document.addEventListener('click', (e) => {
+      if (!userMenu.contains(e.target)) closeMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeMenu();
+    });
+  }
+
   // ---- Sidebar collapse toggle ----
   const sidebarToggleBtn = document.getElementById('sidebar-toggle');
   const adminLayout = document.getElementById('admin-layout');

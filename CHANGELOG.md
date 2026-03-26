@@ -29,6 +29,7 @@
 - Improved LDAP observability: per-user add/update/failure logging, stale-delete failure logging, and final run summary lines now appear in application logs.
 - Hardened RBAC migrations for legacy or partially migrated databases, including `user_roles` compatibility upgrades, missing-column repair, unique/index repair, and sequence recovery during startup.
 - Simplified docs and example compose files by removing the bundled `openldap` / `phpldapadmin` stack; LDAP is now documented as an optional external integration chosen by the operator.
+- Updated Backups documentation to reflect correct disk location at `./app/backups/`.
 
 ### Upgrade Notes
 - Bump image tags/config references to `v2.0.5` and rebuild so you pick up RBAC, built-in LDAP Sync, and OAuth audit improvements.
