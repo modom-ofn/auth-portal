@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(find i:/_Dev/GitHub/auth-portal -maxdepth 2 -name Makefile -o -name *.yaml -o -name *.yml -o -name Dockerfile*)",
-      "Bash(find i:/_Dev/GitHub/auth-portal -maxdepth 1 -name Makefile -o -name *.mk)",
-      "Bash(grep -rn \"2\\\\.0\\\\.5\\\\|APP_VERSION\\\\|LDFLAGS.*version\" i:/_Dev/GitHub/auth-portal --include=Makefile --include=*.sh)"
-    ]
-  }
-}
