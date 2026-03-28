@@ -117,39 +117,172 @@
             <main class="admin-content">
                 <div class="admin-panels">
 
+                <!-- version-badge: kept in DOM for JS compatibility (hidden) -->
+                <span id="version-badge" class="version-badge" hidden></span>
+
                 <!-- ================================================================
-                     TABS: Providers · Security · MFA · App Settings
-                     Panel is shared; JS swaps content and title based on active tab.
+                     TAB: Providers
                      ================================================================ -->
-                <form id="config-form" class="panel" autocomplete="off">
+                <form id="providers-panel" class="panel" autocomplete="off">
                     <div class="panel-header">
                         <div class="panel-title-block">
                             <span class="panel-kicker">Configuration</span>
-                            <h2 id="panel-title">Providers</h2>
+                            <h2>Providers</h2>
                         </div>
-                        <span id="version-badge" class="version-badge" hidden></span>
+                        <div class="panel-header-actions">
+                            <button type="button" id="providers-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="providers-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="providers-import-input" accept="application/json" hidden>
+                        </div>
                     </div>
-                    <p class="panel-helper">Edit this section using the form fields below. Provide a short reason before saving.</p>
+                    <p class="panel-helper">Choose the active media provider and supply its connection credentials. Only the active provider must be fully populated.</p>
                     <div class="panel-layout">
                         <section class="panel-section">
                             <div class="panel-section-head">
-                                <div class="panel-section-title"><h3>Settings</h3></div>
-                                <div class="config-tools">
-                                    <button type="button" id="config-export-btn" class="ghost-btn">Export</button>
-                                    <button type="button" id="config-import-btn" class="ghost-btn">Import</button>
-                                    <input type="file" id="config-import-input" accept="application/json" hidden>
+                                <div class="panel-section-title">
+                                    <h3>Provider Settings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Provider configuration info" title="Provider configuration info" data-tooltip="Set the active provider to plex, emby, or jellyfin and fill in its connection details. Only the active provider block needs to be populated — keeping others filled lets you switch quickly.">i</button>
                                 </div>
                             </div>
-                            <div id="config-fields" class="config-fields" aria-live="polite"></div>
-                            <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                            <div id="providers-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="providers-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
                         </section>
                         <section class="panel-section">
                             <div class="panel-section-head">
-                                <div class="panel-section-title"><h3>Save Changes</h3></div>
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
                             </div>
                             <div class="admin-actions">
-                                <input id="reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
-                                <button id="save-btn" type="submit" class="primary-btn">Save Changes</button>
+                                <input id="providers-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="providers-save" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
+                    </div>
+                </form>
+
+                <!-- ================================================================
+                     TAB: Security
+                     ================================================================ -->
+                <form id="security-panel" class="panel" autocomplete="off" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2>Security</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="security-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="security-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="security-import-input" accept="application/json" hidden>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Control cookie lifetimes and browser security posture for authenticated admin and portal sessions.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Security Settings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Security settings info" title="Security settings info" data-tooltip="sessionTtl accepts Go durations (24h, 7d). sessionSameSite is lax, strict, or none — use none only with HTTPS. forceSecureCookie forces the Secure flag even over HTTP. sessionCookieDomain scopes cookies to a parent domain.">i</button>
+                                </div>
+                            </div>
+                            <div id="security-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="security-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="security-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="security-save" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
+                    </div>
+                </form>
+
+                <!-- ================================================================
+                     TAB: MFA
+                     ================================================================ -->
+                <form id="mfa-panel" class="panel" autocomplete="off" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2>MFA</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="mfa-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="mfa-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="mfa-import-input" accept="application/json" hidden>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Fine-tune multi-factor authentication behaviour for end-users. Enabling enforcement requires enrollment to also be enabled.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>MFA Settings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="MFA settings info" title="MFA settings info" data-tooltip="issuer is the label shown in authenticator apps. enrollmentEnabled controls whether users can register MFA devices. enforceForAllUsers forces MFA at sign-in — ensure enrollment is enabled before turning this on.">i</button>
+                                </div>
+                            </div>
+                            <div id="mfa-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="mfa-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="mfa-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="mfa-save" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
+                    </div>
+                </form>
+
+                <!-- ================================================================
+                     TAB: App Settings
+                     ================================================================ -->
+                <form id="app-settings-panel" class="panel" autocomplete="off" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2>App Settings</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="app-settings-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="app-settings-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="app-settings-import-input" accept="application/json" hidden>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Customize the user experience — service links, portal colors, and the contact email shown on the unauthorized page.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>App Settings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="App settings info" title="App settings info" data-tooltip="Configure service link buttons, portal background/modal colors, and the unauthorized-page contact email. loginExtraLinkUrl and loginExtraLinkText add an optional button to the portal header.">i</button>
+                                </div>
+                            </div>
+                            <div id="app-settings-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="app-settings-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="app-settings-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="app-settings-save" type="submit" class="primary-btn">Save Changes</button>
                             </div>
                         </section>
                     </div>
@@ -172,7 +305,10 @@
                         <div class="panel-layout">
                             <section class="panel-section">
                                 <div class="panel-section-head">
-                                    <div class="panel-section-title"><h3>Registered Clients</h3></div>
+                                    <div class="panel-section-title">
+                                        <h3>Registered Clients</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Registered clients info" title="Registered clients info" data-tooltip="Active OAuth/OIDC client registrations. Click a client card to view details, edit settings, or rotate its secret.">i</button>
+                                    </div>
                                 </div>
                                 <div id="oauth-secret-banner" class="secret-banner" hidden></div>
                                 <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
@@ -180,7 +316,10 @@
                             </section>
                             <section class="panel-section">
                                 <div class="panel-section-head">
-                                    <div class="panel-section-title"><h3>Client Configuration</h3></div>
+                                    <div class="panel-section-title">
+                                        <h3>Client Configuration</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Client configuration info" title="Client configuration info" data-tooltip="Create a new registration or edit the selected client. Redirect URIs must exactly match what the client sends. Scopes control which claims and permissions the access token includes.">i</button>
+                                    </div>
                                 </div>
                                 <form id="oauth-client-form" class="oauth-form" autocomplete="off">
                                     <input type="hidden" id="oauth-client-id">
@@ -470,6 +609,7 @@
                             <div class="panel-section-head">
                                 <div class="panel-section-title">
                                     <h3>Role Catalog</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Role catalog info" title="Role catalog info" data-tooltip="Define custom roles from the available permission set. Built-in roles (admin, viewer, user) are protected and cannot be renamed or deleted.">i</button>
                                 </div>
                             </div>
                             <form id="rbac-role-form" class="oauth-form" autocomplete="off">
@@ -515,6 +655,7 @@
                             <div class="panel-section-head">
                                 <div class="panel-section-title">
                                     <h3>Permission Catalog</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Permission catalog info" title="Permission catalog info" data-tooltip="Create app-specific permissions such as music.read or audiobookshelf.read. Built-in platform permissions are protected. New permissions appear as selectable scopes in OAuth client registrations.">i</button>
                                 </div>
                             </div>
                             <form id="rbac-permission-form" class="oauth-form" autocomplete="off">
@@ -555,6 +696,7 @@
                             <div class="panel-section-head">
                                 <div class="panel-section-title">
                                     <h3>Manual Role Binding</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Manual role binding info" title="Manual role binding info" data-tooltip="Assign roles to users manually. LDAP-driven role assignments are managed in the LDAP Sync tab and appear here as effective roles.">i</button>
                                 </div>
                             </div>
                             <form id="rbac-binding-form" class="oauth-form" autocomplete="off">
@@ -581,6 +723,7 @@
                             <div class="panel-section-head">
                                 <div class="panel-section-title">
                                     <h3>User Bindings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="User bindings info" title="User bindings info" data-tooltip="All current role bindings. Effective roles include both manual assignments and LDAP-driven group mappings. Click a row to edit that user's manual assignments.">i</button>
                                 </div>
                             </div>
                             <div class="backup-table-wrapper">
@@ -632,7 +775,10 @@
                     <div class="panel-layout">
                         <section class="panel-section">
                             <div class="panel-section-head">
-                                <div class="panel-section-title"><h3>Schedule</h3></div>
+                                <div class="panel-section-title">
+                                    <h3>Schedule</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Backup schedule info" title="Backup schedule info" data-tooltip="Configure automatic backup timing, frequency, retention count, and which config sections to include. Files are written to ./app/backups inside the container.">i</button>
+                                </div>
                             </div>
                             <form id="backup-schedule-form" class="backup-schedule" autocomplete="off">
                                 <div class="backup-toggle">
@@ -692,7 +838,10 @@
                         </section>
                         <section class="panel-section">
                             <div class="panel-section-head">
-                                <div class="panel-section-title"><h3>Backup Files</h3></div>
+                                <div class="panel-section-title">
+                                    <h3>Backup Files</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Backup files info" title="Backup files info" data-tooltip="All existing backup archives. Restoring a backup rolls all included config sections back to the state at the time of that backup.">i</button>
+                                </div>
                             </div>
                             <div id="backup-empty" class="muted">No backups created yet.</div>
                             <div id="backup-table-wrapper" class="backup-table-wrapper" hidden>
@@ -730,7 +879,10 @@
                     <div class="panel-layout">
                         <section class="panel-section">
                             <div class="panel-section-head">
-                                <div class="panel-section-title"><h3>Recent Changes</h3></div>
+                                <div class="panel-section-title">
+                                    <h3>Recent Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Recent changes info" title="Recent changes info" data-tooltip="Admin audit log showing who changed what and when across all console sections. Use the filters to narrow by tab or user.">i</button>
+                                </div>
                                 <span id="logs-history-summary" class="muted">Loading.</span>
                             </div>
                             <div class="logs-filters">
@@ -787,7 +939,10 @@
                         </section>
                         <section class="panel-section">
                             <div class="panel-section-head">
-                                <div class="panel-section-title"><h3>Log Stream</h3></div>
+                                <div class="panel-section-title">
+                                    <h3>Log Stream</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Log stream info" title="Log stream info" data-tooltip="Live application log tail. Start the stream to see real-time output from AuthPortal. The stream auto-refreshes at the chosen interval until paused.">i</button>
+                                </div>
                                 <span id="logs-stream-status" class="muted">Stream is off.</span>
                             </div>
                             <div class="logs-stream-controls">
