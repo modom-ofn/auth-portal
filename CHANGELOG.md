@@ -1,32 +1,29 @@
 # AuthPortal Changelog
 
-## Unreleased
+## v2.0.5 - 2026-04-08
 
 ### Highlights
-- Added a dedicated `Logs` admin tab that replaces the older fragmented Recent Changes experience with a single consolidated audit table.
-- Added tab and user filters plus date sorting for recent-change review so operators can quickly isolate admin activity.
-- Added a live admin log stream viewer with explicit start, pause, manual refresh, and configurable auto-refresh behavior; the stream stays off by default until an admin starts it.
-- Added `/api/admin/logs/history` and `/api/admin/logs/stream` endpoints to back the new Logs UI.
-- Expanded persistent server-side audit coverage so Access Control and Backups actions now appear in consolidated admin history alongside config, OAuth, and LDAP-related entries.
-
-## v2.0.5 - 2026-03-13
-
-### Highlights
-- Switched the builder stage to `dhi.io/golang:1.26.1-alpine3.23-dev` and the final runtime to `dhi.io/alpine-base:3.23-alpine3.23`, removing the explicit `openssl` install from shipped layers to clear the `CVE-2026-2673` scan finding.
+- Switched the builder stage to `dhi.io/golang:1.26.2-alpine3.23-dev` and the final runtime to `dhi.io/alpine-base:3.23-alpine3.23`, removing the explicit `openssl` install from shipped layers to clear the `CVE-2026-2673` scan finding.
 - Added RBAC to AuthPortal with database-backed roles, permissions, role-permission mappings, and user-role bindings; seeded system roles are `admin`, `viewer`, and `user`.
 - Added an `Access Control` admin tab for role CRUD, permission CRUD, and manual user-role binding management, including support for custom downstream-app permissions.
 - Added permission middleware and route enforcement so admin/API access is checked through explicit permissions instead of a broad legacy admin flag.
 - Added permission-aware App Settings service buttons so portal app links can be shown to all users or gated by a selected custom permission.
 - Extended OAuth client management to use the RBAC permission catalog as selectable scopes, enabling downstream apps to request custom entitlements such as app-specific `*.read` permissions.
-- Added persistent server-side OAuth audit history with Recent Changes support and explicit admin-supplied change reasons for create, update, delete, and secret rotation actions.
+- Added persistent server-side OAuth audit history and explicit admin-supplied change reasons for create, update, delete, and secret rotation actions.
 - Merged LDAP sync into AuthPortal as a built-in admin module, removing the need for the old standalone `ldap-sync` workflow in the recommended deployment path.
-- Added a dedicated `LDAP Sync` admin tab with persisted config, manual `Run Sync`, connection testing, and Recent Changes integration.
+- Added a dedicated `LDAP Sync` admin tab with persisted config, manual `Run Sync`, connection testing, and audit-history integration.
 - Added built-in LDAP scheduling with hourly/daily/weekly cadence, next-run calculation, scheduled/manual run history, and per-run summary reporting in the UI.
 - Added optional LDAP group-to-role mapping and group synchronization so LDAP directory groups can grant or revoke RBAC roles during sync.
 - Added structured LDAP connection-test diagnostics for connect, bind, Base DN existence, and Base DN creatability, including inline status badges and clearer helper text.
 - Added LDAP Sync config import/export support from the tab so operators can move settings between environments without hand-editing JSON.
 - Added optional stale-entry cleanup that only deletes LDAP entries previously marked as AuthPortal-managed under the configured Base DN.
 - Improved LDAP observability: per-user add/update/failure logging, stale-delete failure logging, and final run summary lines now appear in application logs.
+- Added a dedicated `Logs` admin tab that replaces the older fragmented Recent Changes experience with a single consolidated audit table.
+- Added tab and user filters plus date sorting so operators can quickly isolate admin activity in the Logs view.
+- Added a live admin log stream viewer with explicit start, pause, manual refresh, and configurable auto-refresh behavior; the stream stays off by default until an admin starts it.
+- Added `/api/admin/logs/history` and `/api/admin/logs/stream` endpoints to back the new Logs UI.
+- Expanded persistent server-side audit coverage so Access Control and Backups actions now appear in consolidated admin history alongside config, OAuth, and LDAP-related entries.
+- Refined the admin shell with a dedicated sidebar navigation, collapsible layout toggle, theme picker (`light` / `dark` / `system`), and header user menu so the larger admin surface remains easier to navigate.
 - Hardened RBAC migrations for legacy or partially migrated databases, including `user_roles` compatibility upgrades, missing-column repair, unique/index repair, and sequence recovery during startup.
 - Simplified docs and example compose files by removing the bundled `openldap` / `phpldapadmin` stack; LDAP is now documented as an optional external integration chosen by the operator.
 - Updated Backups documentation to reflect correct disk location at `./app/backups/`.

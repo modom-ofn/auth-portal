@@ -49,10 +49,11 @@ AuthPortal authenticates users directly against their connected media server acc
 
 - **Runtime configuration & admin console**
   - Web-based editing of Providers, Security, MFA, App Settings, and LDAP Sync config with versioning and history
+  - Dedicated admin shell with persistent sidebar navigation, collapsible layout toggle, theme picker, and account menu
   - Access Control tab for RBAC roles, permissions, and manual user-role bindings
   - OAuth client management (list/create/update/delete + secret rotation) with persistent audit history and change reasons
   - Config backup tab with manual exports, scheduled runs (hourly/daily/weekly), retention, and one-click restore/download actions
-  - Logs tab with consolidated recent changes, tab/user filters, date sorting, and a live admin log stream viewer
+  - Logs tab with consolidated admin audit history, tab/user filters, date sorting, and a live admin log stream viewer
 
 - **RBAC, app entitlements, and directory mapping**
   - Database-backed roles, permissions, role-permission mappings, and user-role bindings
@@ -69,21 +70,6 @@ AuthPortal authenticates users directly against their connected media server acc
 <p align="center">
   <img src="./screenshots/ui-preview-rotating.gif" alt="Rotating AuthPortal UI preview banner showing authorized and unauthorized views, MFA flow, and admin tabs for providers, security, MFA, app settings, OAuth clients, LDAP Sync, backups, and logs." />
 </p>
-
-Frame descriptions (alt text):
-1. Authorized user home with service buttons and account summary.
-2. Unauthorized user view with restricted/guest access messaging.
-3. MFA enrollment screen showing TOTP setup and verification flow.
-4. Signed-in flow after MFA challenge completion.
-5. Admin Providers tab for Plex, Jellyfin, and Emby configuration.
-6. Admin Security tab for session and authentication controls.
-7. Admin MFA settings tab with enforcement and recovery options.
-8. Admin App Settings tab for portal behavior and branding controls.
-9. Admin OAuth Clients tab showing client cards, scope selection, audit reasons, and management actions.
-10. Admin LDAP Sync tab with connection testing, scheduling, group-role mapping, and run history.
-11. Admin Access Control tab for roles, permissions, and user bindings.
-12. Admin Backups tab with exports, scheduling, retention, and restore actions.
-13. Admin Logs tab with consolidated audit history filters and a live log stream viewer.
 
 ---
 
@@ -125,15 +111,16 @@ Frame descriptions (alt text):
 - **RBAC is now built into AuthPortal:** AuthPortal now has database-backed roles, permissions, role bindings, and permission middleware instead of relying only on a broad admin flag.
 - **Access Control admin tab:** operators can create custom roles and custom permissions, assign permissions to roles, and manage manual user-role bindings from the browser.
 - **Permission-aware app entitlements:** App Settings service buttons can require a selected custom permission, and downstream OAuth/OIDC clients can request those same permissions as scopes.
-- **OAuth client scope and audit improvements:** OAuth Clients now uses a scope picker backed by the RBAC permission catalog, stores persistent Recent Changes audit history server-side, and captures admin-supplied change reasons for create/update/delete/rotate actions.
+- **OAuth client scope and audit improvements:** OAuth Clients now uses a scope picker backed by the RBAC permission catalog, stores persistent server-side audit history, and captures admin-supplied change reasons for create/update/delete/rotate actions.
+- **Admin shell refresh:** the console now uses a dedicated sidebar layout with section icons, a collapsible navigation rail, a light/dark/system theme picker, and a header user menu to make the expanded admin surface easier to navigate.
 - **LDAP Sync is now first-class in AuthPortal:** the former standalone `ldap-sync` companion workflow is replaced by a built-in `LDAP Sync` admin tab with persisted runtime config.
 - **Manual and scheduled LDAP sync runs:** run syncs on demand or on an hourly/daily/weekly schedule directly from the admin console, with next-run calculation and persisted run history.
 - **LDAP group-to-role mapping:** optional LDAP group synchronization can map directory groups onto RBAC roles during sync.
 - **Connection validation before save/run:** test LDAP connectivity, bind credentials, and Base DN reachability from the UI before committing config.
 - **Safe stale-entry cleanup:** optional deletion of stale LDAP records now only targets entries previously marked as AuthPortal-managed under the configured Base DN.
-- **Improved LDAP observability and UX:** per-user sync failures are logged with the affected username, completion summaries are logged per run, and the admin panel now exposes structured connection-test results, Recent Changes integration, and a cleaner sectioned layout.
+- **Improved LDAP observability and UX:** per-user sync failures are logged with the affected username, completion summaries are logged per run, and the admin panel now exposes structured connection-test results, audit-history integration, and a cleaner sectioned layout.
 - **OpenLDAP bootstrap simplification:** the old `ldap-seed` helper is no longer part of the recommended workflow because AuthPortal can create the configured Base DN when it is missing and creatable.
-- **Dedicated Logs admin tab:** Recent Changes is now consolidated into a single Logs surface with tab/user filters, date sorting, and a live application log stream that admins can start, pause, or refresh on demand.
+- **Dedicated Logs admin tab:** admin audit history is now consolidated into a single Logs surface with tab/user filters, date sorting, and a live application log stream that admins can start, pause, or refresh on demand.
 - **Expanded server-side audit coverage:** Access Control and Backups actions now emit persistent audit events so the Logs tab reflects real server history instead of browser-local state.
 
 ## What's New in v2.0.4
@@ -443,8 +430,9 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 
 - Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
 - Providers, Security, MFA, App Settings, and LDAP Sync settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
+- The admin shell now includes a persistent sidebar, collapse toggle, theme selection (`system`, `dark`, `light`), and header user menu to keep the expanded multi-tab console manageable on desktop and smaller screens.
 - Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
-- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation), persistent recent-change audit history, and change reasons backed by the `/api/admin/oauth/*` endpoints.
+- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation), persistent audit history, and change reasons backed by the `/api/admin/oauth/*` endpoints.
 - The Access Control tab exposes RBAC role, permission, and manual binding management backed by the `/api/admin/rbac/*` endpoints.
 
 ### LDAP Sync (new in v2.0.5)
@@ -454,7 +442,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - The `Test Connection` action validates connect, bind, Base DN existence, and Base DN creatability before you save or sync.
 - Scheduled runs support `hourly`, `daily`, and `weekly` timing directly in the UI and are reflected in the `Next Scheduled Run` panel state.
 - Recent sync history includes manual and scheduled runs with trigger source, timestamps, result status, entry counts, and summary/error output.
-- LDAP sync config changes participate in the same config history / Recent Changes workflow as the other admin sections.
+- LDAP sync config changes participate in the same config history and consolidated audit workflow as the other admin sections.
 
 ### Backups
 
@@ -488,7 +476,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 ### Admin Logs
 
 - The **Logs** tab under `/admin` replaces the older per-tab Recent Changes sidebar/modal with a single consolidated audit view.
-- Recent changes are aggregated across config sections, OAuth client management, Access Control actions, backup actions, and LDAP Sync-related config history.
+- Audit history is aggregated across config sections, OAuth client management, Access Control actions, backup actions, and LDAP Sync-related config history.
 - Operators can filter the table by admin tab and acting user, then sort by change date to review older or newer activity first.
 - The live log stream is off by default and only starts polling after an admin explicitly starts it.
 - While streaming, admins can choose an auto-refresh interval; when paused, they can use manual refresh to poll the latest buffered entries.
@@ -547,7 +535,7 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 - Token sealing: tokens are encrypted with `DATA_KEY` before DB insert/update. Unseal on read; failures clear the in-memory token.
 - Cookies: Session and pending-MFA cookies honour `SESSION_COOKIE_DOMAIN`; they are HTTP-only, SameSite=Lax, and rotate after successful MFA. `Secure` is automatic when `APP_BASE_URL` is HTTPS, or force it with `FORCE_SECURE_COOKIE=1`.
 - Authorization: admin and downstream-app access is enforced through RBAC permissions, not just a legacy admin boolean. Custom app permissions can gate portal links and OAuth scopes.
-- Admin observability: the Logs tab is permission-gated behind admin access, and its recent-changes table is backed by persisted server audit records for OAuth, Access Control, and backup operations.
+- Admin observability: the Logs tab is permission-gated behind admin access, and its audit table is backed by persisted server audit records for OAuth, Access Control, backups, and config changes.
 - Rate limits: login endpoints share a per-IP limiter (burst 5, ~10 req/min); MFA enrollment/challenge use a tighter burst 3, ~5 req/min (tune in `main.go`).
 - CSRF-lite: POST routes require same-origin via Origin/Referer.
 - Headers:
@@ -682,7 +670,7 @@ DEBUG plex: resources match via machine id
   - `GET /api/admin/logs/history`  fetch consolidated admin audit history across supported tabs.
   - `GET /api/admin/logs/stream`  fetch the buffered live application log stream for the admin Logs tab.
   - `GET /api/admin/oauth/clients`  list registered OAuth clients.
-  - `GET /api/admin/oauth/history`  fetch persistent OAuth Recent Changes audit history.
+  - `GET /api/admin/oauth/history`  fetch persistent OAuth audit history.
   - `GET /api/admin/oauth/scopes`  list standard OIDC scopes plus custom RBAC permission scopes.
   - `POST /api/admin/oauth/clients`  create a new client.
   - `PUT /api/admin/oauth/clients/{id}`  update client metadata.
@@ -847,4 +835,4 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
    - Repeated bad logins or code attempts return HTTP 429 from the per-IP rate limiters.
    - LDAP `Test Connection` passes, a manual LDAP sync succeeds, and scheduled runs appear in `Recent Sync Runs` when enabled.
    - Access Control role assignments behave as expected for admin surfaces and app-specific entitlements.
-   - OAuth clients can request intended custom permission scopes and their Recent Changes history records the admin-supplied reason.
+   - OAuth clients can request intended custom permission scopes and their audit history records the admin-supplied reason.
