@@ -743,7 +743,8 @@ DEBUG plex: resources match via machine id
 Automated security checks run on this project:
 
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
-- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
+- TruffleHog: secret scanning on every push/PR in CI/CD.
+- git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
 - GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
@@ -751,15 +752,24 @@ Automated security checks run on this project:
 
 If you spot an issue or have questions about these scans, please open an issue or reach out.
 
-### Local secret scanning (pre-commit)
+### Local secret scanning (git-secrets)
 
-Run Gitleaks locally before pushing:
+Install `git-secrets`, then bootstrap the repo hooks:
 
 ```bash
-pip install pre-commit
-pre-commit install
-pre-commit run --all-files
+brew install git-secrets
+./scripts/install-git-secrets-hooks.sh
+git secrets --scan-history
 ```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\install-git-secrets-hooks.ps1
+git secrets --scan-history
+```
+
+The bootstrap scripts install `git-secrets` hooks for this repository and register AWS patterns plus a small set of generic credential patterns for passwords, tokens, API keys, and private keys.
 
 ---
 

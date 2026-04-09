@@ -8,6 +8,7 @@ help:
 	@echo "make build        # go build"
 	@echo "make test         # go test"
 	@echo "make smoke-admin  # admin JS smoke tests"
+	@echo "make install-git-secrets # install git-secrets hooks for this repo"
 	@echo "make docker       # local docker build (amd64)"
 	@echo "make tag          # create signed git tag v$(VERSION)"
 	@echo "make release      # push tag to trigger CI release"
@@ -31,6 +32,11 @@ smoke-admin:
 docker:
 	@echo "==> docker build $(IMAGE):$(SHA)"
 	docker build -t $(IMAGE):$(SHA) .
+
+.PHONY: install-git-secrets
+install-git-secrets:
+	@echo "==> install git-secrets hooks"
+	./scripts/install-git-secrets-hooks.sh
 
 .PHONY: tag
 tag:
