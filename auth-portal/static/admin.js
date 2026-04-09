@@ -10,35 +10,38 @@ import { createSectionRouter } from './admin/section-router.js';
 import { createLoadedAtController, createStatusBannerController } from './admin/admin-core.js';
 import { createAdminAPI } from './admin/admin-api.js';
 
-(() => {
-  // ---- User menu dropdown ----
+const initializeUserMenu = () => {
   const userMenu = document.getElementById('user-menu');
   const userMenuTrigger = document.getElementById('user-menu-trigger');
   const userMenuDropdown = document.getElementById('user-menu-dropdown');
-  if (userMenu && userMenuTrigger && userMenuDropdown) {
-    const openMenu = () => {
-      userMenuDropdown.hidden = false;
-      userMenu.classList.add('open');
-      userMenuTrigger.setAttribute('aria-expanded', 'true');
-    };
-    const closeMenu = () => {
-      userMenuDropdown.hidden = true;
-      userMenu.classList.remove('open');
-      userMenuTrigger.setAttribute('aria-expanded', 'false');
-    };
-    userMenuTrigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      userMenuDropdown.hidden ? openMenu() : closeMenu();
-    });
-    document.addEventListener('click', (e) => {
-      if (!userMenu.contains(e.target)) closeMenu();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeMenu();
-    });
+  if (!userMenu || !userMenuTrigger || !userMenuDropdown) {
+    return;
   }
 
-  // ---- Theme toggle ----
+  const openMenu = () => {
+    userMenuDropdown.hidden = false;
+    userMenu.classList.add('open');
+    userMenuTrigger.setAttribute('aria-expanded', 'true');
+  };
+  const closeMenu = () => {
+    userMenuDropdown.hidden = true;
+    userMenu.classList.remove('open');
+    userMenuTrigger.setAttribute('aria-expanded', 'false');
+  };
+
+  userMenuTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    userMenuDropdown.hidden ? openMenu() : closeMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!userMenu.contains(e.target)) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenu();
+  });
+};
+
+const initializeThemeMenu = () => {
   const themeMenu = document.getElementById('theme-menu');
   const themeToggleBtn = document.getElementById('theme-toggle');
   const themeMenuDropdown = document.getElementById('theme-menu-dropdown');
@@ -68,53 +71,66 @@ import { createAdminAPI } from './admin/admin-api.js';
 
   applyTheme(localStorage.getItem(THEME_KEY) || 'system');
 
-  if (themeMenu && themeToggleBtn && themeMenuDropdown) {
-    const openThemeMenu = () => {
-      themeMenuDropdown.hidden = false;
-      themeToggleBtn.setAttribute('aria-expanded', 'true');
-    };
-    const closeThemeMenu = () => {
-      themeMenuDropdown.hidden = true;
-      themeToggleBtn.setAttribute('aria-expanded', 'false');
-    };
-    themeToggleBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      themeMenuDropdown.hidden ? openThemeMenu() : closeThemeMenu();
-    });
-    themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
-      item.addEventListener('click', () => {
-        const chosen = item.dataset.themeValue;
-        localStorage.setItem(THEME_KEY, chosen);
-        applyTheme(chosen);
-        closeThemeMenu();
-      });
-    });
-    document.addEventListener('click', (e) => {
-      if (!themeMenu.contains(e.target)) closeThemeMenu();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeThemeMenu();
-    });
+  if (!themeMenu || !themeToggleBtn || !themeMenuDropdown) {
+    return;
   }
 
-  // ---- Sidebar collapse toggle ----
+  const openThemeMenu = () => {
+    themeMenuDropdown.hidden = false;
+    themeToggleBtn.setAttribute('aria-expanded', 'true');
+  };
+  const closeThemeMenu = () => {
+    themeMenuDropdown.hidden = true;
+    themeToggleBtn.setAttribute('aria-expanded', 'false');
+  };
+
+  themeToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    themeMenuDropdown.hidden ? openThemeMenu() : closeThemeMenu();
+  });
+  themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const chosen = item.dataset.themeValue;
+      localStorage.setItem(THEME_KEY, chosen);
+      applyTheme(chosen);
+      closeThemeMenu();
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!themeMenu.contains(e.target)) closeThemeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeThemeMenu();
+  });
+};
+
+const initializeSidebarToggle = () => {
   const sidebarToggleBtn = document.getElementById('sidebar-toggle');
   const adminLayout = document.getElementById('admin-layout');
-  if (sidebarToggleBtn && adminLayout) {
-    const COLLAPSED_KEY = 'admin-sidebar-collapsed';
-    if (localStorage.getItem(COLLAPSED_KEY) === '1') {
-      adminLayout.dataset.collapsed = '';
-    }
-    sidebarToggleBtn.addEventListener('click', () => {
-      if ('collapsed' in adminLayout.dataset) {
-        delete adminLayout.dataset.collapsed;
-        localStorage.removeItem(COLLAPSED_KEY);
-      } else {
-        adminLayout.dataset.collapsed = '';
-        localStorage.setItem(COLLAPSED_KEY, '1');
-      }
-    });
+  if (!sidebarToggleBtn || !adminLayout) {
+    return;
   }
+
+  const COLLAPSED_KEY = 'admin-sidebar-collapsed';
+  if (localStorage.getItem(COLLAPSED_KEY) === '1') {
+    adminLayout.dataset.collapsed = '';
+  }
+
+  sidebarToggleBtn.addEventListener('click', () => {
+    if ('collapsed' in adminLayout.dataset) {
+      delete adminLayout.dataset.collapsed;
+      localStorage.removeItem(COLLAPSED_KEY);
+    } else {
+      adminLayout.dataset.collapsed = '';
+      localStorage.setItem(COLLAPSED_KEY, '1');
+    }
+  });
+};
+
+(() => {
+  initializeUserMenu();
+  initializeThemeMenu();
+  initializeSidebarToggle();
 
   const tabs = Array.from(document.querySelectorAll('.admin-tab'));
   const versionBadge = document.getElementById('version-badge');
