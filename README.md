@@ -4,8 +4,7 @@
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Go Version](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
-[![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
-
+[![AI-Assisted Development](https://img.shields.io/badge/AI--Assisted_Development-Yes-6c757d)](#ai-assisted-development)
 [![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=modom-ofn_auth-portal)
 [![SonarCloud Bugs](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=bugs)](https://sonarcloud.io/component_measures?id=modom-ofn_auth-portal&metric=reliability_rating&view=list)
 [![SonarCloud Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=vulnerabilities)](https://sonarcloud.io/project/security_hotspots?id=modom-ofn_auth-portal)
@@ -114,6 +113,7 @@ Frame descriptions (alt text):
 - [Customization](#customization)
 - [Security best practices](#security-best-practices)
 - [Security scans and code analysis](#security-scans-and-code-analysis)
+- [AI-Assisted Development](#ai-assisted-development)
 - [Contributing](#contributing)
 - [License](#license)
 - [Upgrade Guide (to v2.0.5)](#upgrade-guide-to-v205)
@@ -434,7 +434,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
 - `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
-- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./backups` relative to the binary).
+- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./app/backups` relative to the binary).
 - `LDAP_DELETE_STALE_ENTRIES`  when set to `true`, scheduled or manual LDAP syncs may delete stale entries previously marked as AuthPortal-managed under the configured LDAP base DN.
 - `LDAP_SYNC_SCHEDULE_ENABLED` / `LDAP_SYNC_SCHEDULE_FREQUENCY` / `LDAP_SYNC_SCHEDULE_TIME` / `LDAP_SYNC_SCHEDULE_DAY`  bootstrap defaults for the built-in LDAP scheduler; once saved in Admin, the persisted runtime config takes precedence.
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
@@ -459,7 +459,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 ### Backups
 
 - The **Backups** tab under `/admin` lets you export the current config documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
-- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
+- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./app/backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
 - Scheduled backup settings now live in the config store (section `backups`), so your cadence, selected sections, and retention persist across container rebuilds and are auditable like other config updates.
 - Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
 - The same functionality is exposed via the REST API (`/api/admin/backups*`); see [HTTP Routes](#http-routes) below for endpoint details.
@@ -784,6 +784,26 @@ pip install pre-commit
 pre-commit install
 pre-commit run --all-files
 ```
+
+---
+
+## AI-Assisted Development
+
+AuthPortal is developed with AI assistance as part of the delivery workflow, but not as a substitute for engineering judgment. I currently use OpenAI Codex to help with core framework and backend work, and Claude Code to help accelerate frontend interface work.
+
+That said, I remain responsible for every change that lands in this repository. AI-generated code is treated as a draft, not an authority.
+
+What that means in practice:
+
+- I review all generated changes before they are committed or pushed.
+- I test changes locally before publishing updates.
+- I validate behavior against the actual application flow, not just the generated diff.
+- I use automated scanning and analysis to catch issues early, but I do not rely on automation alone.
+- I will revise or reject AI-generated output when it does not meet the project standard.
+
+I have more than 25 years of experience across infrastructure, application support, and migrations/deployments. That experience is what governs the decisions in this project. AI helps me move faster, but it does not replace accountability, operational caution, or hands-on verification.
+
+If you are cautious about AI use in open source, that caution is reasonable. The goal here is to be transparent about the workflow: AI is used to speed delivery, while review, testing, and release responsibility stay with me.
 
 ---
 

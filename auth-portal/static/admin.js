@@ -11,14 +11,113 @@ import { createLoadedAtController, createStatusBannerController } from './admin/
 import { createAdminAPI } from './admin/admin-api.js';
 
 (() => {
+  // ---- User menu dropdown ----
+  const userMenu = document.getElementById('user-menu');
+  const userMenuTrigger = document.getElementById('user-menu-trigger');
+  const userMenuDropdown = document.getElementById('user-menu-dropdown');
+  if (userMenu && userMenuTrigger && userMenuDropdown) {
+    const openMenu = () => {
+      userMenuDropdown.hidden = false;
+      userMenu.classList.add('open');
+      userMenuTrigger.setAttribute('aria-expanded', 'true');
+    };
+    const closeMenu = () => {
+      userMenuDropdown.hidden = true;
+      userMenu.classList.remove('open');
+      userMenuTrigger.setAttribute('aria-expanded', 'false');
+    };
+    userMenuTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userMenuDropdown.hidden ? openMenu() : closeMenu();
+    });
+    document.addEventListener('click', (e) => {
+      if (!userMenu.contains(e.target)) closeMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeMenu();
+    });
+  }
+
+  // ---- Theme toggle ----
+  const themeMenu = document.getElementById('theme-menu');
+  const themeToggleBtn = document.getElementById('theme-toggle');
+  const themeMenuDropdown = document.getElementById('theme-menu-dropdown');
+  const adminPageEl = document.querySelector('.admin-page');
+  const THEME_KEY = 'admin-theme';
+  const THEME_TITLES = { system: 'Theme: system (follows OS)', dark: 'Theme: dark', light: 'Theme: light' };
+
+  const applyTheme = (theme) => {
+    if (!adminPageEl) return;
+    if (theme === 'system') {
+      delete adminPageEl.dataset.theme;
+    } else {
+      adminPageEl.dataset.theme = theme;
+    }
+    if (themeToggleBtn) {
+      themeToggleBtn.querySelector('.theme-icon-system').hidden = theme !== 'system';
+      themeToggleBtn.querySelector('.theme-icon-dark').hidden = theme !== 'dark';
+      themeToggleBtn.querySelector('.theme-icon-light').hidden = theme !== 'light';
+      themeToggleBtn.title = THEME_TITLES[theme] || 'Toggle theme';
+    }
+    if (themeMenuDropdown) {
+      themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.themeValue === theme);
+      });
+    }
+  };
+
+  applyTheme(localStorage.getItem(THEME_KEY) || 'system');
+
+  if (themeMenu && themeToggleBtn && themeMenuDropdown) {
+    const openThemeMenu = () => {
+      themeMenuDropdown.hidden = false;
+      themeToggleBtn.setAttribute('aria-expanded', 'true');
+    };
+    const closeThemeMenu = () => {
+      themeMenuDropdown.hidden = true;
+      themeToggleBtn.setAttribute('aria-expanded', 'false');
+    };
+    themeToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      themeMenuDropdown.hidden ? openThemeMenu() : closeThemeMenu();
+    });
+    themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const chosen = item.dataset.themeValue;
+        localStorage.setItem(THEME_KEY, chosen);
+        applyTheme(chosen);
+        closeThemeMenu();
+      });
+    });
+    document.addEventListener('click', (e) => {
+      if (!themeMenu.contains(e.target)) closeThemeMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeThemeMenu();
+    });
+  }
+
+  // ---- Sidebar collapse toggle ----
+  const sidebarToggleBtn = document.getElementById('sidebar-toggle');
+  const adminLayout = document.getElementById('admin-layout');
+  if (sidebarToggleBtn && adminLayout) {
+    const COLLAPSED_KEY = 'admin-sidebar-collapsed';
+    if (localStorage.getItem(COLLAPSED_KEY) === '1') {
+      adminLayout.dataset.collapsed = '';
+    }
+    sidebarToggleBtn.addEventListener('click', () => {
+      if ('collapsed' in adminLayout.dataset) {
+        delete adminLayout.dataset.collapsed;
+        localStorage.removeItem(COLLAPSED_KEY);
+      } else {
+        adminLayout.dataset.collapsed = '';
+        localStorage.setItem(COLLAPSED_KEY, '1');
+      }
+    });
+  }
+
   const tabs = Array.from(document.querySelectorAll('.admin-tab'));
-  const configForm = document.getElementById('config-form');
-  const configFields = document.getElementById('config-fields');
-  const configEditor = document.getElementById('config-editor');
-  const panelTitle = document.getElementById('panel-title');
   const versionBadge = document.getElementById('version-badge');
-  const reasonInput = document.getElementById('reason-input');
-  const saveBtn = document.getElementById('save-btn');
   const statusBanner = document.getElementById('status-banner');
   const loadedAtEl = document.getElementById('loaded-at');
 
@@ -45,9 +144,6 @@ import { createAdminAPI } from './admin/admin-api.js';
   const oauthDetailEdit = document.getElementById('oauth-detail-edit');
   const oauthDetailRotate = document.getElementById('oauth-detail-rotate');
   const oauthDetailDelete = document.getElementById('oauth-detail-delete');
-  const exportBtn = document.getElementById('config-export-btn');
-  const importBtn = document.getElementById('config-import-btn');
-  const importInput = document.getElementById('config-import-input');
   const helpBtn = document.getElementById('config-help-btn');
   const helpModal = document.getElementById('help-modal');
   const helpModalClose = document.getElementById('help-modal-close');
@@ -162,16 +258,7 @@ import { createAdminAPI } from './admin/admin-api.js';
   const logsStreamOutput = document.getElementById('logs-stream-output');
   const appTimeZone = document.body?.dataset?.appTimezone || 'UTC';
 
-  if (
-    !configForm ||
-    !configFields ||
-    !configEditor ||
-    !panelTitle ||
-    !versionBadge ||
-    !reasonInput ||
-    !saveBtn ||
-    !statusBanner
-  ) {
+  if (!document.getElementById('providers-panel') || !statusBanner) {
     return;
   }
 
@@ -306,25 +393,55 @@ import { createAdminAPI } from './admin/admin-api.js';
   const api = createAdminAPI();
   const recordActivity = () => {};
 
-  const configForms = createConfigFormsController(configFields);
+  // Per-section config controllers — each bound to its own panel's form elements
+  const configSectionDefs = {
+    providers:     { panel: 'providers-panel',     fields: 'providers-fields',     editor: 'providers-editor',     reason: 'providers-reason',     save: 'providers-save',     exportBtn: 'providers-export-btn',     importBtn: 'providers-import-btn',     importInput: 'providers-import-input' },
+    security:      { panel: 'security-panel',      fields: 'security-fields',      editor: 'security-editor',      reason: 'security-reason',      save: 'security-save',      exportBtn: 'security-export-btn',      importBtn: 'security-import-btn',      importInput: 'security-import-input' },
+    mfa:           { panel: 'mfa-panel',           fields: 'mfa-fields',           editor: 'mfa-editor',           reason: 'mfa-reason',           save: 'mfa-save',           exportBtn: 'mfa-export-btn',           importBtn: 'mfa-import-btn',           importInput: 'mfa-import-input' },
+    'app-settings':{ panel: 'app-settings-panel',  fields: 'app-settings-fields',  editor: 'app-settings-editor',  reason: 'app-settings-reason',  save: 'app-settings-save',  exportBtn: 'app-settings-export-btn',  importBtn: 'app-settings-import-btn',  importInput: 'app-settings-import-input' },
+  };
 
-  const configSection = createConfigSectionController({
-    api,
-    form: configForm,
-    formsController: configForms,
-    panelTitle,
-    versionBadge,
-    reasonInput,
-    saveBtn,
-    configEditor,
-    importInput,
-    labels,
-    configSections,
-    state,
-    showStatus: (message, type) => status.show(message, type),
-    updateLoadedAt: () => loadedAt.update(state.loadedAt),
-    recordActivity,
-  });
+  const configControllers = {};
+  const configPanels = {};
+  const dummyTitle = document.createElement('span');
+
+  for (const [section, ids] of Object.entries(configSectionDefs)) {
+    const form = document.getElementById(ids.panel);
+    const fields = document.getElementById(ids.fields);
+    const editor = document.getElementById(ids.editor);
+    const reason = document.getElementById(ids.reason);
+    const save = document.getElementById(ids.save);
+    const importInputEl = document.getElementById(ids.importInput);
+    if (!form || !fields || !editor || !reason || !save) continue;
+
+    configPanels[section] = form;
+    const formsCtrl = createConfigFormsController(fields);
+    configControllers[section] = createConfigSectionController({
+      api,
+      form,
+      formsController: formsCtrl,
+      panelTitle: dummyTitle,
+      versionBadge,
+      reasonInput: reason,
+      saveBtn: save,
+      configEditor: editor,
+      importInput: importInputEl,
+      labels,
+      configSections: [section],
+      state,
+      showStatus: (message, type) => status.show(message, type),
+      updateLoadedAt: () => loadedAt.update(state.loadedAt),
+      recordActivity,
+    });
+
+    const expBtn = document.getElementById(ids.exportBtn);
+    const impBtn = document.getElementById(ids.importBtn);
+    if (expBtn) expBtn.addEventListener('click', () => configControllers[section].exportCurrent(section));
+    if (impBtn) impBtn.addEventListener('click', () => configControllers[section].triggerImport(section));
+    configControllers[section].bind(() => section);
+  }
+
+  const isConfigSection = (section) => section in configControllers;
 
   const helpModalController = createHelpModalController({
     button: helpBtn,
@@ -333,7 +450,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     titleEl: helpModalTitle,
     bodyEl: helpModalBody,
     labels,
-    isConfigSection: configSection.isConfigSection,
+    isConfigSection,
     getCurrentSection,
     helpContent,
     defaultHelpContent,
@@ -472,16 +589,15 @@ import { createAdminAPI } from './admin/admin-api.js';
     showStatus: (message, type) => status.show(message, type),
     recordActivity,
     onRestoreConfig: async (config) => {
-      configSection.applyConfigResponse(config);
+      Object.values(configControllers)[0]?.applyConfigResponse(config);
       try {
-        await Promise.all(configSections.map((section) => configSection.fetchHistory(section)));
+        await Promise.all(configSections.map((section) => configControllers[section]?.fetchHistory(section)));
       } catch (error_) {
         console.error('Backup restore history refresh failed', error_);
       }
       const section = getCurrentSection();
-      if (configSection.isConfigSection(section)) {
-        configSection.renderSection(section);
-      }
+      const ctrl = configControllers[section];
+      if (ctrl) ctrl.renderSection(section);
     },
   });
 
@@ -511,14 +627,14 @@ import { createAdminAPI } from './admin/admin-api.js';
 
   sectionRouter = createSectionRouter({
     tabs,
-    configPanel: configForm,
+    configPanels,
     oauthPanel,
     ldapSyncPanel,
     accessControlPanel,
     backupsPanel,
     logsPanel,
     initialSection,
-    isConfigSection: configSection.isConfigSection,
+    isConfigSection,
     hasSectionData: (section) => Boolean(state.data[section]),
     onSectionChange: async (section) => {
       helpModalController.updateButton(section);
@@ -529,7 +645,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     },
     onConfigSection: async (section) => {
       oauthSection.clearSecretBanner();
-      await configSection.loadSection(section);
+      await configControllers[section]?.loadSection(section);
     },
     onOAuthSection: async () => {
       await oauthSection.loadClients();
@@ -556,26 +672,12 @@ import { createAdminAPI } from './admin/admin-api.js';
     },
   });
 
-  configSection.bind(getCurrentSection);
-
   oauthSection.bind();
   ldapSyncSection.bind();
   accessControlSection.bind();
   logsSection.bind();
 
   helpModalController.bind();
-
-  if (exportBtn) {
-    exportBtn.addEventListener('click', () => {
-      configSection.exportCurrent(getCurrentSection());
-    });
-  }
-
-  if (importBtn) {
-    importBtn.addEventListener('click', () => {
-      configSection.triggerImport(getCurrentSection());
-    });
-  }
 
   backupsSection.bind();
   backupsSection.init();

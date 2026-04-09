@@ -620,12 +620,14 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func adminPageHandler(w http.ResponseWriter, _ *http.Request) {
+func adminPageHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := currentRuntimeConfig()
 	render(w, "admin.html", map[string]any{
 		"ProviderDisplay": mediaProviderDisplay,
 		"ConfigLoadedAt":  cfg.loadedAt().Format(time.RFC3339),
 		"AppTimeZone":     appTimeZone,
+		"AppVersion":      appVersion,
+		"CurrentUser":     usernameFrom(r.Context()),
 	})
 }
 
