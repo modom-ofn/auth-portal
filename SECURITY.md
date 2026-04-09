@@ -46,7 +46,8 @@ AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, RBAC authorizat
 Automated security checks run on this project:
 
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
-- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
+- TruffleHog: secret scanning on every push/PR in CI/CD.
+- git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
 - GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
