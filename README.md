@@ -123,18 +123,6 @@ AuthPortal authenticates users directly against their connected media server acc
 - **Dedicated Logs admin tab:** admin audit history is now consolidated into a single Logs surface with tab/user filters, date sorting, and a live application log stream that admins can start, pause, or refresh on demand.
 - **Expanded server-side audit coverage:** Access Control and Backups actions now emit persistent audit events so the Logs tab reflects real server history instead of browser-local state.
 
-## What's New in v2.0.4
-
-- **Admin UX modularization and tab isolation:** refactored section logic into module controllers so Providers, Security, MFA, App Settings, OAuth, and Backups no longer trample each other’s state.
-- **Shared Recent Changes module:** standardized recent-changes behavior/presentation across tabs, including Backups schedule updates with required change reason support.
-- **Form-first admin configuration:** replaced fragile raw JSON editing paths with normalized forms while preserving import/export compatibility for valid JSON backups.
-- **OAuth client UX redesign:** migrated OAuth clients from table rows to card layout with detail modal actions (edit, rotate secret, delete) and consistent button behaviors.
-- **Consistency and clarity improvements:** unified button styling tokens across admin/authorized/unauthorized pages; replaced legacy `?` help popups with per-field hover helper text.
-- **Authorized User service buttons:** removed legacy single-link fields, added add/remove/edit support with per-button colors, and updated authorized portal rendering to only use service-button entries.
-- **Portal styling simplification:** removed custom image/mode upload flows and standardized to secure color-only controls for page background and modal color.
-- **Provider login reliability hardening:** reduced Plex pin-polling failure behavior during 429 rate-limit windows to prevent stale popup flows ending in `Auth failed`.
-- **Container hardening:** runtime image moved to `dhi.io/alpine-base:3.23-alpine3.23` with a hardened Docker builder image (`dhi.io/golang:1.26.2-alpine3.23-dev`); compose defaults updated to local hardened builds.
-
 ---
 
 ## LDAP Sync
