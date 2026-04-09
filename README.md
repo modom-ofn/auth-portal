@@ -2,7 +2,7 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26.2%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 [![AI-Assisted Development](https://img.shields.io/badge/AI--Assisted_Development-Yes-6c757d)](#ai-assisted-development)
 [![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=modom-ofn_auth-portal)
@@ -146,7 +146,7 @@ Frame descriptions (alt text):
 - **Authorized User service buttons:** removed legacy single-link fields, added add/remove/edit support with per-button colors, and updated authorized portal rendering to only use service-button entries.
 - **Portal styling simplification:** removed custom image/mode upload flows and standardized to secure color-only controls for page background and modal color.
 - **Provider login reliability hardening:** reduced Plex pin-polling failure behavior during 429 rate-limit windows to prevent stale popup flows ending in `Auth failed`.
-- **Container hardening:** runtime image moved to `dhi.io/alpine-base:3.23-alpine3.23` with a hardened Docker builder image (`dhi.io/golang:1.26.1-alpine3.23-dev`); compose defaults updated to local hardened builds.
+- **Container hardening:** runtime image moved to `dhi.io/alpine-base:3.23-alpine3.23` with a hardened Docker builder image (`dhi.io/golang:1.26.2-alpine3.23-dev`); compose defaults updated to local hardened builds.
 
 ---
 
@@ -606,10 +606,10 @@ These tables are created and migrated automatically at startup. Existing legacy 
 
 ## Build & Images
 
-- Go: `1.26.1` on Docker Hardened Images `dhi.io/golang:1.26.1-alpine3.23-dev` (builder stage).
+- Go: `1.26.2` on Docker Hardened Images `dhi.io/golang:1.26.2-alpine3.23-dev` (builder stage).
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.26`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
-- Builder: `dhi.io/golang:1.26.1-alpine3.23-dev`.
+- Builder: `dhi.io/golang:1.26.2-alpine3.23-dev`.
 - Runtime: `dhi.io/alpine-base:3.23-alpine3.23`, keeps CA certs in-base, copies tzdata from the builder stage, and runs as non-root `uid 65532`.
 
 ---
