@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/static/styles.css">
   <style>
-    .page-frame { min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
-    .page-content { flex: 1; width: 100%; display: flex; justify-content: center; padding: 3rem 1rem 6rem; }
-    .mfa-card { max-width: 720px; width: 100%; background: linear-gradient(180deg, rgba(17,24,39,.92), rgba(17,24,39,.94)); border: 1px solid var(--border); border-radius: 16px; padding: 2rem; box-shadow: 0 12px 40px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-frame { min-height: 100vh; display: flex; flex-direction: column; align-items: center; position: relative; z-index: 1; }
+    .page-content { width: 100%; display: flex; justify-content: center; padding: 3rem 1rem 6rem; }
+    .mfa-card { max-width: 720px; display: flex; flex-direction: column; gap: 1.5rem; }
     .mfa-status { text-align: center; color: var(--muted); }
     .mfa-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
     .mfa-panel { display: none; flex-direction: column; gap: 1.25rem; }
@@ -24,10 +24,10 @@
     .btn-row { display: flex; justify-content: center; margin-top: 0.5rem; }
   </style>
 </head>
-<body class="bg">
+<body class="bg {{.HeroBackgroundMode}}" style="--portal-bg-color: {{.HeroBackgroundColor}};">
   <div class="page-frame">
     <main class="page-content">
-      <section class="mfa-card">
+      <section class="card mfa-card {{.PortalCardMode}}" style="--portal-card-color: {{.PortalCardColor}};">
         <div class="brand" style="margin-bottom:0">
           <h1>Multi-factor Authentication</h1>
           <p class="muted">Signed in as {{ .Username }}. Issuer: {{ .Issuer }}.</p>
@@ -53,7 +53,7 @@
           <div style="display:flex;flex-direction:column;gap:.75rem">
             <h2 style="margin:0">Step 2: Verify your code</h2>
             <form id="verify-form" autocomplete="off" style="display:flex;flex-direction:column;gap:.75rem">
-              <input id="verify-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="10" placeholder="Enter 6-digit code" required style="padding:12px;border-radius:10px;border:1px solid var(--border);background:#0f172a;color:var(--text)">
+              <input id="verify-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="10" placeholder="Enter 6-digit code" required style="padding:12px;border-radius:10px;border:1px solid var(--border);background:rgba(15,23,42,.82);color:var(--text)">
               <button type="submit" class="auth-btn" style="font-size:16px;padding:10px 18px">Verify and finish</button>
             </form>
             <div id="verify-message" style="margin-top:8px"></div>
