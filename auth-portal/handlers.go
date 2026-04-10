@@ -523,9 +523,15 @@ func mfaChallengePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	heroColor, heroMode := portalBackgroundPresentation()
+	cardColor, cardMode := portalModalPresentation()
 	render(w, "mfa_challenge.html", map[string]any{
-		"Username": strings.TrimSpace(claims.Username),
-		"Issuer":   mfaIssuer,
+		"Username":            strings.TrimSpace(claims.Username),
+		"Issuer":              mfaIssuer,
+		"HeroBackgroundColor": heroColor,
+		"HeroBackgroundMode":  heroMode,
+		"PortalCardColor":     cardColor,
+		"PortalCardMode":      cardMode,
 	})
 }
 func mfaEnrollPage(w http.ResponseWriter, r *http.Request) {
@@ -534,8 +540,14 @@ func mfaEnrollPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, providers.PostAuthRedirectHome, http.StatusFound)
 		return
 	}
+	heroColor, heroMode := portalBackgroundPresentation()
+	cardColor, cardMode := portalModalPresentation()
 	render(w, "mfa_enroll.html", map[string]any{
-		"Username": uname,
-		"Issuer":   mfaIssuer,
+		"Username":            uname,
+		"Issuer":              mfaIssuer,
+		"HeroBackgroundColor": heroColor,
+		"HeroBackgroundMode":  heroMode,
+		"PortalCardColor":     cardColor,
+		"PortalCardMode":      cardMode,
 	})
 }
