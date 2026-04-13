@@ -394,14 +394,22 @@ a:hover{opacity:.9}
 .service-link-row .service-link-color::-webkit-color-swatch-wrapper{padding:3px;}
 .service-link-row .service-link-color::-webkit-color-swatch{border:none;border-radius:6px;}
 .service-link-row .service-link-color::-moz-color-swatch{border:none;border-radius:6px;}
-#app-portal-bg-color{-webkit-appearance:none;appearance:none;width:100%;height:40px;padding:0;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
-#app-portal-bg-color::-webkit-color-swatch-wrapper{padding:3px;}
-#app-portal-bg-color::-webkit-color-swatch{border:none;border-radius:6px;}
-#app-portal-bg-color::-moz-color-swatch{border:none;border-radius:6px;}
-#app-portal-modal-color{-webkit-appearance:none;appearance:none;width:100%;height:40px;padding:0;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
-#app-portal-modal-color::-webkit-color-swatch-wrapper{padding:3px;}
-#app-portal-modal-color::-webkit-color-swatch{border:none;border-radius:6px;}
-#app-portal-modal-color::-moz-color-swatch{border:none;border-radius:6px;}
+#app-portal-bg-color,
+#app-portal-modal-color,
+#app-portal-title-color,
+#app-portal-body-text-color{-webkit-appearance:none;appearance:none;width:100%;height:40px;padding:0;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
+#app-portal-bg-color::-webkit-color-swatch-wrapper,
+#app-portal-modal-color::-webkit-color-swatch-wrapper,
+#app-portal-title-color::-webkit-color-swatch-wrapper,
+#app-portal-body-text-color::-webkit-color-swatch-wrapper{padding:3px;}
+#app-portal-bg-color::-webkit-color-swatch,
+#app-portal-modal-color::-webkit-color-swatch,
+#app-portal-title-color::-webkit-color-swatch,
+#app-portal-body-text-color::-webkit-color-swatch{border:none;border-radius:6px;}
+#app-portal-bg-color::-moz-color-swatch,
+#app-portal-modal-color::-moz-color-swatch,
+#app-portal-title-color::-moz-color-swatch,
+#app-portal-body-text-color::-moz-color-swatch{border:none;border-radius:6px;}
 .service-link-empty{margin:0;color:var(--muted);font-size:.85rem;}
 .admin-actions{display:flex;align-items:center;gap:1rem;margin-top:1rem;}
 .admin-actions input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.55rem .8rem;color:var(--text);}
