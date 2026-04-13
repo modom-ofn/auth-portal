@@ -124,6 +124,64 @@ func portalModalPresentation() (cardColor, modeClass string) {
 	return cardColor, "card-mode-solid"
 }
 
+func portalTitleColor() string {
+	color := sanitizeHexColor(currentRuntimeConfig().AppSettings.PortalTitleColor)
+	if color == "" {
+		return "#e5e7eb"
+	}
+	return color
+}
+
+func portalBodyTextColor() string {
+	color := sanitizeHexColor(currentRuntimeConfig().AppSettings.PortalBodyTextColor)
+	if color == "" {
+		return "#94a3b8"
+	}
+	return color
+}
+
+func portalAppName() string {
+	name := strings.TrimSpace(currentRuntimeConfig().AppSettings.PortalAppName)
+	if name == "" {
+		return "AuthPortal"
+	}
+	return name
+}
+
+func portalLogoURL() string {
+	logoURL := sanitizeDisplayURL(currentRuntimeConfig().AppSettings.PortalLogoURL)
+	if logoURL == "" {
+		return "/static/authportal-logo.svg"
+	}
+	return logoURL
+}
+
+func portalFooterEnabled() bool {
+	return !currentRuntimeConfig().AppSettings.DisableFooter
+}
+
+func portalPageTitle(suffix string) string {
+	suffix = strings.TrimSpace(suffix)
+	if suffix == "" {
+		return portalAppName()
+	}
+	return portalAppName() + " — " + suffix
+}
+
+func renderPortalCopy(raw string, values map[string]string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"{{username}}", values["username"],
+		"{{providerName}}", values["providerName"],
+		"{{provider}}", values["providerName"],
+		"{{appName}}", values["appName"],
+	)
+	return replacer.Replace(text)
+}
+
 func getRequestAccess(providerDisplay string) (email, subj, subjQP string) {
 	cfg := currentRuntimeConfig().AppSettings
 	email = sanitizeMailAddress(cfg.UnauthRequestEmail)
@@ -202,6 +260,15 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	extraURL, extraText := extraLink()
 	heroColor, modeClass := portalBackgroundPresentation()
 	cardColor, cardMode := portalModalPresentation()
+	titleColor := portalTitleColor()
+	bodyTextColor := portalBodyTextColor()
+	appName := portalAppName()
+	logoURL := portalLogoURL()
+	showFooter := portalFooterEnabled()
+	loginBodyText := renderPortalCopy(currentRuntimeConfig().AppSettings.LoginBodyText, map[string]string{
+		"providerName": name,
+		"appName":      appName,
+	})
 
 	// If no session, show login page right away.
 	c, err := r.Cookie(sessionCookie)
@@ -216,6 +283,13 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle("Sign In"),
+			"LoginBodyText":       loginBodyText,
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
@@ -236,6 +310,13 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle("Sign In"),
+			"LoginBodyText":       loginBodyText,
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
@@ -253,6 +334,13 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle("Sign In"),
+			"LoginBodyText":       loginBodyText,
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
@@ -462,6 +550,11 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	extraURL, extraText := extraLink()
 	heroColor, modeClass := portalBackgroundPresentation()
 	cardColor, cardMode := portalModalPresentation()
+	titleColor := portalTitleColor()
+	bodyTextColor := portalBodyTextColor()
+	appName := portalAppName()
+	logoURL := portalLogoURL()
+	showFooter := portalFooterEnabled()
 
 	if authorized {
 		permissions, permErr := userPermissions(uid, uname)
@@ -469,6 +562,11 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("home: permission lookup failed for %s (%s): %v", uname, uid, permErr)
 		}
 		serviceLinks := serviceButtons(permissions)
+		copyValues := map[string]string{
+			"username":     uname,
+			"providerName": providerDisplay,
+			"appName":      appName,
+		}
 		render(w, "portal_authorized.html", map[string]any{
 			"Username":            uname,
 			"ProviderName":        providerDisplay, // exact casing
@@ -479,12 +577,25 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle("Authorized"),
+			"WelcomeTitle":        renderPortalCopy(currentRuntimeConfig().AppSettings.AuthorizedTitleText, copyValues),
+			"BodyText":            renderPortalCopy(currentRuntimeConfig().AppSettings.AuthorizedBodyText, copyValues),
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
 
 	// Unauthorized page: build mailto params from env
 	email, subj, subjQP := getRequestAccess(providerDisplay)
+	copyValues := map[string]string{
+		"username":     uname,
+		"providerName": providerDisplay,
+		"appName":      appName,
+	}
 	render(w, "portal_unauthorized.html", map[string]any{
 		"Username":            uname,
 		"ProviderName":        providerDisplay, // exact casing
@@ -495,6 +606,14 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"HeroBackgroundMode":  modeClass,
 		"PortalCardColor":     cardColor,
 		"PortalCardMode":      cardMode,
+		"PortalTitleColor":    titleColor,
+		"PortalBodyTextColor": bodyTextColor,
+		"PortalAppName":       appName,
+		"PortalLogoURL":       logoURL,
+		"PageTitle":           portalPageTitle("Access Pending"),
+		"WelcomeTitle":        renderPortalCopy(currentRuntimeConfig().AppSettings.UnauthorizedTitleText, copyValues),
+		"BodyText":            renderPortalCopy(currentRuntimeConfig().AppSettings.UnauthorizedBodyText, copyValues),
+		"ShowFooter":          showFooter,
 	})
 }
 

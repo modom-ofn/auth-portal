@@ -260,18 +260,47 @@
                             <input type="file" id="app-settings-import-input" accept="application/json" hidden>
                         </div>
                     </div>
-                    <p class="panel-helper">Customize the user experience — service links, portal colors, and the contact email shown on the unauthorized page.</p>
+                    <p class="panel-helper">Customize end-user portal branding, wording, service links, styling, and the unauthorized-page contact email. Admin pages always keep the built-in AuthPortal branding.</p>
                     <div class="panel-layout">
-                        <section class="panel-section">
-                            <div class="panel-section-head">
-                                <div class="panel-section-title">
-                                    <h3>App Settings</h3>
-                                    <button type="button" class="section-info-icon" aria-label="App settings info" title="App settings info" data-tooltip="Configure service link buttons, portal background/modal colors, and the unauthorized-page contact email. loginExtraLinkUrl and loginExtraLinkText add an optional button to the portal header.">i</button>
+                        <div id="app-settings-fields" class="config-section-stack" aria-live="polite">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Portal Config</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Portal config info" title="Portal config info" data-tooltip="Configure end-user portal branding, login/authorized/unauthorized copy, and footer visibility. Admin pages are not affected.">i</button>
+                                    </div>
                                 </div>
-                            </div>
-                            <div id="app-settings-fields" class="config-fields" aria-live="polite"></div>
+                                <div id="app-settings-portal-fields" class="config-fields"></div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Request Access</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Request access info" title="Request access info" data-tooltip="Configure the contact email and subject used by the unauthorized page Request Access action.">i</button>
+                                    </div>
+                                </div>
+                                <div id="app-settings-request-fields" class="config-fields"></div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Portal Styling</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Portal styling info" title="Portal styling info" data-tooltip="Adjust the end-user portal background and modal card colors. Admin pages are not affected.">i</button>
+                                    </div>
+                                </div>
+                                <div id="app-settings-style-fields" class="config-fields"></div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Authorized User Service Buttons</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Service buttons info" title="Service buttons info" data-tooltip="Configure button-style links shown to authorized end users. Buttons can optionally be permission-gated.">i</button>
+                                    </div>
+                                </div>
+                                <div id="app-settings-service-fields" class="config-fields"></div>
+                            </section>
                             <textarea id="app-settings-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
-                        </section>
+                        </div>
                         <section class="panel-section">
                             <div class="panel-section-head">
                                 <div class="panel-section-title">

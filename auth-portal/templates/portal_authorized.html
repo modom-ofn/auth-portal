@@ -2,19 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>AuthPortal — Authorized</title>
+  <title>{{ .PageTitle }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="/static/authportal-logo.svg">
-  <link rel="icon" type="image/x-icon" href="/static/authportal-logo.ico">
+  <link rel="icon" href="{{ .PortalLogoURL }}">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="bg {{.HeroBackgroundMode}}" style="--portal-bg-color: {{.HeroBackgroundColor}};">
   <main class="center">
     <section class="card {{.PortalCardMode}}" style="--portal-card-color: {{.PortalCardColor}};">
       <div class="brand">
-        <img src="/static/authportal-logo.svg" alt="AuthPortal" class="logo">
-        <h1>Welcome, {{ .Username }}</h1>
-        <p class="muted">You are authorized on this server.</p>
+        <img src="{{ .PortalLogoURL }}" alt="{{ .PortalAppName }}" class="logo portal-logo-image">
+        <h1 style="color: {{ .PortalTitleColor }};">{{ .WelcomeTitle }}</h1>
+        <p class="muted" style="color: {{ .PortalBodyTextColor }};">{{ .BodyText }}</p>
       </div>
 
       <div class="portal-service-links">
@@ -40,12 +39,13 @@
     </section>
   </main>
 
-  <!-- Footer -->
+  {{ if .ShowFooter }}
   <footer class="footer">
     <p>
       <a href="https://github.com/modom-ofn/auth-portal" target="_blank" rel="noopener">AuthPortal</a>
       created by Modom. “Use at your own risk. This project is unaffiliated with {{ .ProviderName }}”.
     </p>
   </footer>
+  {{ end }}
 </body>
 </html>

@@ -7,6 +7,21 @@ export const createConfigFormsController = (configFields) => {
 
   const queryField = (id) => configFields.querySelector(`#${id}`);
 
+  const setAppSettingsSectionHTML = (portalHTML = '', requestHTML = '', styleHTML = '', serviceHTML = '') => {
+    const portal = queryField('app-settings-portal-fields');
+    const request = queryField('app-settings-request-fields');
+    const style = queryField('app-settings-style-fields');
+    const service = queryField('app-settings-service-fields');
+    if (!portal || !request || !style || !service) {
+      return false;
+    }
+    portal.innerHTML = portalHTML;
+    request.innerHTML = requestHTML;
+    style.innerHTML = styleHTML;
+    service.innerHTML = serviceHTML;
+    return true;
+  };
+
   const setFieldValue = (id, value) => {
     const el = queryField(id);
     if (!el) {
@@ -359,19 +374,69 @@ export const createConfigFormsController = (configFields) => {
   };
 
   const renderAppSettingsFields = (config = {}) => {
-    configFields.innerHTML = `
-      <div class="config-form-grid">
-        <div class="config-form-row">
-          <label for="app-unauth-request-email">Request Access Email</label>
-          <input id="app-unauth-request-email" type="email" placeholder="admin@example.com">
-        </div>
-        <div class="config-form-row">
-          <label for="app-unauth-request-subject">Request Access Subject</label>
-          <input id="app-unauth-request-subject" type="text" placeholder="Request Access">
+    const rendered = setAppSettingsSectionHTML(`
+      <div class="config-form-group">
+        <h4>Branding</h4>
+        <div class="config-form-grid">
+          <div class="config-form-row">
+            <label for="app-portal-app-name">Portal App Name</label>
+            <input id="app-portal-app-name" type="text" placeholder="AuthPortal" maxlength="80">
+          </div>
+          <div class="config-form-row">
+            <label for="app-portal-logo-url">Portal Logo URL</label>
+            <input id="app-portal-logo-url" type="text" placeholder="/static/authportal-logo.svg">
+          </div>
         </div>
       </div>
       <div class="config-form-group">
-        <h4>Portal Styling</h4>
+        <h4>Portal Language</h4>
+        <div class="config-form-grid">
+          <div class="config-form-row">
+            <label for="app-login-body-text">Login Body Text</label>
+            <textarea id="app-login-body-text" rows="2" maxlength="240" placeholder="Sign in with your {{providerName}} account to continue."></textarea>
+          </div>
+          <div class="config-form-row">
+            <label for="app-authorized-title-text">Authorized Title</label>
+            <input id="app-authorized-title-text" type="text" maxlength="160" placeholder="Welcome, {{username}}">
+          </div>
+          <div class="config-form-row">
+            <label for="app-authorized-body-text">Authorized Body</label>
+            <textarea id="app-authorized-body-text" rows="3" maxlength="500" placeholder="You are authorized on this server."></textarea>
+          </div>
+          <div class="config-form-row">
+            <label for="app-unauthorized-title-text">Unauthorized Title</label>
+            <input id="app-unauthorized-title-text" type="text" maxlength="160" placeholder="Hello, {{username}}">
+          </div>
+          <div class="config-form-row">
+            <label for="app-unauthorized-body-text">Unauthorized Body</label>
+            <textarea id="app-unauthorized-body-text" rows="3" maxlength="500" placeholder="You’ve signed in with {{providerName}}, but you’re not yet authorized on this server."></textarea>
+          </div>
+        </div>
+        <p class="field-hint">Supported placeholders: <code>{{username}}</code>, <code>{{providerName}}</code>, <code>{{appName}}</code>.</p>
+      </div>
+      <div class="config-form-group">
+        <h4>Footer</h4>
+        <div class="config-form-row">
+          <label><input id="app-disable-footer" type="checkbox"> Disable End-User Footer</label>
+        </div>
+      </div>
+    `, `
+      <div class="config-form-group">
+        <h4>Contact</h4>
+        <div class="config-form-grid">
+          <div class="config-form-row">
+            <label for="app-unauth-request-email">Request Access Email</label>
+            <input id="app-unauth-request-email" type="email" placeholder="admin@example.com">
+          </div>
+          <div class="config-form-row">
+            <label for="app-unauth-request-subject">Request Access Subject</label>
+            <input id="app-unauth-request-subject" type="text" placeholder="Request Access">
+          </div>
+        </div>
+      </div>
+    `, `
+      <div class="config-form-group">
+        <h4>Colors</h4>
         <div class="portal-bg-grid portal-bg-grid-top">
           <div class="config-form-row">
             <label for="app-portal-bg-color">Background Color</label>
@@ -381,22 +446,61 @@ export const createConfigFormsController = (configFields) => {
             <label for="app-portal-modal-color">Modal Background Color</label>
             <input id="app-portal-modal-color" type="color" value="#111827">
           </div>
+          <div class="config-form-row">
+            <label for="app-portal-title-color">Title Color</label>
+            <input id="app-portal-title-color" type="color" value="#e5e7eb">
+          </div>
+          <div class="config-form-row">
+            <label for="app-portal-body-text-color">Body Text Color</label>
+            <input id="app-portal-body-text-color" type="color" value="#94a3b8">
+          </div>
         </div>
       </div>
+    `, `
       <div class="config-form-group">
-        <h4>Authorized User Service Buttons</h4>
+        <h4>Buttons</h4>
         <div class="service-links-editor">
           <p id="service-links-empty" class="service-link-empty">No service buttons configured.</p>
           <div id="service-links-list"></div>
           <button id="service-link-add" type="button" class="ghost-btn">Add Service Button</button>
         </div>
       </div>
-    `;
+    `);
+    if (!rendered) {
+      configFields.innerHTML = '<p class="muted">App Settings form is unavailable.</p>';
+      return;
+    }
+    setFieldValue('app-portal-app-name', config.portalAppName || 'AuthPortal');
+    setFieldValue('app-portal-logo-url', config.portalLogoUrl || '/static/authportal-logo.svg');
+    setFieldValue('app-login-body-text', config.loginBodyText || 'Sign in with your {{providerName}} account to continue.');
+    setFieldValue('app-authorized-title-text', config.authorizedTitleText || 'Welcome, {{username}}');
+    setFieldValue('app-authorized-body-text', config.authorizedBodyText || 'You are authorized on this server.');
+    setFieldValue('app-unauthorized-title-text', config.unauthorizedTitleText || 'Hello, {{username}}');
+    setFieldValue('app-unauthorized-body-text', config.unauthorizedBodyText || 'You’ve signed in with {{providerName}}, but you’re not yet authorized on this server.');
+    setFieldChecked('app-disable-footer', config.disableFooter);
     setFieldValue('app-unauth-request-email', config.unauthRequestEmail || '');
     setFieldValue('app-unauth-request-subject', config.unauthRequestSubject || '');
     setFieldValue('app-portal-bg-color', config.portalBackgroundColor || '#0b1020');
     setFieldValue('app-portal-modal-color', config.portalModalColor || '#111827');
+    setFieldValue('app-portal-title-color', config.portalTitleColor || '#e5e7eb');
+    setFieldValue('app-portal-body-text-color', config.portalBodyTextColor || '#94a3b8');
     setSectionFieldHelp({
+      'app-portal-app-name':
+        'Brand name used on end-user page titles and the login heading. Admin pages keep the built-in AuthPortal title.',
+      'app-portal-logo-url':
+        'Logo shown on end-user login and portal pages. Use a relative path or absolute https:// URL.',
+      'app-login-body-text':
+        'Login page helper text. Supports {{providerName}} and {{appName}} placeholders.',
+      'app-authorized-title-text':
+        'Authorized page heading. Supports {{username}}, {{providerName}}, and {{appName}}.',
+      'app-authorized-body-text':
+        'Authorized page body copy. Supports {{username}}, {{providerName}}, and {{appName}}.',
+      'app-unauthorized-title-text':
+        'Unauthorized page heading. Supports {{username}}, {{providerName}}, and {{appName}}.',
+      'app-unauthorized-body-text':
+        'Unauthorized page body copy. Supports {{username}}, {{providerName}}, and {{appName}}.',
+      'app-disable-footer':
+        'Hide the footer on end-user login, authorized, and unauthorized pages. The admin portal footer is not affected.',
       'app-unauth-request-email':
         'Email address used by the unauthorized page Request Access action.',
       'app-unauth-request-subject':
@@ -405,6 +509,10 @@ export const createConfigFormsController = (configFields) => {
         'Background color for login, authorized, and unauthorized page backgrounds.',
       'app-portal-modal-color':
         'Modal card color for login, authorized, and unauthorized pages.',
+      'app-portal-title-color':
+        'Title color for end-user login, authorized, and unauthorized page headings.',
+      'app-portal-body-text-color':
+        'Body text color for end-user login, authorized, and unauthorized page copy.',
     });
 
     const list = queryField('service-links-list');
@@ -479,10 +587,20 @@ export const createConfigFormsController = (configFields) => {
   });
 
   const readAppSettings = () => ({
+    portalAppName: readFieldValue('app-portal-app-name'),
+    portalLogoUrl: readFieldValue('app-portal-logo-url'),
+    loginBodyText: readFieldValue('app-login-body-text'),
+    authorizedTitleText: readFieldValue('app-authorized-title-text'),
+    authorizedBodyText: readFieldValue('app-authorized-body-text'),
+    unauthorizedTitleText: readFieldValue('app-unauthorized-title-text'),
+    unauthorizedBodyText: readFieldValue('app-unauthorized-body-text'),
+    disableFooter: readFieldChecked('app-disable-footer'),
     unauthRequestEmail: readFieldValue('app-unauth-request-email'),
     unauthRequestSubject: readFieldValue('app-unauth-request-subject'),
     portalBackgroundColor: readFieldValue('app-portal-bg-color') || '#0b1020',
     portalModalColor: readFieldValue('app-portal-modal-color') || '#111827',
+    portalTitleColor: readFieldValue('app-portal-title-color') || '#e5e7eb',
+    portalBodyTextColor: readFieldValue('app-portal-body-text-color') || '#94a3b8',
     serviceLinks: readServiceLinks(),
   });
 
@@ -523,10 +641,24 @@ export const createConfigFormsController = (configFields) => {
         : [];
     },
     setLoadingMessage: () => {
-      configFields.innerHTML = '<p class="muted">Loading configuration.</p>';
+      if (!setAppSettingsSectionHTML(
+        '<p class="muted">Loading configuration.</p>',
+        '<p class="muted">Loading configuration.</p>',
+        '<p class="muted">Loading configuration.</p>',
+        '<p class="muted">Loading configuration.</p>',
+      )) {
+        configFields.innerHTML = '<p class="muted">Loading configuration.</p>';
+      }
     },
     setEmptyMessage: () => {
-      configFields.innerHTML = '<p class="muted">No configuration loaded for this section.</p>';
+      if (!setAppSettingsSectionHTML(
+        '<p class="muted">No configuration loaded for this section.</p>',
+        '<p class="muted">No configuration loaded for this section.</p>',
+        '<p class="muted">No configuration loaded for this section.</p>',
+        '<p class="muted">No configuration loaded for this section.</p>',
+      )) {
+        configFields.innerHTML = '<p class="muted">No configuration loaded for this section.</p>';
+      }
     },
   };
 };

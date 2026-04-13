@@ -59,10 +59,20 @@ func TestValidateAppSettingsConfig(t *testing.T) {
 	cfg := AppSettingsConfig{
 		LoginExtraLinkURL:     "/docs",
 		LoginExtraLinkText:    "Docs",
+		PortalAppName:         "North Ridge Portal",
+		PortalLogoURL:         "/static/north-ridge-logo.png",
+		LoginBodyText:         "Sign in with your {{providerName}} account to continue.",
+		AuthorizedTitleText:   "Welcome, {{username}}",
+		AuthorizedBodyText:    "Your access to {{appName}} is active.",
+		UnauthorizedTitleText: "Access Pending",
+		UnauthorizedBodyText:  "Access to {{appName}} is pending review.",
+		DisableFooter:         true,
 		UnauthRequestEmail:    "admin@example.com",
 		UnauthRequestSubject:  "Need Access",
 		PortalBackgroundColor: "#0b1020",
 		PortalModalColor:      "#111827",
+		PortalTitleColor:      "#e5e7eb",
+		PortalBodyTextColor:   "#94a3b8",
 		ServiceLinks: []AppServiceLink{
 			{Name: "Home", URL: "/home", Color: "#0a5a35"},
 			{Name: "Library", URL: "https://library.example.com", Color: "#1d4ed8"},
@@ -101,6 +111,22 @@ func TestValidateAppSettingsConfig(t *testing.T) {
 	normalizeAppSettingsConfig(&invalidBg)
 	if validateAppSettingsConfig(invalidBg) == nil {
 		t.Fatalf("expected validation error for invalid portal background color")
+	}
+
+	invalidTitleColor := AppSettingsConfig{
+		PortalTitleColor: "white",
+	}
+	normalizeAppSettingsConfig(&invalidTitleColor)
+	if validateAppSettingsConfig(invalidTitleColor) == nil {
+		t.Fatalf("expected validation error for invalid portal title color")
+	}
+
+	invalidLogo := AppSettingsConfig{
+		PortalLogoURL: "javascript:alert(1)",
+	}
+	normalizeAppSettingsConfig(&invalidLogo)
+	if validateAppSettingsConfig(invalidLogo) == nil {
+		t.Fatalf("expected validation error for invalid portal logo URL")
 	}
 }
 
