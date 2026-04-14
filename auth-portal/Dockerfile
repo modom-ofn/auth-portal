@@ -1,5 +1,6 @@
 # ---- builder ----
-FROM dhi.io/golang:1.26.2-alpine3.23-dev@sha256:0d916bcd9ca2060863389d96c8ea686d72e03ccc48ebf498be2150f21f720999 AS build
+# dhi.io/golang:1.26.2-alpine3.23-dev
+FROM dhi.io/golang@sha256:0d916bcd9ca2060863389d96c8ea686d72e03ccc48ebf498be2150f21f720999 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
@@ -29,7 +30,8 @@ RUN mkdir -p /out && \
     go build -v -x -buildvcs=false -trimpath -ldflags="-s -w" -o /out/auth-portal .
 
 # ---- runtime ----
-FROM dhi.io/alpine-base:3.23-alpine3.23@sha256:27d91b0ae2dbb1bbf89398f4ee4564a0c7a14a82c34c8cffd3b2687033a9d97a
+# dhi.io/alpine-base:3.23-alpine3.23
+FROM dhi.io/alpine-base@sha256:27d91b0ae2dbb1bbf89398f4ee4564a0c7a14a82c34c8cffd3b2687033a9d97a
 WORKDIR /app
 
 COPY --from=build --chown=65532:65532 /out/auth-portal /app/auth-portal
