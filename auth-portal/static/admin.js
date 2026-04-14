@@ -381,13 +381,26 @@ const initializeSidebarToggle = () => {
       body: `
         <p>Customize small pieces of the user experience that do not belong to a specific provider or security setting.</p>
         <ul>
+          <li><code>portalAppName</code> replaces the end-user page brand name used in browser titles and the login heading. Admin pages remain unchanged.</li>
+          <li><code>portalLogoUrl</code> changes the logo/icon used on the login, authorized, and unauthorized pages.</li>
+          <li><code>loginBodyText</code>, <code>authorizedTitleText</code>, <code>authorizedBodyText</code>, <code>unauthorizedTitleText</code>, and <code>unauthorizedBodyText</code> customize end-user copy. These support <code>{{username}}</code>, <code>{{providerName}}</code>, and <code>{{appName}}</code> placeholders.</li>
+          <li><code>disableFooter</code> hides the footer on end-user pages only.</li>
           <li><code>loginExtraLinkUrl</code> and <code>loginExtraLinkText</code> add an optional button to the authorized portal header. Leave either blank to fall back to the shipped defaults.</li>
           <li><code>serviceLinks</code> defines zero or more button-style links shown to authorized users. Each entry needs a <code>name</code> and <code>url</code>; optional <code>color</code> accepts <code>#RRGGBB</code>.</li>
           <li><code>portalBackgroundColor</code> controls login/home page background color.</li>
           <li><code>portalModalColor</code> controls authorized/unauthorized modal panel color.</li>
+          <li><code>portalTitleColor</code> and <code>portalBodyTextColor</code> control end-user page heading and body copy colors.</li>
           <li><code>unauthRequestEmail</code> and <code>unauthRequestSubject</code> power the mailto link shown on the unauthorized page. Provide a valid email address so users can reach you; empty values revert to defaults.</li>
         </ul>
         <pre><code>{
+  "portalAppName": "North Ridge Portal",
+  "portalLogoUrl": "/static/north-ridge-logo.png",
+  "loginBodyText": "Sign in with your {{providerName}} account to continue.",
+  "authorizedTitleText": "Welcome back, {{username}}",
+  "authorizedBodyText": "Your access to {{appName}} is active.",
+  "unauthorizedTitleText": "Access Pending",
+  "unauthorizedBodyText": "You signed in with {{providerName}}, but access to {{appName}} is still pending approval.",
+  "disableFooter": false,
   "loginExtraLinkUrl": "/support",
   "loginExtraLinkText": "Support",
   "serviceLinks": [
@@ -396,6 +409,8 @@ const initializeSidebarToggle = () => {
   ],
   "portalBackgroundColor": "#0b1020",
   "portalModalColor": "#111827",
+  "portalTitleColor": "#e5e7eb",
+  "portalBodyTextColor": "#94a3b8",
   "unauthRequestEmail": "help@example.com",
   "unauthRequestSubject": "Request Access"
 }</code></pre>

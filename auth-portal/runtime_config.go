@@ -67,11 +67,21 @@ type AppServiceLink struct {
 type AppSettingsConfig struct {
 	LoginExtraLinkURL     string           `json:"loginExtraLinkUrl"`
 	LoginExtraLinkText    string           `json:"loginExtraLinkText"`
+	PortalAppName         string           `json:"portalAppName,omitempty"`
+	PortalLogoURL         string           `json:"portalLogoUrl,omitempty"`
+	LoginBodyText         string           `json:"loginBodyText,omitempty"`
+	AuthorizedTitleText   string           `json:"authorizedTitleText,omitempty"`
+	AuthorizedBodyText    string           `json:"authorizedBodyText,omitempty"`
+	UnauthorizedTitleText string           `json:"unauthorizedTitleText,omitempty"`
+	UnauthorizedBodyText  string           `json:"unauthorizedBodyText,omitempty"`
+	DisableFooter         bool             `json:"disableFooter,omitempty"`
 	UnauthRequestEmail    string           `json:"unauthRequestEmail"`
 	UnauthRequestSubject  string           `json:"unauthRequestSubject"`
 	ServiceLinks          []AppServiceLink `json:"serviceLinks,omitempty"`
 	PortalBackgroundColor string           `json:"portalBackgroundColor,omitempty"`
 	PortalModalColor      string           `json:"portalModalColor,omitempty"`
+	PortalTitleColor      string           `json:"portalTitleColor,omitempty"`
+	PortalBodyTextColor   string           `json:"portalBodyTextColor,omitempty"`
 }
 
 type LDAPSyncConfig struct {
@@ -211,10 +221,19 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	cfg := AppSettingsConfig{
 		LoginExtraLinkURL:     strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_URL")),
 		LoginExtraLinkText:    strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_TEXT")),
+		PortalAppName:         strings.TrimSpace(os.Getenv("PORTAL_APP_NAME")),
+		PortalLogoURL:         strings.TrimSpace(os.Getenv("PORTAL_LOGO_URL")),
+		LoginBodyText:         strings.TrimSpace(os.Getenv("LOGIN_BODY_TEXT")),
+		AuthorizedTitleText:   strings.TrimSpace(os.Getenv("AUTHORIZED_TITLE_TEXT")),
+		AuthorizedBodyText:    strings.TrimSpace(os.Getenv("AUTHORIZED_BODY_TEXT")),
+		UnauthorizedTitleText: strings.TrimSpace(os.Getenv("UNAUTHORIZED_TITLE_TEXT")),
+		UnauthorizedBodyText:  strings.TrimSpace(os.Getenv("UNAUTHORIZED_BODY_TEXT")),
 		UnauthRequestEmail:    strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_EMAIL")),
 		UnauthRequestSubject:  strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_SUBJECT")),
 		PortalBackgroundColor: strings.TrimSpace(os.Getenv("PORTAL_BACKGROUND_COLOR")),
 		PortalModalColor:      strings.TrimSpace(os.Getenv("PORTAL_MODAL_COLOR")),
+		PortalTitleColor:      strings.TrimSpace(os.Getenv("PORTAL_TITLE_COLOR")),
+		PortalBodyTextColor:   strings.TrimSpace(os.Getenv("PORTAL_BODY_TEXT_COLOR")),
 	}
 
 	if cfg.LoginExtraLinkURL == "" {
@@ -222,6 +241,27 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	}
 	if cfg.LoginExtraLinkText == "" {
 		cfg.LoginExtraLinkText = "Open Internal App"
+	}
+	if cfg.PortalAppName == "" {
+		cfg.PortalAppName = "AuthPortal"
+	}
+	if cfg.PortalLogoURL == "" {
+		cfg.PortalLogoURL = "/static/authportal-logo.svg"
+	}
+	if cfg.LoginBodyText == "" {
+		cfg.LoginBodyText = "Sign in with your {{providerName}} account to continue."
+	}
+	if cfg.AuthorizedTitleText == "" {
+		cfg.AuthorizedTitleText = "Welcome, {{username}}"
+	}
+	if cfg.AuthorizedBodyText == "" {
+		cfg.AuthorizedBodyText = "You are authorized on this server."
+	}
+	if cfg.UnauthorizedTitleText == "" {
+		cfg.UnauthorizedTitleText = "Hello, {{username}}"
+	}
+	if cfg.UnauthorizedBodyText == "" {
+		cfg.UnauthorizedBodyText = "You’ve signed in with {{providerName}}, but you’re not yet authorized on this server."
 	}
 	if cfg.UnauthRequestEmail == "" {
 		cfg.UnauthRequestEmail = "admin@example.com"
@@ -234,6 +274,12 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	}
 	if cfg.PortalModalColor == "" {
 		cfg.PortalModalColor = "#111827"
+	}
+	if cfg.PortalTitleColor == "" {
+		cfg.PortalTitleColor = "#e5e7eb"
+	}
+	if cfg.PortalBodyTextColor == "" {
+		cfg.PortalBodyTextColor = "#94a3b8"
 	}
 	cfg.ServiceLinks = []AppServiceLink{
 		{
@@ -410,6 +456,13 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	cfg.AppSettings.LoginExtraLinkURL = loginExtraLinkURL
 	loginExtraLinkText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.LoginExtraLinkText, defaults.AppSettings.LoginExtraLinkText))
 	cfg.AppSettings.LoginExtraLinkText = loginExtraLinkText
+	cfg.AppSettings.PortalAppName = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalAppName, defaults.AppSettings.PortalAppName))
+	cfg.AppSettings.PortalLogoURL = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalLogoURL, defaults.AppSettings.PortalLogoURL))
+	cfg.AppSettings.LoginBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.LoginBodyText, defaults.AppSettings.LoginBodyText))
+	cfg.AppSettings.AuthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.AuthorizedTitleText, defaults.AppSettings.AuthorizedTitleText))
+	cfg.AppSettings.AuthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.AuthorizedBodyText, defaults.AppSettings.AuthorizedBodyText))
+	cfg.AppSettings.UnauthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthorizedTitleText, defaults.AppSettings.UnauthorizedTitleText))
+	cfg.AppSettings.UnauthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthorizedBodyText, defaults.AppSettings.UnauthorizedBodyText))
 	unauthRequestEmail = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthRequestEmail, defaults.AppSettings.UnauthRequestEmail))
 	cfg.AppSettings.UnauthRequestEmail = unauthRequestEmail
 	unauthRequestSubject = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthRequestSubject, defaults.AppSettings.UnauthRequestSubject))
@@ -417,6 +470,10 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		unauthRequestSubject = defaults.AppSettings.UnauthRequestSubject
 	}
 	cfg.AppSettings.UnauthRequestSubject = unauthRequestSubject
+	cfg.AppSettings.PortalBackgroundColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalBackgroundColor, defaults.AppSettings.PortalBackgroundColor))
+	cfg.AppSettings.PortalModalColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalModalColor, defaults.AppSettings.PortalModalColor))
+	cfg.AppSettings.PortalTitleColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalTitleColor, defaults.AppSettings.PortalTitleColor))
+	cfg.AppSettings.PortalBodyTextColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalBodyTextColor, defaults.AppSettings.PortalBodyTextColor))
 
 	cfg.LDAPSync.LDAPHost = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPHost, defaults.LDAPSync.LDAPHost))
 	cfg.LDAPSync.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminDN, defaults.LDAPSync.LDAPAdminDN))

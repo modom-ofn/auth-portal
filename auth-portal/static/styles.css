@@ -76,6 +76,15 @@ body.modal-open{overflow:hidden;}
 
 .brand{display:flex;flex-direction:column;align-items:center;gap:.5rem;margin-bottom:1.25rem}
 .logo{width:42px;height:42px;border-radius:8px}
+.portal-logo-image{
+  width:min(100%, 320px);
+  height:auto;
+  max-height:120px;
+  border-radius:0;
+  object-fit:contain;
+  background:transparent;
+  display:block;
+}
 h1{font-size:1.6rem;margin:0}
 .muted{color:var(--muted)}
 .footnote{margin-top:1rem;color:var(--muted);font-size:.9rem}
@@ -366,6 +375,7 @@ a:hover{opacity:.9}
 /* ---- Config form ---- */
 #config-editor{width:100%;min-height:260px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:1rem;font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;font-size:.9rem;resize:vertical;}
 .config-fields{display:flex;flex-direction:column;gap:1rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:1rem;}
+.config-section-stack{display:flex;flex-direction:column;gap:1.25rem;}
 .config-form-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
 .config-form-row{display:flex;flex-direction:column;gap:.4rem;}
 .config-form-row label{font-weight:600;font-size:.88rem;}
@@ -384,14 +394,22 @@ a:hover{opacity:.9}
 .service-link-row .service-link-color::-webkit-color-swatch-wrapper{padding:3px;}
 .service-link-row .service-link-color::-webkit-color-swatch{border:none;border-radius:6px;}
 .service-link-row .service-link-color::-moz-color-swatch{border:none;border-radius:6px;}
-#app-portal-bg-color{-webkit-appearance:none;appearance:none;width:100%;height:40px;padding:0;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
-#app-portal-bg-color::-webkit-color-swatch-wrapper{padding:3px;}
-#app-portal-bg-color::-webkit-color-swatch{border:none;border-radius:6px;}
-#app-portal-bg-color::-moz-color-swatch{border:none;border-radius:6px;}
-#app-portal-modal-color{-webkit-appearance:none;appearance:none;width:100%;height:40px;padding:0;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
-#app-portal-modal-color::-webkit-color-swatch-wrapper{padding:3px;}
-#app-portal-modal-color::-webkit-color-swatch{border:none;border-radius:6px;}
-#app-portal-modal-color::-moz-color-swatch{border:none;border-radius:6px;}
+#app-portal-bg-color,
+#app-portal-modal-color,
+#app-portal-title-color,
+#app-portal-body-text-color{-webkit-appearance:none;appearance:none;width:100%;height:40px;padding:0;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
+#app-portal-bg-color::-webkit-color-swatch-wrapper,
+#app-portal-modal-color::-webkit-color-swatch-wrapper,
+#app-portal-title-color::-webkit-color-swatch-wrapper,
+#app-portal-body-text-color::-webkit-color-swatch-wrapper{padding:3px;}
+#app-portal-bg-color::-webkit-color-swatch,
+#app-portal-modal-color::-webkit-color-swatch,
+#app-portal-title-color::-webkit-color-swatch,
+#app-portal-body-text-color::-webkit-color-swatch{border:none;border-radius:6px;}
+#app-portal-bg-color::-moz-color-swatch,
+#app-portal-modal-color::-moz-color-swatch,
+#app-portal-title-color::-moz-color-swatch,
+#app-portal-body-text-color::-moz-color-swatch{border:none;border-radius:6px;}
 .service-link-empty{margin:0;color:var(--muted);font-size:.85rem;}
 .admin-actions{display:flex;align-items:center;gap:1rem;margin-top:1rem;}
 .admin-actions input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.55rem .8rem;color:var(--text);}
@@ -400,8 +418,11 @@ a:hover{opacity:.9}
 .config-tools .ghost-btn{min-width:100px;}
 .config-tools input[type="file"]{display:none;}
 .panel-section-head .config-tools{margin-bottom:0;align-items:center;}
-.panel-section .backup-schedule{margin-top:0;}
+.panel-section .oauth-form{margin-top:0;}
+.panel-section .backup-schedule{margin-top:0;margin-bottom:0;}
 .panel-section .admin-actions{margin-top:0;}
+.config-form-group .status-banner{margin:0;}
+.config-form-group .backup-table-wrapper{margin-top:0;}
 
 /* ---- Logs ---- */
 .logs-section{display:flex;flex-direction:column;gap:1rem;padding:1rem 0;}
