@@ -21,6 +21,7 @@ const (
 	loginTemplate     = "login.html"
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
+	signInTitleSuffix = "Sign In"
 )
 
 // providerUI returns the provider key used by code ("plex"/"emby")
@@ -287,7 +288,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"PortalBodyTextColor": bodyTextColor,
 			"PortalAppName":       appName,
 			"PortalLogoURL":       logoURL,
-			"PageTitle":           portalPageTitle("Sign In"),
+			"PageTitle":           portalPageTitle(signInTitleSuffix),
 			"LoginBodyText":       loginBodyText,
 			"ShowFooter":          showFooter,
 		})
@@ -314,7 +315,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"PortalBodyTextColor": bodyTextColor,
 			"PortalAppName":       appName,
 			"PortalLogoURL":       logoURL,
-			"PageTitle":           portalPageTitle("Sign In"),
+			"PageTitle":           portalPageTitle(signInTitleSuffix),
 			"LoginBodyText":       loginBodyText,
 			"ShowFooter":          showFooter,
 		})
@@ -338,7 +339,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"PortalBodyTextColor": bodyTextColor,
 			"PortalAppName":       appName,
 			"PortalLogoURL":       logoURL,
-			"PageTitle":           portalPageTitle("Sign In"),
+			"PageTitle":           portalPageTitle(signInTitleSuffix),
 			"LoginBodyText":       loginBodyText,
 			"ShowFooter":          showFooter,
 		})

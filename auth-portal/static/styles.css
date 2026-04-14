@@ -419,8 +419,7 @@ a:hover{opacity:.9}
 .config-tools input[type="file"]{display:none;}
 .panel-section-head .config-tools{margin-bottom:0;align-items:center;}
 .panel-section .oauth-form{margin-top:0;}
-.panel-section .backup-schedule{margin-top:0;}
-.panel-section .backup-schedule{margin-bottom:0;}
+.panel-section .backup-schedule{margin-top:0;margin-bottom:0;}
 .panel-section .admin-actions{margin-top:0;}
 .config-form-group .status-banner{margin:0;}
 .config-form-group .backup-table-wrapper{margin-top:0;}

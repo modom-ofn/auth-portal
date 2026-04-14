@@ -1099,44 +1099,37 @@ func validateServiceLinkEntry(idx int, item AppServiceLink) error {
 }
 
 func validateAppSettingsConfig(cfg AppSettingsConfig) error {
-	if err := validateOptionalPortalLink(cfg.LoginExtraLinkURL); err != nil {
-		return err
+	optionalChecks := []func() error{
+		func() error { return validateOptionalPortalLink(cfg.LoginExtraLinkURL) },
+		func() error { return validateOptionalLogoLink(cfg.PortalLogoURL) },
+		func() error { return validateOptionalRequestEmail(cfg.UnauthRequestEmail) },
+		func() error { return validateOptionalPortalColor(cfg.PortalBackgroundColor, "portal background color") },
+		func() error { return validateOptionalPortalColor(cfg.PortalModalColor, "portal modal color") },
+		func() error { return validateOptionalPortalColor(cfg.PortalTitleColor, "portal title color") },
+		func() error { return validateOptionalPortalColor(cfg.PortalBodyTextColor, "portal body text color") },
 	}
-	if err := validateOptionalLogoLink(cfg.PortalLogoURL); err != nil {
-		return err
+	for _, check := range optionalChecks {
+		if err := check(); err != nil {
+			return err
+		}
 	}
-	if err := validateOptionalRequestEmail(cfg.UnauthRequestEmail); err != nil {
-		return err
+
+	textLengthChecks := []struct {
+		value string
+		field string
+		max   int
+	}{
+		{value: cfg.PortalAppName, field: "portal app name", max: 80},
+		{value: cfg.LoginBodyText, field: "login body text", max: 240},
+		{value: cfg.AuthorizedTitleText, field: "authorized title text", max: 160},
+		{value: cfg.AuthorizedBodyText, field: "authorized body text", max: 500},
+		{value: cfg.UnauthorizedTitleText, field: "unauthorized title text", max: 160},
+		{value: cfg.UnauthorizedBodyText, field: "unauthorized body text", max: 500},
 	}
-	if err := validateOptionalPortalColor(cfg.PortalBackgroundColor, "portal background color"); err != nil {
-		return err
-	}
-	if err := validateOptionalPortalColor(cfg.PortalModalColor, "portal modal color"); err != nil {
-		return err
-	}
-	if err := validateOptionalPortalColor(cfg.PortalTitleColor, "portal title color"); err != nil {
-		return err
-	}
-	if err := validateOptionalPortalColor(cfg.PortalBodyTextColor, "portal body text color"); err != nil {
-		return err
-	}
-	if err := validatePortalTextLength(cfg.PortalAppName, "portal app name", 80); err != nil {
-		return err
-	}
-	if err := validatePortalTextLength(cfg.LoginBodyText, "login body text", 240); err != nil {
-		return err
-	}
-	if err := validatePortalTextLength(cfg.AuthorizedTitleText, "authorized title text", 160); err != nil {
-		return err
-	}
-	if err := validatePortalTextLength(cfg.AuthorizedBodyText, "authorized body text", 500); err != nil {
-		return err
-	}
-	if err := validatePortalTextLength(cfg.UnauthorizedTitleText, "unauthorized title text", 160); err != nil {
-		return err
-	}
-	if err := validatePortalTextLength(cfg.UnauthorizedBodyText, "unauthorized body text", 500); err != nil {
-		return err
+	for _, check := range textLengthChecks {
+		if err := validatePortalTextLength(check.value, check.field, check.max); err != nil {
+			return err
+		}
 	}
 
 	for idx, item := range cfg.ServiceLinks {
