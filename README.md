@@ -2,7 +2,7 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26.2%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 [![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
 
@@ -560,7 +560,7 @@ CREATE TABLE IF NOT EXISTS pins (
 
 ## Build & Images
 
-- Go: `1.26.1` on `alpine:3.23` (builder stage).
+- Go: `1.26.2` on `alpine:3.23` (builder stage).
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.26`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
 - Runtime: `dhi.io/alpine-base:3.23-alpine3.23-dev`, installs CA certs + tzdata, runs as non-root `uid 10001`.
