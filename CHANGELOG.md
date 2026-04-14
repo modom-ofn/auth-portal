@@ -25,9 +25,9 @@
 - No manual database migration steps are required beyond normal startup migrations.
 
 ### Pre-release Scan Summary
-- Image scanned: local hardened build (`auth-portal:hardened-test`), plus Go 1.26.1 validation image (`auth-portal:go1261-test`).
+- Image scanned: local hardened build (`auth-portal:hardened-test`), plus Go 1.26.2 validation image (`auth-portal:go1262-test`).
 - Docker Scout: `0` HIGH/CRITICAL findings.
-- Trivy: `0` HIGH/CRITICAL findings; after Go 1.26.1 bump, `0` findings across all severities.
+- Trivy: `0` HIGH/CRITICAL findings; after Go 1.26.2 bump, `0` findings across all severities.
 - Grype: `0` findings (HIGH/CRITICAL and all-severity pass).
 - Artifacts generated locally during validation: `scout-auth-portal.sarif`, `trivy-auth-portal*.json`, `grype-auth-portal*.json`.
 
