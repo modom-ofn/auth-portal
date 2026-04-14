@@ -112,6 +112,19 @@ export function createOAuthSectionController({
     });
   };
 
+  const removeSelectedScope = (scope) => {
+    state.selectedScopes = state.selectedScopes.filter((item) => item !== scope);
+    renderSelectedScopes();
+  };
+
+  const appendSelectedScopePill = (scope) => {
+    if (!selectedScopesRoot) {
+      return;
+    }
+    const pill = buildScopePill(scope, () => removeSelectedScope(scope));
+    selectedScopesRoot.appendChild(pill);
+  };
+
   const renderSelectedScopes = () => {
     if (!selectedScopesRoot) {
       return;
@@ -124,13 +137,9 @@ export function createOAuthSectionController({
       selectedScopesRoot.appendChild(empty);
       return;
     }
-    state.selectedScopes.forEach((scope) => {
-      const pill = buildScopePill(scope, () => {
-        state.selectedScopes = state.selectedScopes.filter((item) => item !== scope);
-        renderSelectedScopes();
-      });
-      selectedScopesRoot.appendChild(pill);
-    });
+    for (const scope of state.selectedScopes) {
+      appendSelectedScopePill(scope);
+    }
   };
 
   const setSelectedScopes = (scopes) => {
