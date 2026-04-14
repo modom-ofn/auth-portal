@@ -1,24 +1,139 @@
 import { createConfigFormsController } from './admin/config-forms.js';
-import { createRecentChangesController } from './admin/recent-changes.js';
 import { createOAuthSectionController } from './admin/oauth-section.js';
+import { createLDAPSyncSectionController } from './admin/ldap-sync-section.js';
+import { createAccessControlSectionController } from './admin/access-control-section.js';
 import { createBackupsSectionController } from './admin/backups-section.js';
+import { createLogsSectionController } from './admin/logs-section.js';
 import { createHelpModalController } from './admin/help-modal.js';
 import { createConfigSectionController } from './admin/config-section.js';
 import { createSectionRouter } from './admin/section-router.js';
 import { createLoadedAtController, createStatusBannerController } from './admin/admin-core.js';
 import { createAdminAPI } from './admin/admin-api.js';
 
+const initializeUserMenu = () => {
+  const userMenu = document.getElementById('user-menu');
+  const userMenuTrigger = document.getElementById('user-menu-trigger');
+  const userMenuDropdown = document.getElementById('user-menu-dropdown');
+  if (!userMenu || !userMenuTrigger || !userMenuDropdown) {
+    return;
+  }
+
+  const openMenu = () => {
+    userMenuDropdown.hidden = false;
+    userMenu.classList.add('open');
+    userMenuTrigger.setAttribute('aria-expanded', 'true');
+  };
+  const closeMenu = () => {
+    userMenuDropdown.hidden = true;
+    userMenu.classList.remove('open');
+    userMenuTrigger.setAttribute('aria-expanded', 'false');
+  };
+
+  userMenuTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    userMenuDropdown.hidden ? openMenu() : closeMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!userMenu.contains(e.target)) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenu();
+  });
+};
+
+const initializeThemeMenu = () => {
+  const themeMenu = document.getElementById('theme-menu');
+  const themeToggleBtn = document.getElementById('theme-toggle');
+  const themeMenuDropdown = document.getElementById('theme-menu-dropdown');
+  const adminPageEl = document.querySelector('.admin-page');
+  const THEME_KEY = 'admin-theme';
+  const THEME_TITLES = { system: 'Theme: system (follows OS)', dark: 'Theme: dark', light: 'Theme: light' };
+
+  const applyTheme = (theme) => {
+    if (!adminPageEl) return;
+    if (theme === 'system') {
+      delete adminPageEl.dataset.theme;
+    } else {
+      adminPageEl.dataset.theme = theme;
+    }
+    if (themeToggleBtn) {
+      themeToggleBtn.querySelector('.theme-icon-system').hidden = theme !== 'system';
+      themeToggleBtn.querySelector('.theme-icon-dark').hidden = theme !== 'dark';
+      themeToggleBtn.querySelector('.theme-icon-light').hidden = theme !== 'light';
+      themeToggleBtn.title = THEME_TITLES[theme] || 'Toggle theme';
+    }
+    if (themeMenuDropdown) {
+      themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.themeValue === theme);
+      });
+    }
+  };
+
+  applyTheme(localStorage.getItem(THEME_KEY) || 'system');
+
+  if (!themeMenu || !themeToggleBtn || !themeMenuDropdown) {
+    return;
+  }
+
+  const openThemeMenu = () => {
+    themeMenuDropdown.hidden = false;
+    themeToggleBtn.setAttribute('aria-expanded', 'true');
+  };
+  const closeThemeMenu = () => {
+    themeMenuDropdown.hidden = true;
+    themeToggleBtn.setAttribute('aria-expanded', 'false');
+  };
+
+  themeToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    themeMenuDropdown.hidden ? openThemeMenu() : closeThemeMenu();
+  });
+  themeMenuDropdown.querySelectorAll('.theme-menu-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const chosen = item.dataset.themeValue;
+      localStorage.setItem(THEME_KEY, chosen);
+      applyTheme(chosen);
+      closeThemeMenu();
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!themeMenu.contains(e.target)) closeThemeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeThemeMenu();
+  });
+};
+
+const initializeSidebarToggle = () => {
+  const sidebarToggleBtn = document.getElementById('sidebar-toggle');
+  const adminLayout = document.getElementById('admin-layout');
+  if (!sidebarToggleBtn || !adminLayout) {
+    return;
+  }
+
+  const COLLAPSED_KEY = 'admin-sidebar-collapsed';
+  if (localStorage.getItem(COLLAPSED_KEY) === '1') {
+    adminLayout.dataset.collapsed = '';
+  }
+
+  sidebarToggleBtn.addEventListener('click', () => {
+    if ('collapsed' in adminLayout.dataset) {
+      delete adminLayout.dataset.collapsed;
+      localStorage.removeItem(COLLAPSED_KEY);
+    } else {
+      adminLayout.dataset.collapsed = '';
+      localStorage.setItem(COLLAPSED_KEY, '1');
+    }
+  });
+};
+
 (() => {
+  initializeUserMenu();
+  initializeThemeMenu();
+  initializeSidebarToggle();
+
   const tabs = Array.from(document.querySelectorAll('.admin-tab'));
-  const configForm = document.getElementById('config-form');
-  const configFields = document.getElementById('config-fields');
-  const configEditor = document.getElementById('config-editor');
-  const historyPanel = document.getElementById('history-panel');
-  const historyList = document.getElementById('history-list');
-  const panelTitle = document.getElementById('panel-title');
   const versionBadge = document.getElementById('version-badge');
-  const reasonInput = document.getElementById('reason-input');
-  const saveBtn = document.getElementById('save-btn');
   const statusBanner = document.getElementById('status-banner');
   const loadedAtEl = document.getElementById('loaded-at');
 
@@ -30,7 +145,10 @@ import { createAdminAPI } from './admin/admin-api.js';
   const oauthId = document.getElementById('oauth-client-id');
   const oauthName = document.getElementById('oauth-client-name');
   const oauthRedirects = document.getElementById('oauth-client-redirects');
-  const oauthScopes = document.getElementById('oauth-client-scopes');
+  const oauthScopePicker = document.getElementById('oauth-client-scope-picker');
+  const oauthScopeAdd = document.getElementById('oauth-client-scope-add');
+  const oauthScopeSelected = document.getElementById('oauth-client-scope-selected');
+  const oauthReason = document.getElementById('oauth-client-reason');
   const oauthCancel = document.getElementById('oauth-client-cancel');
   const oauthSave = document.getElementById('oauth-client-save');
   const oauthSecretBanner = document.getElementById('oauth-secret-banner');
@@ -38,22 +156,83 @@ import { createAdminAPI } from './admin/admin-api.js';
   const oauthDetailClose = document.getElementById('oauth-detail-close');
   const oauthDetailTitle = document.getElementById('oauth-detail-title');
   const oauthDetailBody = document.getElementById('oauth-detail-body');
+  const oauthDetailReason = document.getElementById('oauth-detail-reason');
   const oauthDetailEdit = document.getElementById('oauth-detail-edit');
   const oauthDetailRotate = document.getElementById('oauth-detail-rotate');
   const oauthDetailDelete = document.getElementById('oauth-detail-delete');
-  const exportBtn = document.getElementById('config-export-btn');
-  const importBtn = document.getElementById('config-import-btn');
-  const importInput = document.getElementById('config-import-input');
   const helpBtn = document.getElementById('config-help-btn');
   const helpModal = document.getElementById('help-modal');
   const helpModalClose = document.getElementById('help-modal-close');
   const helpModalTitle = document.getElementById('help-modal-title');
   const helpModalBody = document.getElementById('help-modal-body');
-  const recentChangesBtn = document.getElementById('recent-changes-btn');
-  const recentChangesModal = document.getElementById('recent-changes-modal');
-  const recentChangesModalClose = document.getElementById('recent-changes-modal-close');
-  const recentChangesModalTitle = document.getElementById('recent-changes-modal-title');
-  const recentChangesList = document.getElementById('recent-changes-list');
+
+  const ldapSyncPanel = document.getElementById('ldap-sync-panel');
+  const ldapSyncRefreshBtn = document.getElementById('ldap-sync-refresh-btn');
+  const ldapSyncExportBtn = document.getElementById('ldap-sync-export-btn');
+  const ldapSyncImportBtn = document.getElementById('ldap-sync-import-btn');
+  const ldapSyncImportInput = document.getElementById('ldap-sync-import-input');
+  const ldapSyncTestBtn = document.getElementById('ldap-sync-test-btn');
+  const ldapSyncRunBtn = document.getElementById('ldap-sync-run-btn');
+  const ldapSyncForm = document.getElementById('ldap-sync-form');
+  const ldapSyncHost = document.getElementById('ldap-sync-host');
+  const ldapSyncAdminDn = document.getElementById('ldap-sync-admin-dn');
+  const ldapSyncAdminPassword = document.getElementById('ldap-sync-admin-password');
+  const ldapSyncBaseDn = document.getElementById('ldap-sync-base-dn');
+  const ldapSyncStartTLS = document.getElementById('ldap-sync-starttls');
+  const ldapSyncDeleteStale = document.getElementById('ldap-sync-delete-stale');
+  const ldapSyncGroupSyncEnabled = document.getElementById('ldap-sync-group-sync-enabled');
+  const ldapSyncGroupBaseDn = document.getElementById('ldap-sync-group-base-dn');
+  const ldapSyncGroupNameAttribute = document.getElementById('ldap-sync-group-name-attribute');
+  const ldapSyncGroupMemberAttribute = document.getElementById('ldap-sync-group-member-attribute');
+  const ldapGroupRoleMappingList = document.getElementById('ldap-group-role-mapping-list');
+  const ldapGroupRoleAddBtn = document.getElementById('ldap-group-role-add-btn');
+  const ldapSyncScheduleEnabled = document.getElementById('ldap-sync-schedule-enabled');
+  const ldapSyncFrequency = document.getElementById('ldap-sync-frequency');
+  const ldapSyncTime = document.getElementById('ldap-sync-time');
+  const ldapSyncWeekday = document.getElementById('ldap-sync-weekday');
+  const ldapSyncMinute = document.getElementById('ldap-sync-minute');
+  const ldapSyncNextRun = document.getElementById('ldap-sync-next-run');
+  const ldapSyncFrequencyRows = Array.from(document.querySelectorAll('[data-ldap-frequency-row]'));
+  const ldapSyncReasonInput = document.getElementById('ldap-sync-reason-input');
+  const ldapSyncSaveBtn = document.getElementById('ldap-sync-save-btn');
+  const ldapSyncStatusSummary = document.getElementById('ldap-sync-status-summary');
+  const ldapSyncStatusState = document.getElementById('ldap-sync-status-state');
+  const ldapSyncStatusStarted = document.getElementById('ldap-sync-status-started');
+  const ldapSyncStatusFinished = document.getElementById('ldap-sync-status-finished');
+  const ldapSyncStatusSuccess = document.getElementById('ldap-sync-status-success');
+  const ldapSyncStatusTriggeredBy = document.getElementById('ldap-sync-status-triggered-by');
+  const ldapSyncTestResult = document.getElementById('ldap-sync-test-result');
+  const ldapSyncTestDetails = document.getElementById('ldap-sync-test-details');
+  const ldapSyncTestConnected = document.getElementById('ldap-sync-test-connected');
+  const ldapSyncTestBound = document.getElementById('ldap-sync-test-bound');
+  const ldapSyncTestBaseExists = document.getElementById('ldap-sync-test-base-exists');
+  const ldapSyncTestBaseCreatable = document.getElementById('ldap-sync-test-base-creatable');
+  const ldapSyncRunRows = document.getElementById('ldap-sync-run-rows');
+
+  const accessControlPanel = document.getElementById('access-control-panel');
+  const accessControlRefresh = document.getElementById('access-control-refresh');
+  const rbacRoleForm = document.getElementById('rbac-role-form');
+  const rbacRoleName = document.getElementById('rbac-role-name');
+  const rbacRoleDescription = document.getElementById('rbac-role-description');
+  const rbacPermissionCheckboxes = document.getElementById('rbac-permission-checkboxes');
+  const rbacRoleReason = document.getElementById('rbac-role-reason');
+  const rbacRoleReset = document.getElementById('rbac-role-reset');
+  const rbacRoleSave = document.getElementById('rbac-role-save');
+  const rbacPermissionForm = document.getElementById('rbac-permission-form');
+  const rbacPermissionName = document.getElementById('rbac-permission-name');
+  const rbacPermissionDescription = document.getElementById('rbac-permission-description');
+  const rbacPermissionReason = document.getElementById('rbac-permission-reason');
+  const rbacPermissionReset = document.getElementById('rbac-permission-reset');
+  const rbacPermissionSave = document.getElementById('rbac-permission-save');
+  const rbacRoleRows = document.getElementById('rbac-role-rows');
+  const rbacPermissionRows = document.getElementById('rbac-permission-rows');
+  const rbacUserRows = document.getElementById('rbac-user-rows');
+  const rbacBindingForm = document.getElementById('rbac-binding-form');
+  const rbacBindingUsername = document.getElementById('rbac-binding-username');
+  const rbacRoleCheckboxes = document.getElementById('rbac-role-checkboxes');
+  const rbacBindingReason = document.getElementById('rbac-binding-reason');
+  const rbacBindingReset = document.getElementById('rbac-binding-reset');
+  const rbacBindingSave = document.getElementById('rbac-binding-save');
 
   const backupsPanel = document.getElementById('backups-panel');
   const backupRefreshBtn = document.getElementById('backups-refresh-btn');
@@ -74,20 +253,28 @@ import { createAdminAPI } from './admin/admin-api.js';
   const backupEmptyState = document.getElementById('backup-empty');
   const backupSectionCheckboxes = Array.from(document.querySelectorAll('.backup-section-checkbox'));
   const backupFrequencyRows = Array.from(document.querySelectorAll('[data-frequency-row]'));
+
+  const logsPanel = document.getElementById('logs-panel');
+  const logsHistoryRefresh = document.getElementById('logs-history-refresh');
+  const logsHistorySummary = document.getElementById('logs-history-summary');
+  const logsFilterSection = document.getElementById('logs-filter-section');
+  const logsFilterUser = document.getElementById('logs-filter-user');
+  const logsSortOrder = document.getElementById('logs-sort-order');
+  const logsPageSize = document.getElementById('logs-page-size');
+  const logsHistoryRows = document.getElementById('logs-history-rows');
+  const logsPagePrev = document.getElementById('logs-page-prev');
+  const logsPageStatus = document.getElementById('logs-page-status');
+  const logsPageNext = document.getElementById('logs-page-next');
+  const logsStreamStatus = document.getElementById('logs-stream-status');
+  const logsStreamInterval = document.getElementById('logs-stream-interval');
+  const logsStreamStart = document.getElementById('logs-stream-start');
+  const logsStreamPause = document.getElementById('logs-stream-pause');
+  const logsStreamRefresh = document.getElementById('logs-stream-refresh');
+  const logsStreamEmpty = document.getElementById('logs-stream-empty');
+  const logsStreamOutput = document.getElementById('logs-stream-output');
   const appTimeZone = document.body?.dataset?.appTimezone || 'UTC';
 
-  if (
-    !configForm ||
-    !configFields ||
-    !configEditor ||
-    !historyPanel ||
-    !historyList ||
-    !panelTitle ||
-    !versionBadge ||
-    !reasonInput ||
-    !saveBtn ||
-    !statusBanner
-  ) {
+  if (!document.getElementById('providers-panel') || !statusBanner) {
     return;
   }
 
@@ -97,6 +284,11 @@ import { createAdminAPI } from './admin/admin-api.js';
     security: 'Security',
     mfa: 'MFA',
     'app-settings': 'App Settings',
+    'ldap-sync': 'LDAP Sync',
+    'access-control': 'Access Control',
+    backups: 'Backups',
+    oauth: 'OAuth Clients',
+    logs: 'Logs',
   };
   const initialSection = 'providers';
   let sectionRouter = null;
@@ -104,7 +296,7 @@ import { createAdminAPI } from './admin/admin-api.js';
 
   const state = {
     data: { providers: null, security: null, mfa: null, 'app-settings': null },
-    history: { providers: [], security: [], mfa: [], 'app-settings': [], oauth: [], backups: [] },
+    history: { providers: [], security: [], mfa: [], 'app-settings': [], oauth: [], 'ldap-sync': [], 'access-control': [], backups: [] },
     loadedAt: null,
   };
 
@@ -133,7 +325,7 @@ import { createAdminAPI } from './admin/admin-api.js';
   "emby": {
     "serverUrl": "https://emby.example.com",
     "appName": "AuthPortal",
-    "appVersion": "2.0.3",
+    "appVersion": "2.0.5",
     "apiKey": "emby-api-key",
     "ownerUsername": "embyadmin",
     "ownerId": "12345"
@@ -141,7 +333,7 @@ import { createAdminAPI } from './admin/admin-api.js';
   "jellyfin": {
     "serverUrl": "https://jellyfin.example.com",
     "appName": "AuthPortal",
-    "appVersion": "2.0.3",
+    "appVersion": "2.0.5",
     "apiKey": "jellyfin-api-key"
   }
 }</code></pre>
@@ -189,13 +381,26 @@ import { createAdminAPI } from './admin/admin-api.js';
       body: `
         <p>Customize small pieces of the user experience that do not belong to a specific provider or security setting.</p>
         <ul>
+          <li><code>portalAppName</code> replaces the end-user page brand name used in browser titles and the login heading. Admin pages remain unchanged.</li>
+          <li><code>portalLogoUrl</code> changes the logo/icon used on the login, authorized, and unauthorized pages.</li>
+          <li><code>loginBodyText</code>, <code>authorizedTitleText</code>, <code>authorizedBodyText</code>, <code>unauthorizedTitleText</code>, and <code>unauthorizedBodyText</code> customize end-user copy. These support <code>{{username}}</code>, <code>{{providerName}}</code>, and <code>{{appName}}</code> placeholders.</li>
+          <li><code>disableFooter</code> hides the footer on end-user pages only.</li>
           <li><code>loginExtraLinkUrl</code> and <code>loginExtraLinkText</code> add an optional button to the authorized portal header. Leave either blank to fall back to the shipped defaults.</li>
           <li><code>serviceLinks</code> defines zero or more button-style links shown to authorized users. Each entry needs a <code>name</code> and <code>url</code>; optional <code>color</code> accepts <code>#RRGGBB</code>.</li>
           <li><code>portalBackgroundColor</code> controls login/home page background color.</li>
           <li><code>portalModalColor</code> controls authorized/unauthorized modal panel color.</li>
+          <li><code>portalTitleColor</code> and <code>portalBodyTextColor</code> control end-user page heading and body copy colors.</li>
           <li><code>unauthRequestEmail</code> and <code>unauthRequestSubject</code> power the mailto link shown on the unauthorized page. Provide a valid email address so users can reach you; empty values revert to defaults.</li>
         </ul>
         <pre><code>{
+  "portalAppName": "North Ridge Portal",
+  "portalLogoUrl": "/static/north-ridge-logo.png",
+  "loginBodyText": "Sign in with your {{providerName}} account to continue.",
+  "authorizedTitleText": "Welcome back, {{username}}",
+  "authorizedBodyText": "Your access to {{appName}} is active.",
+  "unauthorizedTitleText": "Access Pending",
+  "unauthorizedBodyText": "You signed in with {{providerName}}, but access to {{appName}} is still pending approval.",
+  "disableFooter": false,
   "loginExtraLinkUrl": "/support",
   "loginExtraLinkText": "Support",
   "serviceLinks": [
@@ -204,6 +409,8 @@ import { createAdminAPI } from './admin/admin-api.js';
   ],
   "portalBackgroundColor": "#0b1020",
   "portalModalColor": "#111827",
+  "portalTitleColor": "#e5e7eb",
+  "portalBodyTextColor": "#94a3b8",
   "unauthRequestEmail": "help@example.com",
   "unauthRequestSubject": "Request Access"
 }</code></pre>
@@ -212,45 +419,61 @@ import { createAdminAPI } from './admin/admin-api.js';
     },
   };
 
-  const nowISO = () => new Date().toISOString();
   const status = createStatusBannerController(statusBanner);
   const loadedAt = createLoadedAtController(loadedAtEl);
   const api = createAdminAPI();
+  const recordActivity = () => {};
 
-  const configForms = createConfigFormsController(configFields);
+  // Per-section config controllers — each bound to its own panel's form elements
+  const configSectionDefs = {
+    providers:     { panel: 'providers-panel',     fields: 'providers-fields',     editor: 'providers-editor',     reason: 'providers-reason',     save: 'providers-save',     exportBtn: 'providers-export-btn',     importBtn: 'providers-import-btn',     importInput: 'providers-import-input' },
+    security:      { panel: 'security-panel',      fields: 'security-fields',      editor: 'security-editor',      reason: 'security-reason',      save: 'security-save',      exportBtn: 'security-export-btn',      importBtn: 'security-import-btn',      importInput: 'security-import-input' },
+    mfa:           { panel: 'mfa-panel',           fields: 'mfa-fields',           editor: 'mfa-editor',           reason: 'mfa-reason',           save: 'mfa-save',           exportBtn: 'mfa-export-btn',           importBtn: 'mfa-import-btn',           importInput: 'mfa-import-input' },
+    'app-settings':{ panel: 'app-settings-panel',  fields: 'app-settings-fields',  editor: 'app-settings-editor',  reason: 'app-settings-reason',  save: 'app-settings-save',  exportBtn: 'app-settings-export-btn',  importBtn: 'app-settings-import-btn',  importInput: 'app-settings-import-input' },
+  };
 
-  const configSection = createConfigSectionController({
-    api,
-    form: configForm,
-    formsController: configForms,
-    panelTitle,
-    versionBadge,
-    reasonInput,
-    saveBtn,
-    configEditor,
-    importInput,
-    labels,
-    configSections,
-    state,
-    showStatus: (message, type) => status.show(message, type),
-    updateLoadedAt: () => loadedAt.update(state.loadedAt),
-    recordActivity: (...args) => recentChanges.recordLocalActivity(...args),
-  });
+  const configControllers = {};
+  const configPanels = {};
+  const dummyTitle = document.createElement('span');
 
-  const recentChanges = createRecentChangesController({
-    recentChangesBtn,
-    recentChangesModal,
-    recentChangesModalClose,
-    recentChangesModalTitle,
-    recentChangesList,
-    inlineHistoryList: historyList,
-    labels,
-    isConfigSection: configSection.isConfigSection,
-    fetchHistory: async (section) => configSection.fetchHistory(section),
-    nowISO,
-    getCurrentSection,
-    historyState: state.history,
-  });
+  for (const [section, ids] of Object.entries(configSectionDefs)) {
+    const form = document.getElementById(ids.panel);
+    const fields = document.getElementById(ids.fields);
+    const editor = document.getElementById(ids.editor);
+    const reason = document.getElementById(ids.reason);
+    const save = document.getElementById(ids.save);
+    const importInputEl = document.getElementById(ids.importInput);
+    if (!form || !fields || !editor || !reason || !save) continue;
+
+    configPanels[section] = form;
+    const formsCtrl = createConfigFormsController(fields);
+    configControllers[section] = createConfigSectionController({
+      api,
+      form,
+      formsController: formsCtrl,
+      panelTitle: dummyTitle,
+      versionBadge,
+      reasonInput: reason,
+      saveBtn: save,
+      configEditor: editor,
+      importInput: importInputEl,
+      labels,
+      configSections: [section],
+      state,
+      showStatus: (message, type) => status.show(message, type),
+      updateLoadedAt: () => loadedAt.update(state.loadedAt),
+      recordActivity,
+    });
+
+    const expBtn = document.getElementById(ids.exportBtn);
+    const impBtn = document.getElementById(ids.importBtn);
+    if (expBtn) expBtn.addEventListener('click', () => configControllers[section].exportCurrent(section));
+    if (impBtn) impBtn.addEventListener('click', () => configControllers[section].triggerImport(section));
+    configControllers[section].bind(() => section);
+  }
+
+  const isConfigSection = (section) => section in configControllers;
+
   const helpModalController = createHelpModalController({
     button: helpBtn,
     modal: helpModal,
@@ -258,7 +481,7 @@ import { createAdminAPI } from './admin/admin-api.js';
     titleEl: helpModalTitle,
     bodyEl: helpModalBody,
     labels,
-    isConfigSection: configSection.isConfigSection,
+    isConfigSection,
     getCurrentSection,
     helpContent,
     defaultHelpContent,
@@ -274,7 +497,10 @@ import { createAdminAPI } from './admin/admin-api.js';
     idInput: oauthId,
     nameInput: oauthName,
     redirectsInput: oauthRedirects,
-    scopesInput: oauthScopes,
+    scopePicker: oauthScopePicker,
+    scopeAddBtn: oauthScopeAdd,
+    selectedScopesRoot: oauthScopeSelected,
+    reasonInput: oauthReason,
     cancelBtn: oauthCancel,
     saveBtn: oauthSave,
     secretBanner: oauthSecretBanner,
@@ -282,13 +508,91 @@ import { createAdminAPI } from './admin/admin-api.js';
     detailCloseBtn: oauthDetailClose,
     detailTitle: oauthDetailTitle,
     detailBody: oauthDetailBody,
+    detailReasonInput: oauthDetailReason,
     detailEditBtn: oauthDetailEdit,
     detailRotateBtn: oauthDetailRotate,
     detailDeleteBtn: oauthDetailDelete,
     appTimeZone,
     showStatus: (message, type) => status.show(message, type),
-    recordActivity: (section, message, reason = '') =>
-      recentChanges.recordLocalActivity(section, message, reason),
+    recordActivity,
+  });
+
+  const ldapSyncSection = createLDAPSyncSectionController({
+    api,
+    panel: ldapSyncPanel,
+    refreshBtn: ldapSyncRefreshBtn,
+    exportBtn: ldapSyncExportBtn,
+    importBtn: ldapSyncImportBtn,
+    importInput: ldapSyncImportInput,
+    testBtn: ldapSyncTestBtn,
+    runBtn: ldapSyncRunBtn,
+    form: ldapSyncForm,
+    hostInput: ldapSyncHost,
+    adminDnInput: ldapSyncAdminDn,
+    passwordInput: ldapSyncAdminPassword,
+    baseDnInput: ldapSyncBaseDn,
+    startTlsInput: ldapSyncStartTLS,
+    deleteStaleInput: ldapSyncDeleteStale,
+    groupSyncEnabledInput: ldapSyncGroupSyncEnabled,
+    groupSearchBaseDnInput: ldapSyncGroupBaseDn,
+    groupNameAttributeInput: ldapSyncGroupNameAttribute,
+    groupMemberAttributeInput: ldapSyncGroupMemberAttribute,
+    groupRoleMappingList: ldapGroupRoleMappingList,
+    groupRoleAddBtn: ldapGroupRoleAddBtn,
+    scheduleEnabledInput: ldapSyncScheduleEnabled,
+    frequencyInput: ldapSyncFrequency,
+    timeInput: ldapSyncTime,
+    weekdayInput: ldapSyncWeekday,
+    minuteInput: ldapSyncMinute,
+    nextRunEl: ldapSyncNextRun,
+    frequencyRows: ldapSyncFrequencyRows,
+    reasonInput: ldapSyncReasonInput,
+    saveBtn: ldapSyncSaveBtn,
+    statusSummary: ldapSyncStatusSummary,
+    statusState: ldapSyncStatusState,
+    statusStartedAt: ldapSyncStatusStarted,
+    statusFinishedAt: ldapSyncStatusFinished,
+    statusSuccessAt: ldapSyncStatusSuccess,
+    statusTriggeredBy: ldapSyncStatusTriggeredBy,
+    testResultEl: ldapSyncTestResult,
+    testDetailsEl: ldapSyncTestDetails,
+    testConnectedEl: ldapSyncTestConnected,
+    testBoundEl: ldapSyncTestBound,
+    testBaseExistsEl: ldapSyncTestBaseExists,
+    testBaseCreatableEl: ldapSyncTestBaseCreatable,
+    runRows: ldapSyncRunRows,
+    showStatus: (message, type) => status.show(message, type),
+    recordActivity,
+  });
+
+  const accessControlSection = createAccessControlSectionController({
+    api,
+    panel: accessControlPanel,
+    refreshBtn: accessControlRefresh,
+    roleForm: rbacRoleForm,
+    roleNameInput: rbacRoleName,
+    roleDescriptionInput: rbacRoleDescription,
+    permissionCheckboxes: rbacPermissionCheckboxes,
+    roleReasonInput: rbacRoleReason,
+    roleResetBtn: rbacRoleReset,
+    roleSaveBtn: rbacRoleSave,
+    roleRows: rbacRoleRows,
+    permissionForm: rbacPermissionForm,
+    permissionNameInput: rbacPermissionName,
+    permissionDescriptionInput: rbacPermissionDescription,
+    permissionReasonInput: rbacPermissionReason,
+    permissionResetBtn: rbacPermissionReset,
+    permissionSaveBtn: rbacPermissionSave,
+    permissionRows: rbacPermissionRows,
+    userRows: rbacUserRows,
+    form: rbacBindingForm,
+    usernameInput: rbacBindingUsername,
+    roleCheckboxes: rbacRoleCheckboxes,
+    reasonInput: rbacBindingReason,
+    resetBtn: rbacBindingReset,
+    saveBtn: rbacBindingSave,
+    showStatus: (message, type) => status.show(message, type),
+    recordActivity,
   });
 
   const backupsSection = createBackupsSectionController({
@@ -314,76 +618,97 @@ import { createAdminAPI } from './admin/admin-api.js';
     frequencyRows: backupFrequencyRows,
     appTimeZone,
     showStatus: (message, type) => status.show(message, type),
-    recordActivity: (section, message, reason = '') =>
-      recentChanges.recordLocalActivity(section, message, reason),
+    recordActivity,
     onRestoreConfig: async (config) => {
-      configSection.applyConfigResponse(config);
+      Object.values(configControllers)[0]?.applyConfigResponse(config);
       try {
-        await Promise.all(configSections.map((section) => configSection.fetchHistory(section)));
+        await Promise.all(configSections.map((section) => configControllers[section]?.fetchHistory(section)));
       } catch (error_) {
         console.error('Backup restore history refresh failed', error_);
       }
       const section = getCurrentSection();
-      if (configSection.isConfigSection(section)) {
-        configSection.renderSection(section);
-        recentChanges.refresh(section);
-      }
+      const ctrl = configControllers[section];
+      if (ctrl) ctrl.renderSection(section);
     },
+  });
+
+  const logsSection = createLogsSectionController({
+    api,
+    panel: logsPanel,
+    refreshBtn: logsHistoryRefresh,
+    historySummaryEl: logsHistorySummary,
+    sectionFilterEl: logsFilterSection,
+    userFilterEl: logsFilterUser,
+    sortOrderEl: logsSortOrder,
+    pageSizeEl: logsPageSize,
+    historyRows: logsHistoryRows,
+    pagePrevBtn: logsPagePrev,
+    pageStatusEl: logsPageStatus,
+    pageNextBtn: logsPageNext,
+    streamStatusEl: logsStreamStatus,
+    streamIntervalEl: logsStreamInterval,
+    streamStartBtn: logsStreamStart,
+    streamPauseBtn: logsStreamPause,
+    streamRefreshBtn: logsStreamRefresh,
+    streamEmptyEl: logsStreamEmpty,
+    streamOutputEl: logsStreamOutput,
+    appTimeZone,
+    showStatus: (message, type) => status.show(message, type),
   });
 
   sectionRouter = createSectionRouter({
     tabs,
-    configPanel: configForm,
-    historyPanel,
+    configPanels,
     oauthPanel,
+    ldapSyncPanel,
+    accessControlPanel,
     backupsPanel,
+    logsPanel,
     initialSection,
-    isConfigSection: configSection.isConfigSection,
+    isConfigSection,
     hasSectionData: (section) => Boolean(state.data[section]),
     onSectionChange: async (section) => {
       helpModalController.updateButton(section);
-      recentChanges.updateButton(section);
+      if (section !== 'logs') {
+        logsSection.cleanup();
+      }
       status.clear();
     },
     onConfigSection: async (section) => {
       oauthSection.clearSecretBanner();
-      await configSection.loadSection(section);
-      recentChanges.refresh(section);
+      await configControllers[section]?.loadSection(section);
     },
     onOAuthSection: async () => {
       await oauthSection.loadClients();
     },
+    onLDAPSyncSection: async () => {
+      oauthSection.clearSecretBanner();
+      await ldapSyncSection.load();
+    },
+    onAccessControlSection: async () => {
+      oauthSection.clearSecretBanner();
+      await accessControlSection.load();
+    },
     onBackupsSection: async () => {
       oauthSection.clearSecretBanner();
-      recentChanges.refresh('backups');
       if (backupsSection.isLoaded()) {
         backupsSection.render();
         return;
       }
       await backupsSection.load();
-      recentChanges.refresh('backups');
+    },
+    onLogsSection: async () => {
+      oauthSection.clearSecretBanner();
+      await logsSection.load();
     },
   });
 
-  configSection.bind(getCurrentSection);
-
   oauthSection.bind();
+  ldapSyncSection.bind();
+  accessControlSection.bind();
+  logsSection.bind();
 
   helpModalController.bind();
-
-  recentChanges.bind();
-
-  if (exportBtn) {
-    exportBtn.addEventListener('click', () => {
-      configSection.exportCurrent(getCurrentSection());
-    });
-  }
-
-  if (importBtn) {
-    importBtn.addEventListener('click', () => {
-      configSection.triggerImport(getCurrentSection());
-    });
-  }
 
   backupsSection.bind();
   backupsSection.init();
@@ -391,6 +716,5 @@ import { createAdminAPI } from './admin/admin-api.js';
   sectionRouter.bind();
   sectionRouter.init();
   helpModalController.updateButton(getCurrentSection());
-  recentChanges.updateButton(getCurrentSection());
   sectionRouter.activate(getCurrentSection());
 })();

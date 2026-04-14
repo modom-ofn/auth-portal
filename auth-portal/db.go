@@ -4,7 +4,6 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"log"
 	"strings"
 
 	"github.com/lib/pq"
@@ -55,6 +54,224 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS session_version  BIGINT      NOT NULL DEFAULT 0
 `,
 		`CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users (is_admin);`,
+		`
+CREATE TABLE IF NOT EXISTS roles (
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT UNIQUE NOT NULL,
+  description TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`,
+		`
+CREATE TABLE IF NOT EXISTS permissions (
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT UNIQUE NOT NULL,
+  description TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`,
+		`
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role_id       BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  permission_id BIGINT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (role_id, permission_id)
+);
+`,
+		`
+CREATE TABLE IF NOT EXISTS user_roles (
+  id           BIGSERIAL PRIMARY KEY,
+  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role_id       BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  source        TEXT   NOT NULL DEFAULT 'manual',
+  external_ref  TEXT   NOT NULL DEFAULT '',
+  granted_by    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, role_id, source, external_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles (role_id);
+`,
+		`
+ALTER TABLE user_roles
+  ADD COLUMN IF NOT EXISTS source TEXT,
+  ADD COLUMN IF NOT EXISTS external_ref TEXT,
+  ADD COLUMN IF NOT EXISTS granted_by TEXT,
+  ADD COLUMN IF NOT EXISTS id BIGINT,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+UPDATE user_roles
+   SET source = COALESCE(NULLIF(source, ''), 'manual'),
+       external_ref = COALESCE(external_ref, ''),
+       created_at = COALESCE(created_at, now()),
+       updated_at = COALESCE(updated_at, now());
+
+ALTER TABLE user_roles
+  ALTER COLUMN source SET DEFAULT 'manual',
+  ALTER COLUMN source SET NOT NULL,
+  ALTER COLUMN external_ref SET DEFAULT '',
+  ALTER COLUMN external_ref SET NOT NULL,
+  ALTER COLUMN id SET NOT NULL,
+  ALTER COLUMN created_at SET DEFAULT now(),
+  ALTER COLUMN created_at SET NOT NULL,
+  ALTER COLUMN updated_at SET DEFAULT now(),
+  ALTER COLUMN updated_at SET NOT NULL;
+`,
+		`
+DO $$
+DECLARE
+  constraint_name TEXT;
+BEGIN
+  FOR constraint_name IN
+    SELECT c.conname
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'public'
+       AND t.relname = 'user_roles'
+       AND c.contype = 'p'
+  LOOP
+    EXECUTE format('ALTER TABLE public.user_roles DROP CONSTRAINT %I', constraint_name);
+  END LOOP;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relkind = 'S'
+       AND c.relname = 'user_roles_id_seq'
+  ) THEN
+    CREATE SEQUENCE public.user_roles_id_seq;
+  END IF;
+
+  ALTER SEQUENCE public.user_roles_id_seq OWNED BY public.user_roles.id;
+  ALTER TABLE public.user_roles ALTER COLUMN id SET DEFAULT nextval('public.user_roles_id_seq');
+
+  WITH reassigned AS (
+    SELECT ctid,
+           ROW_NUMBER() OVER (ORDER BY user_id, role_id, source, external_ref, ctid) AS next_id
+      FROM public.user_roles
+  )
+  UPDATE public.user_roles ur
+     SET id = reassigned.next_id
+    FROM reassigned
+   WHERE ur.ctid = reassigned.ctid;
+
+  PERFORM setval(
+    'public.user_roles_id_seq',
+    COALESCE((SELECT MAX(id) FROM public.user_roles), 0) + 1,
+    false
+  );
+
+  ALTER TABLE public.user_roles ADD CONSTRAINT user_roles_pkey PRIMARY KEY (id);
+END $$;
+`,
+		`
+SELECT setval(
+  pg_get_serial_sequence('user_roles', 'id'),
+  COALESCE((SELECT MAX(id) FROM user_roles), 0) + 1,
+  false
+)
+WHERE pg_get_serial_sequence('user_roles', 'id') IS NOT NULL;
+`,
+		`
+DO $$
+DECLARE
+  constraint_name TEXT;
+BEGIN
+  FOR constraint_name IN
+    SELECT c.conname
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'public'
+       AND t.relname = 'user_roles'
+       AND c.contype = 'u'
+       AND (
+         SELECT array_agg(att.attname::text ORDER BY att.attname::text)
+           FROM unnest(c.conkey) AS key(attnum)
+           JOIN pg_attribute att
+             ON att.attrelid = c.conrelid
+            AND att.attnum = key.attnum
+       ) = ARRAY['role_id', 'user_id']
+  LOOP
+    EXECUTE format('ALTER TABLE public.user_roles DROP CONSTRAINT %I', constraint_name);
+  END LOOP;
+END $$;
+`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_roles_binding ON user_roles (user_id, role_id, source, external_ref);`,
+		`
+CREATE TABLE IF NOT EXISTS ldap_group_role_mappings (
+  id               BIGSERIAL PRIMARY KEY,
+  ldap_group       TEXT NOT NULL,
+  role_id          BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (ldap_group, role_id)
+);
+`,
+		`
+INSERT INTO roles (name, description)
+VALUES
+  ('admin', 'Full administrative access'),
+  ('viewer', 'Read-only administrative access'),
+  ('user', 'Standard authenticated user access')
+ON CONFLICT (name) DO UPDATE
+   SET description = EXCLUDED.description,
+       updated_at = now();
+`,
+		`
+INSERT INTO permissions (name, description)
+VALUES
+  ('admin.access', 'Access the administrative interface'),
+  ('config.read', 'Read runtime configuration'),
+  ('config.write', 'Modify runtime configuration'),
+  ('oauth.read', 'Read OAuth clients'),
+  ('oauth.write', 'Manage OAuth clients'),
+  ('backups.read', 'Read backup status and archives'),
+  ('backups.write', 'Create, restore, or delete backups'),
+  ('ldap.read', 'Read LDAP sync status'),
+  ('ldap.write', 'Run LDAP sync and modify LDAP settings'),
+  ('rbac.read', 'Read roles and role bindings'),
+  ('rbac.write', 'Manage manual role bindings'),
+  ('portal.access', 'Access authenticated portal features')
+ON CONFLICT (name) DO UPDATE
+   SET description = EXCLUDED.description,
+       updated_at = now();
+`,
+		`
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+  FROM roles r
+  JOIN permissions p ON (
+       (r.name = 'admin')
+    OR (r.name = 'viewer' AND p.name IN ('admin.access', 'config.read', 'oauth.read', 'backups.read', 'ldap.read', 'rbac.read', 'portal.access'))
+    OR (r.name = 'user' AND p.name IN ('portal.access'))
+  )
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+`,
+		`
+INSERT INTO user_roles (user_id, role_id, source, external_ref, granted_by)
+SELECT u.id, r.id, 'legacy-admin', '', COALESCE(NULLIF(u.admin_granted_by, ''), 'system:migration')
+  FROM users u
+  JOIN roles r ON r.name = 'admin'
+ WHERE u.is_admin = TRUE
+ON CONFLICT (user_id, role_id, source, external_ref) DO UPDATE
+   SET granted_by = EXCLUDED.granted_by,
+       updated_at = now();
+`,
+		`
+INSERT INTO user_roles (user_id, role_id, source, external_ref, granted_by)
+SELECT u.id, r.id, 'system-default', '', 'system:migration'
+  FROM users u
+  JOIN roles r ON r.name = 'user'
+ON CONFLICT (user_id, role_id, source, external_ref) DO NOTHING;
+`,
 		`
 CREATE INDEX IF NOT EXISTS idx_users_username    ON users (username);
 CREATE INDEX IF NOT EXISTS idx_users_media_uuid  ON users (media_uuid);
@@ -234,6 +451,29 @@ CREATE TABLE IF NOT EXISTS oauth_consents (
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_consents_client ON oauth_consents (client_id);
 `,
+		`
+CREATE TABLE IF NOT EXISTS ldap_sync_runs (
+  id               BIGSERIAL PRIMARY KEY,
+  trigger_type     TEXT NOT NULL DEFAULT 'manual',
+  triggered_by     TEXT,
+  started_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  success          BOOLEAN NOT NULL DEFAULT FALSE,
+  users_considered INTEGER NOT NULL DEFAULT 0,
+  entries_added    INTEGER NOT NULL DEFAULT 0,
+  entries_updated  INTEGER NOT NULL DEFAULT 0,
+  entries_deleted  INTEGER NOT NULL DEFAULT 0,
+  failed_entries   INTEGER NOT NULL DEFAULT 0,
+  summary          TEXT,
+  error_message    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ldap_sync_runs_started_at ON ldap_sync_runs (started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ldap_sync_runs_success ON ldap_sync_runs (success, started_at DESC);
+`,
+		`
+ALTER TABLE ldap_sync_runs
+  ADD COLUMN IF NOT EXISTS entries_deleted INTEGER NOT NULL DEFAULT 0;
+`,
 	}
 
 	return execStatements(statements)
@@ -321,7 +561,8 @@ func pickAccess(u User) bool {
 // - Never overwrite non-empty DB values with blanks
 // - Always touch updated_at on change
 func upsertUser(u User) (int, error) {
-	if strings.TrimSpace(u.Username) == "" {
+	username := strings.TrimSpace(u.Username)
+	if username == "" {
 		return 0, errors.New("username required")
 	}
 
@@ -329,10 +570,20 @@ func upsertUser(u User) (int, error) {
 	token := pickToken(u)
 	access := pickAccess(u)
 
-	// Prefer UUID path if present
 	if uuid != "" {
-		var id int
-		err := db.QueryRow(`
+		return upsertUserByUUID(username, nn(u.Email), uuid, token, access)
+	}
+
+	id, err := upsertUserByUsername(username, nn(u.Email), token, access)
+	if err != nil {
+		return 0, err
+	}
+	return ensureUpsertedUserRole(id)
+}
+
+func upsertUserByUUID(username, email, uuid, token string, access bool) (int, error) {
+	var id int
+	err := db.QueryRow(`
 	INSERT INTO users (media_uuid, username, email, media_token, media_access)
 	VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
 	ON CONFLICT (media_uuid) DO UPDATE
@@ -342,13 +593,14 @@ func upsertUser(u User) (int, error) {
 	    media_access = EXCLUDED.media_access,
 	    updated_at   = now()
 	RETURNING id
-	`, uuid, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
-		if err == nil {
-			return id, nil
-		}
-		var pqErr *pq.Error
-		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "users_username_key" {
-			err = db.QueryRow(`
+	`, uuid, username, email, token, access).Scan(&id)
+	if err == nil {
+		return ensureUpsertedUserRole(id)
+	}
+	if !isUsernameConflict(err) {
+		return 0, err
+	}
+	err = db.QueryRow(`
 	UPDATE users
 	   SET email        = COALESCE(NULLIF($2, ''), users.email),
 	       media_token  = COALESCE(NULLIF($3, ''), users.media_token),
@@ -357,16 +609,14 @@ func upsertUser(u User) (int, error) {
 	       updated_at   = now()
 	 WHERE username = $1
 	 RETURNING id
-	`, strings.TrimSpace(u.Username), nn(u.Email), token, access, uuid).Scan(&id)
-			if err != nil {
-				return 0, err
-			}
-			return id, nil
-		}
+	`, username, email, token, access, uuid).Scan(&id)
+	if err != nil {
 		return 0, err
 	}
+	return ensureUpsertedUserRole(id)
+}
 
-	// Username path (no UUID yet)
+func upsertUserByUsername(username, email, token string, access bool) (int, error) {
 	var id int
 	err := db.QueryRow(`
 INSERT INTO users (username, email, media_token, media_access)
@@ -377,25 +627,20 @@ SET email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
     media_access = EXCLUDED.media_access,
     updated_at   = now()
 RETURNING id
-`, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
-	if err != nil {
+`, username, email, token, access).Scan(&id)
+	return id, err
+}
+
+func ensureUpsertedUserRole(id int) (int, error) {
+	if err := ensureDefaultUserRoleAssignment(id); err != nil {
 		return 0, err
 	}
-
-	// If a UUID became known later, set it once (no overwrite if already set)
-	if uuid != "" {
-		if _, err := db.Exec(`
-UPDATE users
-   SET media_uuid = COALESCE(media_uuid, $2),
-       updated_at = now()
- WHERE id = $1
-`, id, uuid); err != nil {
-			// Not fatal; just log
-			log.Printf("upsertUser: uuid backfill failed for user id=%d: %v", id, err)
-		}
-	}
-
 	return id, nil
+}
+
+func isUsernameConflict(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "users_username_key"
 }
 
 //lint:ignore U1000 kept for future provider use (UUID-based access toggles)

@@ -19,15 +19,6 @@ func mediaAuthHeader(appName, appVersion, clientID string) string {
 	return fmt.Sprintf(`MediaBrowser Client="%s", Device="Web", DeviceId="%s", Version="%s"`, appName, clientID, appVersion)
 }
 
-// snippet returns a trimmed preview of a payload for logging/errors.
-func snippet(b []byte, n int) string {
-	s := strings.TrimSpace(string(b))
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
-}
-
 func doWithRetry(req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
@@ -113,7 +104,7 @@ func mediaAuthAttempt(prefix, baseURL, appName, appVersion, clientID string, bod
 		return mediaAuthResp{}, err
 	}
 	if Debugf != nil {
-		Debugf("%s/auth POST %s", prefix, req.URL.String())
+		Debugf("%s/auth POST %s", prefix, redactURLForLog(req.URL.String()))
 	}
 	resp, err := doWithRetry(req)
 	if err != nil {
@@ -126,14 +117,14 @@ func mediaAuthAttempt(prefix, baseURL, appName, appVersion, clientID string, bod
 	}
 	if resp.StatusCode != http.StatusOK {
 		if Warnf != nil {
-			Warnf("%s/auth HTTP %d body=%q", prefix, resp.StatusCode, snippet(raw, 200))
+			Warnf("%s/auth HTTP %d body=%q", prefix, resp.StatusCode, sanitizedSnippet(raw, 200))
 		}
-		return mediaAuthResp{}, fmt.Errorf("%s auth %d: %s", prefix, resp.StatusCode, snippet(raw, 200))
+		return mediaAuthResp{}, fmt.Errorf("%s auth %d: %s", prefix, resp.StatusCode, sanitizedSnippet(raw, 200))
 	}
 	var out mediaAuthResp
 	if err := json.Unmarshal(raw, &out); err != nil {
 		if Warnf != nil {
-			Warnf("%s/auth decode failed: %v body=%q", prefix, err, snippet(raw, 200))
+			Warnf("%s/auth decode failed: %v body=%q", prefix, err, sanitizedSnippet(raw, 200))
 		}
 		return mediaAuthResp{}, fmt.Errorf("%s auth decode failed: %w", prefix, err)
 	}
@@ -147,7 +138,7 @@ func mediaGetUserDetail(prefix, serverURL, token, userID string) (mediaUserDetai
 		return mediaUserDetail{}, err
 	}
 	if Debugf != nil {
-		Debugf("%s/user GET %s (token=%v)", prefix, req.URL.String(), strings.TrimSpace(token) != "")
+		Debugf("%s/user GET %s (token=%v)", prefix, redactURLForLog(req.URL.String()), strings.TrimSpace(token) != "")
 	}
 	resp, err := doWithRetry(req)
 	if err != nil {
@@ -160,14 +151,14 @@ func mediaGetUserDetail(prefix, serverURL, token, userID string) (mediaUserDetai
 	}
 	if resp.StatusCode != 200 {
 		if Warnf != nil {
-			Warnf("%s/user HTTP %d body=%q", prefix, resp.StatusCode, snippet(raw, 200))
+			Warnf("%s/user HTTP %d body=%q", prefix, resp.StatusCode, sanitizedSnippet(raw, 200))
 		}
-		return mediaUserDetail{}, fmt.Errorf("%s user %d: %s", prefix, resp.StatusCode, snippet(raw, 200))
+		return mediaUserDetail{}, fmt.Errorf("%s user %d: %s", prefix, resp.StatusCode, sanitizedSnippet(raw, 200))
 	}
 	var out mediaUserDetail
 	if err := json.Unmarshal(raw, &out); err != nil {
 		if Warnf != nil {
-			Warnf("%s/user decode failed: %v body=%q", prefix, err, snippet(raw, 200))
+			Warnf("%s/user decode failed: %v body=%q", prefix, err, sanitizedSnippet(raw, 200))
 		}
 		return mediaUserDetail{}, fmt.Errorf("%s user decode failed: %w", prefix, err)
 	}

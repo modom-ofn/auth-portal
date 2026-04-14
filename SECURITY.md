@@ -8,7 +8,8 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.4` (latest: `v2.0.4`) | ✅ Supported | Receives all security and high-priority bug fixes. |
+| `v2.0.5` (latest: `v2.0.5`) | ✅ Supported | Receives all security and high-priority bug fixes, including RBAC, LDAP sync, OAuth/OIDC hardening, and admin logging updates. |
+| `v2.0.4` | ✅ Supported | Previous minor line still covered during the overlap window while operators upgrade to `v2.0.5`. |
 | `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
 | `< v2.0.4` | ❌ End-of-life | Please upgrade to a supported release. |
 
@@ -39,14 +40,15 @@ Thank you for helping keep AuthPortal secure for everyone! Your reports make the
 
 ## Additional Security Note
 
-AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, CSP/HSTS headers, MFA gating, per-IP rate limiting, CSRF origin checks, and encrypted config/backups to protect its authentication flows, but it is still “use at your own risk,” so you should treat these controls as best-effort hardening rather than formal assurance.
+AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, RBAC authorization controls, CSP/HSTS headers, MFA gating, per-IP rate limiting, CSRF origin checks, and encrypted config/backups to protect its authentication flows, but it is still “use at your own risk,” so you should treat these controls as best-effort hardening rather than formal assurance.
 
 ## Security scans and code analysis
 
 Automated security checks run on this project:
 
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
-- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
+- TruffleHog: secret scanning on every push/PR in CI/CD.
+- git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
 - GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
@@ -58,9 +60,14 @@ If you spot an issue or have questions about these scans, please open an issue o
 
 - **Encrypted credentials:** media tokens are AES-256-GCM sealed before storage, OAuth client secrets are bcrypt-hashed, and config backups reuse the same DATA_KEY, reducing impact from DB or backup leaks.
 - **Session hardening:** signed HTTP-only JWT cookies honor SESSION_COOKIE_DOMAIN, enforce SameSite defaults, optionally force Secure, and clear pending MFA cookies whenever sessions rotate.
+- **Authorization hardening:** admin/API access is enforced with database-backed RBAC permissions, seeded system roles (`admin`, `viewer`, `user`), and custom permission support for downstream-app entitlements.
 - **Rate limits plus MFA:** shared per-IP limiters guard login/start-forward flows, separate limiters protect Plex polling/MFA endpoints, and enforced MFA can hold users at a pending cookie until codes succeed.
 - **CSRF-lite controls:** every state-changing route (start-web, forward, MFA APIs, logout) passes through an Origin/Referer validator that builds an allowlist from APP_BASE_URL and proxy headers.
 - **Security headers:** all responses carry X-Frame-Options, X-Content-Type-Options, Referrer-Policy, a restrictive CSP, and conditional Strict-Transport-Security (or forceable via FORCE_HSTS).
-- **Config governance:** provider/security/MFA JSON lives in Postgres with optimistic versioning, in-browser history, scheduled backups, and download/restore flows for recovery.
+- **Config governance:** provider/security/MFA/App Settings/LDAP Sync config lives in Postgres with optimistic versioning, in-browser history, scheduled backups, and download/restore flows for recovery.
+- **Admin audit visibility:** the Logs tab aggregates persisted admin audit history across supported modules and exposes a buffered live log stream only to authenticated admins.
+- **LDAP sync safety rails:** built-in LDAP Sync supports connection testing before save/run, optional LDAP group-to-role mapping, logs per-user failures, tracks scheduled/manual runs, and only deletes stale entries that were previously marked as AuthPortal-managed under the configured Base DN.
 - **Token privacy for OIDC:** access/refresh tokens are stored as deterministic SHA-256 digests, limiting exposure if databases or logs leak.
-- **Runtime hygiene:** containers are built on Docker Scout Hardened Alpine image with CA certs/tzdata only (dhi.io/alpine-base:3.23-alpine3.23-dev), and the final image runs as non-root UID 10001 to shrink the attack surface.
+- **OAuth governance:** OAuth client changes now produce persistent server-side audit history with operator-supplied change reasons, and custom OAuth scopes are validated against the RBAC permission catalog before they can be assigned or granted.
+- **Operational logging caution:** because the admin Logs tab can surface recent application log lines in-browser, operators should avoid writing secrets to logs and should keep `admin.access` assignments tightly scoped.
+- **Runtime hygiene:** containers are built with Docker Hardened Images for both build and runtime (`dhi.io/golang:1.26.2-alpine3.23-dev` -> `dhi.io/alpine-base:3.23-alpine3.23`), keep only CA certs/tzdata in the final layer, and run as non-root UID 65532 to shrink the attack surface.

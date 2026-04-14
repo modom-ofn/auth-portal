@@ -79,10 +79,18 @@ export const createConfigSectionController = ({
     }
   };
 
+  const fetchPermissionCatalog = async () => {
+    const json = await api.getConfigPermissions();
+    formsController.setPermissionOptions(Array.isArray(json.permissions) ? json.permissions : []);
+  };
+
   const loadSection = async (section) => {
     setLoading(true);
     try {
       await fetchConfig();
+      if (section === 'app-settings') {
+        await fetchPermissionCatalog();
+      }
       renderSection(section);
       try {
         await fetchHistory(section);
@@ -182,6 +190,9 @@ export const createConfigSectionController = ({
       const json = await api.updateConfig(section, payload);
       recordActivity(section, 'Configuration saved', payload.reason || 'No reason provided');
       applyConfigResponse(json);
+      if (section === 'app-settings') {
+        await fetchPermissionCatalog();
+      }
       renderSection(section);
       reasonInput.value = '';
       showStatus('Configuration saved.', 'success');

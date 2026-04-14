@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -58,6 +59,7 @@ const (
 func oidcDiscoveryHandler(w http.ResponseWriter, _ *http.Request) {
 	issuer := oidcIssuer()
 	base := strings.TrimRight(issuer, "/")
+	scopesSupported := supportedOIDCScopes()
 
 	type response struct {
 		Issuer                            string   `json:"issuer"`
@@ -77,17 +79,12 @@ func oidcDiscoveryHandler(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	resp := response{
-		Issuer:                issuer,
-		AuthorizationEndpoint: base + "/oidc/authorize",
-		TokenEndpoint:         base + "/oidc/token",
-		UserinfoEndpoint:      base + "/oidc/userinfo",
-		JWKSURI:               base + "/oidc/jwks.json",
-		ScopesSupported: []string{
-			"openid",
-			"profile",
-			"email",
-			"offline_access",
-		},
+		Issuer:                 issuer,
+		AuthorizationEndpoint:  base + "/oidc/authorize",
+		TokenEndpoint:          base + "/oidc/token",
+		UserinfoEndpoint:       base + "/oidc/userinfo",
+		JWKSURI:                base + "/oidc/jwks.json",
+		ScopesSupported:        scopesSupported,
 		ResponseTypesSupported: []string{"code"},
 		GrantTypesSupported:    []string{"authorization_code", "refresh_token"},
 		CodeChallengeMethodsSupported: []string{
@@ -278,6 +275,10 @@ func prepareAuthorizeClient(ctx context.Context, req authorizeRequest) (oauth.Cl
 	if err != nil {
 		return oauth.Client{}, "", nil, err
 	}
+	scopes, err = enforceUserScopeEntitlements(ctx, scopes)
+	if err != nil {
+		return oauth.Client{}, "", nil, err
+	}
 	return client, redirectURI, scopes, nil
 }
 
@@ -366,6 +367,11 @@ func oidcAuthorizeDecisionHandler(w http.ResponseWriter, r *http.Request) {
 	scopes, err = enforceClientScopePolicy(scopes, client)
 	if err != nil {
 		writeOIDCRedirectError(w, r, redirectURI, state, "invalid_scope", err.Error())
+		return
+	}
+	scopes, err = enforceUserScopeEntitlements(r.Context(), scopes)
+	if err != nil {
+		writeOIDCRedirectError(w, r, redirectURI, state, oidcErrCodeAccessDenied, err.Error())
 		return
 	}
 
@@ -502,6 +508,9 @@ func issueAuthCodeGrantTokens(
 	if err != nil {
 		return oauth.AccessToken{}, "", time.Time{}, "", errAuthorizationCodeUserNotFound
 	}
+	if _, err := enforceUserScopeEntitlementsForIdentity(strings.TrimSpace(user.MediaUUID.String), strings.TrimSpace(user.Username), authCode.Scopes); err != nil {
+		return oauth.AccessToken{}, "", time.Time{}, "", err
+	}
 
 	access, err := oauthService.CreateAccessToken(ctx, client.ClientID, authCode.UserID, authCode.Scopes)
 	if err != nil {
@@ -608,6 +617,12 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, client oaut
 		writeOIDCError(w, http.StatusBadRequest, oidcErrCodeInvalidGrant, errUserNotFound)
 		return
 	}
+	updatedScopes, err := enforceUserScopeEntitlementsForIdentity(strings.TrimSpace(user.MediaUUID.String), strings.TrimSpace(user.Username), access.Scopes)
+	if err != nil {
+		writeOIDCError(w, http.StatusBadRequest, oidcErrCodeInvalidGrant, err.Error())
+		return
+	}
+	access.Scopes = updatedScopes
 
 	idToken, err := mintIDToken(client.ClientID, user, access.ExpiresAt, "")
 	if err != nil {
@@ -922,6 +937,9 @@ func scopeDescription(scope string) string {
 	case "offline_access":
 		return "Allow the app to refresh tokens without you signing in again."
 	default:
+		if description, err := permissionDescription(scope); err == nil && description != "" {
+			return description
+		}
 		return "Requested scope: " + scope
 	}
 }
@@ -1030,6 +1048,78 @@ func allowedScopesForClient(client oauth.Client) map[string]struct{} {
 		allowed["openid"] = struct{}{}
 	}
 	return allowed
+}
+
+func supportedOIDCScopes() []string {
+	base := []string{"openid", "profile", "email", "offline_access"}
+	permissions, err := listPermissionNames()
+	if err != nil {
+		return base
+	}
+	return normalizeDistinctStrings(append(base, permissions...))
+}
+
+func isStandardOIDCScope(scope string) bool {
+	switch strings.TrimSpace(scope) {
+	case "openid", "profile", "email", "offline_access":
+		return true
+	default:
+		return false
+	}
+}
+
+func permissionDescription(name string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	var description sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT description FROM permissions WHERE name = $1`, normalizeRBACName(name)).Scan(&description); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(description.String), nil
+}
+
+func enforceUserScopeEntitlements(ctx context.Context, scopes []string) ([]string, error) {
+	username := usernameFrom(ctx)
+	uuid := uuidFrom(ctx)
+	if username == "" && uuid == "" {
+		return nil, errors.New("session required")
+	}
+	return enforceUserScopeEntitlementsForIdentity(uuid, username, scopes)
+}
+
+func enforceUserScopeEntitlementsForIdentity(uuid, username string, scopes []string) ([]string, error) {
+	grantedPermissions, err := userPermissions(uuid, username)
+	if err != nil {
+		return nil, fmt.Errorf("permission lookup failed")
+	}
+	granted := make(map[string]struct{}, len(grantedPermissions))
+	for _, permission := range grantedPermissions {
+		granted[normalizeRBACName(permission)] = struct{}{}
+	}
+
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if isStandardOIDCScope(scope) {
+			out = append(out, scope)
+			continue
+		}
+		if _, ok := granted[normalizeRBACName(scope)]; !ok {
+			return nil, fmt.Errorf("scope %q is not granted to this user", scope)
+		}
+		out = append(out, normalizeRBACName(scope))
+	}
+	if len(out) == 0 {
+		return []string{"openid"}, nil
+	}
+	return out, nil
 }
 
 func extractClientCredentials(r *http.Request) (string, string, error) {

@@ -3,179 +3,1144 @@
 <head>
     <meta charset="utf-8">
     <title>AuthPortal Admin Console</title>
+    <link rel="icon" type="image/svg+xml" href="/static/authportal-logo.svg">
+    <link rel="icon" type="image/x-icon" href="/static/authportal-logo.ico">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="admin-page" data-app-timezone="{{.AppTimeZone}}">
-    <header class="admin-header">
-        <div>
-            <h1>AuthPortal Admin Console</h1>
-            <p class="muted">Active Provider: <span class="highlight">{{.ProviderDisplay}}</span> &bull; Last refreshed <span id="loaded-at">{{.ConfigLoadedAt}}</span></p>
-        </div>
-        <div class="admin-header-actions">
-            <a class="admin-home-link ghost-btn" href="/home">Back to Portal</a>
-        </div>
-    </header>
-
-    <div id="status-banner" class="status-banner"></div>
-
-    <main class="admin-main">
-        <aside class="admin-nav">
-            <button type="button" class="admin-tab ghost-btn active" data-section="providers">Providers</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="security">Security</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="mfa">MFA</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="app-settings">App Settings</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="oauth">OAuth Clients</button>
-            <button type="button" class="admin-tab ghost-btn" data-section="backups">Backups</button>
+    <div class="admin-layout" id="admin-layout">
+        <aside class="admin-sidebar">
+            <div class="admin-sidebar-header">
+                <img class="admin-sidebar-logo" src="/static/authportal-logo.svg" alt="" aria-hidden="true">
+                <span class="admin-sidebar-title">AuthPortal</span>
+            </div>
+            <nav class="admin-sidebar-nav">
+                <button type="button" class="admin-tab active" data-section="providers">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span>Providers</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="security">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Security</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="mfa">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2 9 14M15 8l3 3"/></svg>
+                    <span>MFA</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="app-settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                    <span>App Settings</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="oauth">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    <span>OAuth Clients</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="ldap-sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    <span>LDAP Sync</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="access-control">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>Access Control</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="backups">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>
+                    <span>Backups</span>
+                </button>
+                <button type="button" class="admin-tab" data-section="logs">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    <span>Logs</span>
+                </button>
+            </nav>
+            <div class="admin-sidebar-footer">
+                <a class="admin-sidebar-version" href="https://github.com/modom-ofn/auth-portal/" target="_blank" rel="noopener noreferrer">AuthPortal {{.AppVersion}} created by Modom.</a>
+            </div>
         </aside>
-
-        <section class="admin-content">
-            <div class="admin-panels">
-                <form id="config-form" class="panel" autocomplete="off">
-                    <div class="panel-header">
-                        <h2 id="panel-title">Providers</h2>
-                        <div class="panel-header-actions">
-                            <span id="version-badge" class="version-badge">v-</span>
+        <div class="admin-main-area">
+            <header class="admin-header">
+                <div class="admin-header-left">
+                    <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                    <div>
+                        <h1>Admin Console</h1>
+                        <p class="muted">Provider: <span class="highlight">{{.ProviderDisplay}}</span> &bull; Last refreshed <span id="loaded-at">{{.ConfigLoadedAt}}</span></p>
+                    </div>
+                </div>
+                <div class="admin-header-actions">
+                    <div class="theme-menu" id="theme-menu">
+                        <button type="button" class="theme-toggle" id="theme-toggle" aria-haspopup="true" aria-expanded="false" title="Theme: system (follows OS)">
+                            <svg class="theme-icon-system" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                            <svg class="theme-icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                            <svg class="theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                        </button>
+                        <div class="theme-menu-dropdown" id="theme-menu-dropdown" hidden>
+                            <button type="button" class="theme-menu-item" data-theme-value="light">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                                Light
+                            </button>
+                            <button type="button" class="theme-menu-item" data-theme-value="dark">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                                Dark
+                            </button>
+                            <button type="button" class="theme-menu-item" data-theme-value="system">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                                System
+                            </button>
                         </div>
                     </div>
-                    <p class="panel-helper">Edit this section using the form fields below. Provide a short reason before saving.</p>
-                    <div class="config-tools">
-                        <button type="button" id="config-export-btn" class="ghost-btn">Export</button>
-                        <button type="button" id="config-import-btn" class="ghost-btn">Import</button>
-                        <input type="file" id="config-import-input" accept="application/json" hidden>
+                    <div class="user-menu" id="user-menu">
+                        <button type="button" class="user-menu-trigger ghost-btn" id="user-menu-trigger" aria-haspopup="true" aria-expanded="false">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            <span>{{.CurrentUser}}</span>
+                            <svg class="user-menu-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div class="user-menu-dropdown" id="user-menu-dropdown" hidden>
+                            <a class="user-menu-item" href="/home">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                Back to Portal
+                            </a>
+                            <form class="user-menu-logout" method="POST" action="/logout">
+                                <button type="submit" class="user-menu-item user-menu-item-danger">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                    Logout
+                                </button>
+                            </form>
+                        </div>
                     </div>
-                    <div id="config-fields" class="config-fields" aria-live="polite"></div>
-                    <textarea id="config-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
-                    <div class="admin-actions">
-                        <input id="reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
-                        <button id="save-btn" type="submit" class="primary-btn">Save Changes</button>
+                </div>
+            </header>
+
+            <div id="status-banner" class="status-banner"></div>
+
+            <main class="admin-content">
+                <div class="admin-panels">
+
+                <!-- version-badge: kept in DOM for JS compatibility (hidden) -->
+                <span id="version-badge" class="version-badge" hidden></span>
+
+                <!-- ================================================================
+                     TAB: Providers
+                     ================================================================ -->
+                <form id="providers-panel" class="panel" autocomplete="off">
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2>Providers</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="providers-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="providers-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="providers-import-input" accept="application/json" hidden>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Choose the active media provider and supply its connection credentials. Only the active provider must be fully populated.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Provider Settings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Provider configuration info" title="Provider configuration info" data-tooltip="Set the active provider to plex, emby, or jellyfin and fill in its connection details. Only the active provider block needs to be populated — keeping others filled lets you switch quickly.">i</button>
+                                </div>
+                            </div>
+                            <div id="providers-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="providers-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="providers-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="providers-save" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
                     </div>
                 </form>
 
-                <div id="oauth-panel" class="panel" hidden>
+                <!-- ================================================================
+                     TAB: Security
+                     ================================================================ -->
+                <form id="security-panel" class="panel" autocomplete="off" hidden>
                     <div class="panel-header">
-                        <h2>OAuth Clients</h2>
-                        <button type="button" id="oauth-clients-reload" class="ghost-btn">Refresh</button>
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2>Security</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="security-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="security-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="security-import-input" accept="application/json" hidden>
+                        </div>
                     </div>
-                    <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
-                    <div id="oauth-secret-banner" class="secret-banner" hidden></div>
-                    <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
-                    <div id="oauth-client-cards" class="oauth-client-cards" hidden></div>
-                    <form id="oauth-client-form" class="oauth-form" autocomplete="off">
-                        <input type="hidden" id="oauth-client-id">
-                        <div class="form-row">
-                            <label for="oauth-client-name">Display Name</label>
-                            <input id="oauth-client-name" type="text" required placeholder="Example Application">
+                    <p class="panel-helper">Control cookie lifetimes and browser security posture for authenticated admin and portal sessions.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Security Settings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Security settings info" title="Security settings info" data-tooltip="sessionTtl accepts Go durations (24h, 7d). sessionSameSite is lax, strict, or none — use none only with HTTPS. forceSecureCookie forces the Secure flag even over HTTP. sessionCookieDomain scopes cookies to a parent domain.">i</button>
+                                </div>
+                            </div>
+                            <div id="security-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="security-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="security-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="security-save" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
+                    </div>
+                </form>
+
+                <!-- ================================================================
+                     TAB: MFA
+                     ================================================================ -->
+                <form id="mfa-panel" class="panel" autocomplete="off" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2>MFA</h2>
                         </div>
-                        <div class="form-row">
-                            <label for="oauth-client-redirects">Redirect URIs</label>
-                            <textarea id="oauth-client-redirects" rows="3" placeholder="https://example.com/callback" required></textarea>
-                            <span class="field-hint">Enter one URI per line.</span>
+                        <div class="panel-header-actions">
+                            <button type="button" id="mfa-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="mfa-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="mfa-import-input" accept="application/json" hidden>
                         </div>
-                        <div class="form-row">
-                            <label for="oauth-client-scopes">Scopes</label>
-                            <textarea id="oauth-client-scopes" rows="2" placeholder="openid profile email offline_access"></textarea>
-                            <span class="field-hint">Whitespace or newline separated. Defaults to <code>openid profile email</code>.</span>
+                    </div>
+                    <p class="panel-helper">Fine-tune multi-factor authentication behaviour for end-users. Enabling enforcement requires enrollment to also be enabled.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>MFA Settings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="MFA settings info" title="MFA settings info" data-tooltip="issuer is the label shown in authenticator apps. enrollmentEnabled controls whether users can register MFA devices. enforceForAllUsers forces MFA at sign-in — ensure enrollment is enabled before turning this on.">i</button>
+                                </div>
+                            </div>
+                            <div id="mfa-fields" class="config-fields" aria-live="polite"></div>
+                            <textarea id="mfa-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="mfa-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="mfa-save" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
+                    </div>
+                </form>
+
+                <!-- ================================================================
+                     TAB: App Settings
+                     ================================================================ -->
+                <form id="app-settings-panel" class="panel" autocomplete="off" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Configuration</span>
+                            <h2>App Settings</h2>
                         </div>
-                        <div class="oauth-form-actions">
-                            <button id="oauth-client-save" type="submit" class="primary-btn">Save Client</button>
-                            <button id="oauth-client-cancel" type="button" class="ghost-btn" hidden>Cancel Edit</button>
+                        <div class="panel-header-actions">
+                            <button type="button" id="app-settings-export-btn" class="ghost-btn">Export</button>
+                            <button type="button" id="app-settings-import-btn" class="ghost-btn">Import</button>
+                            <input type="file" id="app-settings-import-input" accept="application/json" hidden>
                         </div>
-                    </form>
+                    </div>
+                    <p class="panel-helper">Customize end-user portal branding, wording, service links, styling, and the unauthorized-page contact email. Admin pages always keep the built-in AuthPortal branding.</p>
+                    <div class="panel-layout">
+                        <div id="app-settings-fields" class="config-section-stack" aria-live="polite">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Portal Config</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Portal config info" title="Portal config info" data-tooltip="Configure end-user portal branding, login/authorized/unauthorized copy, and footer visibility. Admin pages are not affected.">i</button>
+                                    </div>
+                                </div>
+                                <div id="app-settings-portal-fields" class="config-fields"></div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Request Access</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Request access info" title="Request access info" data-tooltip="Configure the contact email and subject used by the unauthorized page Request Access action.">i</button>
+                                    </div>
+                                </div>
+                                <div id="app-settings-request-fields" class="config-fields"></div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Portal Styling</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Portal styling info" title="Portal styling info" data-tooltip="Adjust the end-user portal background and modal card colors. Admin pages are not affected.">i</button>
+                                    </div>
+                                </div>
+                                <div id="app-settings-style-fields" class="config-fields"></div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Authorized User Service Buttons</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Service buttons info" title="Service buttons info" data-tooltip="Configure button-style links shown to authorized end users. Buttons can optionally be permission-gated.">i</button>
+                                    </div>
+                                </div>
+                                <div id="app-settings-service-fields" class="config-fields"></div>
+                            </section>
+                            <textarea id="app-settings-editor" spellcheck="false" aria-label="Configuration JSON" hidden></textarea>
+                        </div>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Save Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Save changes info" title="Save changes info" data-tooltip="Changes are applied immediately after saving. Providing a reason is optional but helps with audit history.">i</button>
+                                </div>
+                            </div>
+                            <div class="admin-actions">
+                                <input id="app-settings-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <button id="app-settings-save" type="submit" class="primary-btn">Save Changes</button>
+                            </div>
+                        </section>
+                    </div>
+                </form>
+
+                <!-- ================================================================
+                     TAB: OAuth Clients
+                     ================================================================ -->
+                    <div id="oauth-panel" class="panel" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title-block">
+                                <span class="panel-kicker">OIDC · OAuth 2.0</span>
+                                <h2>OAuth Clients</h2>
+                            </div>
+                            <div class="panel-header-actions">
+                                <button type="button" id="oauth-clients-reload" class="ghost-btn">Refresh</button>
+                            </div>
+                        </div>
+                        <p class="panel-helper">Manage OAuth/OIDC clients. Use the form below to create new registrations or update existing ones.</p>
+                        <div class="panel-layout">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Registered Clients</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Registered clients info" title="Registered clients info" data-tooltip="Active OAuth/OIDC client registrations. Click a client card to view details, edit settings, or rotate its secret.">i</button>
+                                    </div>
+                                </div>
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Client List</h4>
+                                        <div id="oauth-secret-banner" class="secret-banner" hidden></div>
+                                        <div id="oauth-clients-empty" class="muted">No OAuth clients registered yet.</div>
+                                        <div id="oauth-client-cards" class="oauth-client-cards" hidden></div>
+                                    </div>
+                                </div>
+                            </section>
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Client Configuration</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Client configuration info" title="Client configuration info" data-tooltip="Create a new registration or edit the selected client. Redirect URIs must exactly match what the client sends. Scopes control which claims and permissions the access token includes.">i</button>
+                                    </div>
+                                </div>
+                                <form id="oauth-client-form" class="oauth-form" autocomplete="off">
+                                    <input type="hidden" id="oauth-client-id">
+                                    <div class="config-fields">
+                                        <div class="config-form-group">
+                                            <h4>Application Details</h4>
+                                            <div class="form-row">
+                                                <label for="oauth-client-name">Display Name</label>
+                                                <input id="oauth-client-name" type="text" required placeholder="Example Application">
+                                            </div>
+                                            <div class="form-row">
+                                                <label for="oauth-client-redirects">Redirect URIs</label>
+                                                <textarea id="oauth-client-redirects" rows="3" placeholder="https://example.com/callback" required></textarea>
+                                                <span class="field-hint">Enter one URI per line.</span>
+                                            </div>
+                                        </div>
+                                        <div class="config-form-group">
+                                            <h4>Scopes</h4>
+                                            <div class="form-row">
+                                                <label for="oauth-client-scope-picker">Scopes</label>
+                                                <div class="oauth-scope-picker">
+                                                    <select id="oauth-client-scope-picker"></select>
+                                                    <button id="oauth-client-scope-add" type="button" class="ghost-btn">Add Scope</button>
+                                                </div>
+                                                <div id="oauth-client-scope-selected" class="oauth-scope-selected"></div>
+                                                <span class="field-hint">Choose from standard OIDC scopes and RBAC permissions. New RBAC permissions created in Access Control appear here.</span>
+                                            </div>
+                                        </div>
+                                        <div class="config-form-group">
+                                            <h4>Save Changes</h4>
+                                            <div class="form-row">
+                                                <label for="oauth-client-reason">Change Reason</label>
+                                                <textarea id="oauth-client-reason" rows="2" maxlength="200" placeholder="Why are you creating or updating this client?"></textarea>
+                                                <span class="field-hint">Saved with the OAuth audit history.</span>
+                                            </div>
+                                            <div class="oauth-form-actions">
+                                                <button id="oauth-client-save" type="submit" class="primary-btn">Save Client</button>
+                                                <button id="oauth-client-cancel" type="button" class="ghost-btn" hidden>Cancel Edit</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                            </section>
+                        </div>
+                    </div>
+                <!-- ================================================================
+                     TAB: LDAP Sync
+                     ================================================================ -->
+                <div id="ldap-sync-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Directory Bridge</span>
+                            <h2>LDAP Sync</h2>
+                        </div>
+                        <div class="ldap-sync-header-actions">
+                            <button type="button" id="ldap-sync-refresh-btn" class="ghost-btn">Refresh</button>
+                            <button type="button" id="ldap-sync-test-btn" class="primary-btn">Test Connection</button>
+                            <button type="button" id="ldap-sync-run-btn" class="success-btn">Run Sync</button>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Mirror authorized AuthPortal users into LDAP. Start by validating connection settings, then save or run sync when the test passes.</p>
+                    <div class="config-tools">
+                        <button type="button" id="ldap-sync-export-btn" class="ghost-btn">Export</button>
+                        <button type="button" id="ldap-sync-import-btn" class="ghost-btn">Import</button>
+                        <input type="file" id="ldap-sync-import-input" accept="application/json" hidden>
+                    </div>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Sync Overview</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Current run state, timestamps, and latest connection test results." title="Current run state, timestamps, and latest connection test results." data-tooltip="Current run state, timestamps, and latest connection test results.">i</button>
+                                </div>
+                            </div>
+                            <div class="config-fields">
+                                <div class="config-form-group">
+                                    <h4>Current State</h4>
+                                    <div class="ldap-sync-overview-grid">
+                                        <div class="ldap-sync-card ldap-sync-card-emphasis">
+                                            <span class="ldap-sync-card-label">Status</span>
+                                            <span id="ldap-sync-status-state" class="ldap-sync-card-value">Idle</span>
+                                            <span id="ldap-sync-status-summary" class="field-hint">No LDAP sync has been run yet.</span>
+                                        </div>
+                                        <div class="ldap-sync-card">
+                                            <span class="ldap-sync-card-label">Started</span>
+                                            <span id="ldap-sync-status-started" class="ldap-sync-card-value muted">-</span>
+                                        </div>
+                                        <div class="ldap-sync-card">
+                                            <span class="ldap-sync-card-label">Finished</span>
+                                            <span id="ldap-sync-status-finished" class="ldap-sync-card-value muted">-</span>
+                                        </div>
+                                        <div class="ldap-sync-card">
+                                            <span class="ldap-sync-card-label">Last Success</span>
+                                            <span id="ldap-sync-status-success" class="ldap-sync-card-value muted">-</span>
+                                        </div>
+                                        <div class="ldap-sync-card">
+                                            <span class="ldap-sync-card-label">Triggered By</span>
+                                            <span id="ldap-sync-status-triggered-by" class="ldap-sync-card-value muted">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="config-form-group">
+                                    <h4>Connection Test</h4>
+                                    <div id="ldap-sync-test-result" class="status-banner" hidden></div>
+                                    <div id="ldap-sync-test-details" class="ldap-sync-test-grid" hidden>
+                                        <div class="ldap-sync-test-item">
+                                            <span class="ldap-sync-test-label" title="Whether AuthPortal could open a network connection to the configured LDAP host.">Connect</span>
+                                            <span id="ldap-sync-test-connected" class="muted" title="Whether AuthPortal could open a network connection to the configured LDAP host.">-</span>
+                                        </div>
+                                        <div class="ldap-sync-test-item">
+                                            <span class="ldap-sync-test-label" title="Whether the configured LDAP admin DN and password successfully authenticated.">Bind</span>
+                                            <span id="ldap-sync-test-bound" class="muted" title="Whether the configured LDAP admin DN and password successfully authenticated.">-</span>
+                                        </div>
+                                        <div class="ldap-sync-test-item">
+                                            <span class="ldap-sync-test-label" title="Whether the configured Base DN already exists in LDAP.">Base DN Exists</span>
+                                            <span id="ldap-sync-test-base-exists" class="muted" title="Whether the configured Base DN already exists in LDAP.">-</span>
+                                        </div>
+                                        <div class="ldap-sync-test-item">
+                                            <span class="ldap-sync-test-label" title="Whether the configured Base DN is missing but its parent DN exists, so AuthPortal should be able to create it.">Base DN Creatable</span>
+                                            <span id="ldap-sync-test-base-creatable" class="muted" title="Whether the configured Base DN is missing but its parent DN exists, so AuthPortal should be able to create it.">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <form id="ldap-sync-form" class="oauth-form ldap-sync-form" autocomplete="off">
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Connection Settings</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Credentials and directory location used for LDAP sync and connection tests." title="Credentials and directory location used for LDAP sync and connection tests." data-tooltip="Credentials and directory location used for LDAP sync and connection tests.">i</button>
+                                    </div>
+                                </div>
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Directory Details</h4>
+                                        <div class="ldap-sync-settings-grid">
+                                            <div class="form-row">
+                                                <label for="ldap-sync-host" title="LDAP server URL or host:port. Supports ldap:// and ldaps:// endpoints.">LDAP Host</label>
+                                                <input id="ldap-sync-host" type="text" required placeholder="ldap://openldap:389" title="LDAP server URL or host:port. Supports ldap:// and ldaps:// endpoints.">
+                                            </div>
+                                            <div class="form-row">
+                                                <label for="ldap-sync-admin-dn" title="Bind DN used by AuthPortal to authenticate to LDAP and manage entries.">LDAP Admin DN</label>
+                                                <input id="ldap-sync-admin-dn" type="text" required placeholder="cn=admin,dc=authportal,dc=local" title="Bind DN used by AuthPortal to authenticate to LDAP and manage entries.">
+                                            </div>
+                                            <div class="form-row">
+                                                <label for="ldap-sync-admin-password" title="Password for the configured LDAP bind DN.">LDAP Admin Password</label>
+                                                <input id="ldap-sync-admin-password" type="password" autocomplete="off" title="Password for the configured LDAP bind DN.">
+                                            </div>
+                                            <div class="form-row">
+                                                <label for="ldap-sync-base-dn" title="LDAP branch where AuthPortal stores managed user entries.">Base DN</label>
+                                                <input id="ldap-sync-base-dn" type="text" required placeholder="ou=users,dc=authportal,dc=local" title="LDAP branch where AuthPortal stores managed user entries.">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Safety Controls</h4>
+                                        <div class="ldap-sync-toggle-group">
+                                            <label class="ldap-sync-toggle" title="Enable StartTLS when connecting over ldap:// if your server supports it."><input id="ldap-sync-starttls" type="checkbox" title="Enable StartTLS when connecting over ldap:// if your server supports it."> <span>Use StartTLS</span></label>
+                                            <label class="ldap-sync-toggle" title="When enabled, sync can delete LDAP entries under the Base DN that were previously marked as managed by AuthPortal but are no longer authorized."><input id="ldap-sync-delete-stale" type="checkbox" title="When enabled, sync can delete LDAP entries under the Base DN that were previously marked as managed by AuthPortal but are no longer authorized."> <span>Delete stale AuthPortal-managed LDAP entries</span></label>
+                                        </div>
+                                        <p class="field-hint">Only entries previously stamped as managed by AuthPortal are eligible for deletion.</p>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Automatic Sync</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Control scheduled LDAP sync timing using the saved connection settings above." title="Control scheduled LDAP sync timing using the saved connection settings above." data-tooltip="Control scheduled LDAP sync timing using the saved connection settings above.">i</button>
+                                    </div>
+                                </div>
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Scheduler Status</h4>
+                                        <div class="ldap-sync-overview-grid ldap-sync-scheduler-grid">
+                                            <div class="ldap-sync-card ldap-sync-card-emphasis">
+                                                <span class="ldap-sync-card-label">Scheduler</span>
+                                                <label class="ldap-sync-toggle ldap-sync-toggle-card" title="Enable automatic LDAP sync runs using the saved schedule below.">
+                                                    <input type="checkbox" id="ldap-sync-schedule-enabled" title="Enable automatic LDAP sync runs using the saved schedule below.">
+                                                    <span>Enable scheduled LDAP sync</span>
+                                                </label>
+                                                <span class="field-hint">Runs use the saved LDAP connection settings above.</span>
+                                            </div>
+                                            <div class="ldap-sync-card">
+                                                <span class="ldap-sync-card-label">Next Scheduled Run</span>
+                                                <span id="ldap-sync-next-run" class="ldap-sync-card-value muted" title="Computed next automatic LDAP sync time based on the saved schedule.">Disabled</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Schedule Settings</h4>
+                                        <div class="ldap-sync-settings-grid ldap-sync-scheduler-settings">
+                                            <div class="form-row">
+                                                <label for="ldap-sync-frequency" title="How often AuthPortal should run LDAP sync automatically.">Frequency</label>
+                                                <select id="ldap-sync-frequency" title="How often AuthPortal should run LDAP sync automatically.">
+                                                    <option value="daily">Daily</option>
+                                                    <option value="weekly">Weekly</option>
+                                                    <option value="hourly">Hourly</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-row" data-ldap-frequency-row="daily weekly">
+                                                <label for="ldap-sync-time" title="Local time of day for daily or weekly LDAP sync runs.">Run at ({{.AppTimeZone}})</label>
+                                                <input type="time" id="ldap-sync-time" value="02:15" title="Local time of day for daily or weekly LDAP sync runs.">
+                                            </div>
+                                            <div class="form-row" data-ldap-frequency-row="weekly">
+                                                <label for="ldap-sync-weekday" title="Day of week for weekly LDAP sync runs.">Day</label>
+                                                <select id="ldap-sync-weekday" title="Day of week for weekly LDAP sync runs.">
+                                                    <option value="sunday">Sunday</option>
+                                                    <option value="monday">Monday</option>
+                                                    <option value="tuesday">Tuesday</option>
+                                                    <option value="wednesday">Wednesday</option>
+                                                    <option value="thursday">Thursday</option>
+                                                    <option value="friday">Friday</option>
+                                                    <option value="saturday">Saturday</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-row" data-ldap-frequency-row="hourly">
+                                                <label for="ldap-sync-minute" title="Minute past the hour for hourly LDAP sync runs.">Minute past the hour</label>
+                                                <input type="number" id="ldap-sync-minute" min="0" max="59" value="15" title="Minute past the hour for hourly LDAP sync runs.">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>LDAP Group Role Mapping</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Optional LDAP group to RBAC role synchronization settings." title="Optional LDAP group to RBAC role synchronization settings." data-tooltip="Enable this to read LDAP groups during sync and map group membership onto AuthPortal roles. Group membership updates manual assignments only through the dedicated ldap-group source; manual bindings remain separate.">i</button>
+                                    </div>
+                                </div>
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Sync Options</h4>
+                                        <div class="ldap-sync-toggle-group">
+                                            <label class="ldap-sync-toggle" title="When enabled, LDAP sync will evaluate configured groups and apply matching AuthPortal roles."><input id="ldap-sync-group-sync-enabled" type="checkbox" title="When enabled, LDAP sync will evaluate configured groups and apply matching AuthPortal roles."> <span>Enable LDAP group to role synchronization</span></label>
+                                        </div>
+                                        <div class="ldap-sync-settings-grid">
+                                            <div class="form-row">
+                                                <label for="ldap-sync-group-base-dn">Group Search Base DN</label>
+                                                <input id="ldap-sync-group-base-dn" type="text" placeholder="ou=groups,dc=authportal,dc=local">
+                                            </div>
+                                            <div class="form-row">
+                                                <label for="ldap-sync-group-name-attribute">Group Name Attribute</label>
+                                                <input id="ldap-sync-group-name-attribute" type="text" placeholder="cn">
+                                            </div>
+                                            <div class="form-row">
+                                                <label for="ldap-sync-group-member-attribute">Group Member Attribute</label>
+                                                <input id="ldap-sync-group-member-attribute" type="text" placeholder="memberUid">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Role Mappings</h4>
+                                        <div class="rbac-binding-editor">
+                                            <div class="rbac-binding-row rbac-binding-row-header">
+                                                <span>LDAP Group</span>
+                                                <span>Role</span>
+                                                <span></span>
+                                            </div>
+                                            <div id="ldap-group-role-mapping-list" class="rbac-binding-list"></div>
+                                            <button type="button" id="ldap-group-role-add-btn" class="ghost-btn">Add Mapping</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="panel-section">
+                                <div class="panel-section-head">
+                                    <div class="panel-section-title">
+                                        <h3>Save Changes</h3>
+                                        <button type="button" class="section-info-icon" aria-label="Document why you changed LDAP Sync settings before applying them." title="Document why you changed LDAP Sync settings before applying them." data-tooltip="Document why you changed LDAP Sync settings before applying them.">i</button>
+                                    </div>
+                                </div>
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Apply Changes</h4>
+                                        <div class="admin-actions">
+                                            <input id="ldap-sync-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <button id="ldap-sync-save-btn" type="submit" class="primary-btn">Save Configuration</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                        </form>
+
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Recent Sync Runs</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Latest manual and scheduled LDAP sync outcomes." title="Latest manual and scheduled LDAP sync outcomes." data-tooltip="Latest manual and scheduled LDAP sync outcomes.">i</button>
+                                </div>
+                            </div>
+                            <div class="config-fields">
+                                <div class="config-form-group">
+                                    <h4>Run History</h4>
+                                    <div class="backup-table-wrapper">
+                                        <table class="backup-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Started</th>
+                                                    <th>Trigger</th>
+                                                    <th>Result</th>
+                                                    <th>Counts</th>
+                                                    <th>Summary</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="ldap-sync-run-rows">
+                                                <tr>
+                                                    <td colspan="5" class="muted">No LDAP sync runs recorded yet.</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
                 </div>
+                <!-- ================================================================
+                     TAB: Access Control
+                     ================================================================ -->
+                <div id="access-control-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Role-Based Access</span>
+                            <h2>Access Control</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="access-control-refresh" class="ghost-btn">Refresh</button>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Manage manual RBAC role bindings. LDAP-driven role assignments are configured in the LDAP Sync tab and appear here as effective roles.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Role Catalog</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Role catalog info" title="Role catalog info" data-tooltip="Define custom roles from the available permission set. Built-in roles (admin, viewer, user) are protected and cannot be renamed or deleted.">i</button>
+                                </div>
+                            </div>
+                            <form id="rbac-role-form" class="oauth-form" autocomplete="off">
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Role Definition</h4>
+                                        <div class="panel-helper access-binding-helper">
+                                            Create custom roles from the existing permission set. Built-in roles <code>admin</code>, <code>viewer</code>, and <code>user</code> are protected and cannot be renamed or deleted.
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="rbac-role-name">Role Name</label>
+                                            <input id="rbac-role-name" type="text" placeholder="music-reader" required>
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="rbac-role-description">Description</label>
+                                            <input id="rbac-role-description" type="text" placeholder="Read-only access to music features">
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Permissions</h4>
+                                        <div class="form-row">
+                                            <span class="form-label">Permissions</span>
+                                            <div id="rbac-permission-checkboxes" class="backup-sections"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Save Changes</h4>
+                                        <div class="admin-actions">
+                                            <input id="rbac-role-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <button id="rbac-role-reset" type="button" class="ghost-btn">New Role</button>
+                                            <button id="rbac-role-save" type="submit" class="primary-btn">Save Role</button>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Existing Roles</h4>
+                                        <div class="backup-table-wrapper">
+                                            <table class="backup-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Role</th>
+                                                        <th>Description</th>
+                                                        <th>Permissions</th>
+                                                        <th class="actions-col"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="rbac-role-rows">
+                                                    <tr><td colspan="4" class="muted">Loading roles.</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </section>
+
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Permission Catalog</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Permission catalog info" title="Permission catalog info" data-tooltip="Create app-specific permissions such as music.read or audiobookshelf.read. Built-in platform permissions are protected. New permissions appear as selectable scopes in OAuth client registrations.">i</button>
+                                </div>
+                            </div>
+                            <form id="rbac-permission-form" class="oauth-form" autocomplete="off">
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Permission Definition</h4>
+                                        <div class="panel-helper access-binding-helper">
+                                            Create app-specific permissions such as <code>music.read</code> or <code>audiobookshelf.read</code>. Built-in platform permissions are protected.
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="rbac-permission-name">Permission Name</label>
+                                            <input id="rbac-permission-name" type="text" placeholder="music.read" required>
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="rbac-permission-description">Description</label>
+                                            <input id="rbac-permission-description" type="text" placeholder="Access the Music app">
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Save Changes</h4>
+                                        <div class="admin-actions">
+                                            <input id="rbac-permission-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <button id="rbac-permission-reset" type="button" class="ghost-btn">New Permission</button>
+                                            <button id="rbac-permission-save" type="submit" class="primary-btn">Save Permission</button>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Existing Permissions</h4>
+                                        <div class="backup-table-wrapper">
+                                            <table class="backup-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Permission</th>
+                                                        <th>Description</th>
+                                                        <th class="actions-col"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="rbac-permission-rows">
+                                                    <tr><td colspan="3" class="muted">Loading permissions.</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </section>
+
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Manual Role Binding</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Manual role binding info" title="Manual role binding info" data-tooltip="Assign roles to users manually. LDAP-driven role assignments are managed in the LDAP Sync tab and appear here as effective roles.">i</button>
+                                </div>
+                            </div>
+                            <form id="rbac-binding-form" class="oauth-form" autocomplete="off">
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Binding Details</h4>
+                                        <div class="panel-helper access-binding-helper">
+                                            Select a user from the table below to edit an existing binding, or enter a username to create one. Clearing all manual roles removes the manual binding for that user.
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="rbac-binding-username">Username</label>
+                                            <input id="rbac-binding-username" type="text" placeholder="alice" required>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Manual Roles</h4>
+                                        <div class="form-row">
+                                            <span class="form-label">Manual Roles</span>
+                                            <div id="rbac-role-checkboxes" class="backup-sections"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Save Changes</h4>
+                                        <div class="admin-actions">
+                                            <input id="rbac-binding-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <button id="rbac-binding-reset" type="button" class="ghost-btn">New Binding</button>
+                                            <button id="rbac-binding-save" type="submit" class="primary-btn">Save Role Binding</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </section>
+
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>User Bindings</h3>
+                                    <button type="button" class="section-info-icon" aria-label="User bindings info" title="User bindings info" data-tooltip="All current role bindings. Effective roles include both manual assignments and LDAP-driven group mappings. Click a row to edit that user's manual assignments.">i</button>
+                                </div>
+                            </div>
+                            <div class="config-fields">
+                                <div class="config-form-group">
+                                    <h4>Binding Table</h4>
+                                    <div class="backup-table-wrapper">
+                                        <table class="backup-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>User</th>
+                                                    <th>Manual Roles</th>
+                                                    <th>Effective Roles</th>
+                                                    <th>Permissions</th>
+                                                    <th class="actions-col"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="rbac-user-rows">
+                                                <tr><td colspan="5" class="muted">Loading bindings.</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+                <!-- ================================================================
+                     TAB: Backups
+                     ================================================================ -->
                 <div id="backups-panel" class="panel" hidden>
                     <div class="panel-header">
-                        <h2>Backups</h2>
-                        <div class="backup-header-actions">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Data Protection</span>
+                            <h2>Backups</h2>
+                            <div class="backup-status-grid">
+                                <div class="backup-status-card">
+                                    <span class="backup-status-label">Last Run</span>
+                                    <span id="backup-last-run" class="backup-status-value">-</span>
+                                    <span class="backup-status-note">Shown in {{.AppTimeZone}}</span>
+                                </div>
+                                <div class="backup-status-card">
+                                    <span class="backup-status-label">Next Run</span>
+                                    <span id="backup-next-run" class="backup-status-value">-</span>
+                                    <span class="backup-status-note">Shown in {{.AppTimeZone}}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel-header-actions">
                             <button type="button" id="backups-refresh-btn" class="ghost-btn">Refresh</button>
                             <button type="button" id="backups-run-btn" class="success-btn">Run Backup</button>
                         </div>
                     </div>
-                    <p class="panel-helper">Schedule or create configuration backups. Files are written to <code>./backups</code> inside the container.</p>
-                    <form id="backup-schedule-form" class="backup-schedule" autocomplete="off">
-                        <div class="backup-toggle">
-                            <label>
-                                <input type="checkbox" id="backup-schedule-enabled">
-                                Enable automatic backups
-                            </label>
-                            <span class="muted">Selected sections are included in scheduled runs.</span>
-                        </div>
-                        <div class="backup-schedule-grid">
-                            <div class="backup-schedule-row">
-                                <label for="backup-frequency">Frequency</label>
-                                <select id="backup-frequency">
-                                    <option value="daily">Daily</option>
-                                    <option value="weekly">Weekly</option>
-                                    <option value="hourly">Hourly</option>
-                                </select>
-                            </div>
-                            <div class="backup-schedule-row" data-frequency-row="daily weekly">
-                                <label for="backup-time">Run at ({{.AppTimeZone}})</label>
-                                <input type="time" id="backup-time" value="02:00">
-                            </div>
-                            <div class="backup-schedule-row" data-frequency-row="weekly">
-                                <label for="backup-weekday">Day</label>
-                                <select id="backup-weekday">
-                                    <option value="sunday">Sunday</option>
-                                    <option value="monday">Monday</option>
-                                    <option value="tuesday">Tuesday</option>
-                                    <option value="wednesday">Wednesday</option>
-                                    <option value="thursday">Thursday</option>
-                                    <option value="friday">Friday</option>
-                                    <option value="saturday">Saturday</option>
-                                </select>
-                            </div>
-                            <div class="backup-schedule-row" data-frequency-row="hourly">
-                                <label for="backup-minute">Minute past the hour</label>
-                                <input type="number" id="backup-minute" min="0" max="59" value="0">
-                            </div>
-                            <div class="backup-schedule-row">
-                                <label for="backup-retention">Retention (files)</label>
-                                <input type="number" id="backup-retention" min="0" value="30">
-                            </div>
-                        </div>
-                        <fieldset class="backup-sections">
-                            <legend>Include sections</legend>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="providers" checked> Providers</label>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="security" checked> Security</label>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="mfa" checked> MFA</label>
-                            <label><input type="checkbox" class="backup-section-checkbox" value="app-settings" checked> App Settings</label>
-                        </fieldset>
-                            <div class="backup-schedule-actions">
-                                <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
-                                <button type="submit" id="backup-schedule-save" class="primary-btn">Save Schedule</button>
-                                <div class="backup-run-meta">
-                                    <span>Last run ({{.AppTimeZone}}): <span id="backup-last-run">-</span></span>
-                                    <span>Next run ({{.AppTimeZone}}): <span id="backup-next-run">-</span></span>
+                    <p class="panel-helper">Schedule or create configuration backups. Files are written to <code>./app/backups</code> inside the container.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Schedule</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Backup schedule info" title="Backup schedule info" data-tooltip="Configure automatic backup timing, frequency, retention count, and which config sections to include. Files are written to ./app/backups inside the container.">i</button>
                                 </div>
                             </div>
-                    </form>
-                    <div id="backup-empty" class="muted">No backups created yet.</div>
-                    <div id="backup-table-wrapper" class="backup-table-wrapper" hidden>
-                        <table class="backup-table">
-                            <thead>
-                                <tr>
-                                    <th>Created</th>
-                                    <th>Size</th>
-                                    <th>Sections</th>
-                                    <th>Created By</th>
-                                    <th class="actions-col"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="backup-rows"></tbody>
-                        </table>
+                            <form id="backup-schedule-form" class="backup-schedule" autocomplete="off">
+                                <div class="config-fields">
+                                    <div class="config-form-group">
+                                        <h4>Schedule State</h4>
+                                        <div class="backup-toggle">
+                                            <label>
+                                                <input type="checkbox" id="backup-schedule-enabled">
+                                                Enable automatic backups
+                                            </label>
+                                            <span class="muted">Selected sections are included in scheduled runs.</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Timing</h4>
+                                        <div class="backup-schedule-grid">
+                                            <div class="backup-schedule-row">
+                                                <label for="backup-frequency">Frequency</label>
+                                                <select id="backup-frequency">
+                                                    <option value="daily">Daily</option>
+                                                    <option value="weekly">Weekly</option>
+                                                    <option value="hourly">Hourly</option>
+                                                </select>
+                                            </div>
+                                            <div class="backup-schedule-row" data-frequency-row="daily weekly">
+                                                <label for="backup-time">Run at ({{.AppTimeZone}})</label>
+                                                <input type="time" id="backup-time" value="02:00">
+                                            </div>
+                                            <div class="backup-schedule-row" data-frequency-row="weekly">
+                                                <label for="backup-weekday">Day</label>
+                                                <select id="backup-weekday">
+                                                    <option value="sunday">Sunday</option>
+                                                    <option value="monday">Monday</option>
+                                                    <option value="tuesday">Tuesday</option>
+                                                    <option value="wednesday">Wednesday</option>
+                                                    <option value="thursday">Thursday</option>
+                                                    <option value="friday">Friday</option>
+                                                    <option value="saturday">Saturday</option>
+                                                </select>
+                                            </div>
+                                            <div class="backup-schedule-row" data-frequency-row="hourly">
+                                                <label for="backup-minute">Minute past the hour</label>
+                                                <input type="number" id="backup-minute" min="0" max="59" value="0">
+                                            </div>
+                                            <div class="backup-schedule-row">
+                                                <label for="backup-retention">Retention (files)</label>
+                                                <input type="number" id="backup-retention" min="0" value="30">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Included Sections</h4>
+                                        <fieldset class="backup-sections">
+                                            <legend>Include sections</legend>
+                                            <label><input type="checkbox" class="backup-section-checkbox" value="providers" checked> Providers</label>
+                                            <label><input type="checkbox" class="backup-section-checkbox" value="security" checked> Security</label>
+                                            <label><input type="checkbox" class="backup-section-checkbox" value="mfa" checked> MFA</label>
+                                            <label><input type="checkbox" class="backup-section-checkbox" value="app-settings" checked> App Settings</label>
+                                            <label><input type="checkbox" class="backup-section-checkbox" value="ldap-sync" checked> LDAP Sync</label>
+                                        </fieldset>
+                                    </div>
+                                    <div class="config-form-group">
+                                        <h4>Save Changes</h4>
+                                        <div class="backup-schedule-actions">
+                                            <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <button type="submit" id="backup-schedule-save" class="primary-btn">Save Schedule</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Backup Files</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Backup files info" title="Backup files info" data-tooltip="All existing backup archives. Restoring a backup rolls all included config sections back to the state at the time of that backup.">i</button>
+                                </div>
+                            </div>
+                            <div class="config-fields">
+                                <div class="config-form-group">
+                                    <h4>Archives</h4>
+                                    <div id="backup-empty" class="muted">No backups created yet.</div>
+                                    <div id="backup-table-wrapper" class="backup-table-wrapper" hidden>
+                                        <table class="backup-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Created</th>
+                                                    <th>Size</th>
+                                                    <th>Sections</th>
+                                                    <th>Created By</th>
+                                                    <th class="actions-col"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="backup-rows"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
                     </div>
                 </div>
 
-                <div id="history-panel" class="panel history-panel">
-                    <h3>Recent Changes</h3>
-                    <ul id="history-list" class="history-list">
-                        <li>Loading.</li>
-                    </ul>
+                <!-- ================================================================
+                     TAB: Logs
+                     ================================================================ -->
+                <div id="logs-panel" class="panel" hidden>
+                    <div class="panel-header">
+                        <div class="panel-title-block">
+                            <span class="panel-kicker">Audit &amp; Diagnostics</span>
+                            <h2>Logs</h2>
+                        </div>
+                        <div class="panel-header-actions">
+                            <button type="button" id="logs-history-refresh" class="ghost-btn">Refresh</button>
+                        </div>
+                    </div>
+                    <p class="panel-helper">Review admin audit activity across the console and inspect the live application log stream when needed.</p>
+                    <div class="panel-layout">
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Recent Changes</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Recent changes info" title="Recent changes info" data-tooltip="Admin audit log showing who changed what and when across all console sections. Use the filters to narrow by tab or user.">i</button>
+                                </div>
+                                <span id="logs-history-summary" class="muted">Loading.</span>
+                            </div>
+                            <div class="config-fields">
+                                <div class="config-form-group">
+                                    <h4>Filters</h4>
+                                    <div class="logs-filters">
+                                        <div class="form-row">
+                                            <label for="logs-filter-section">Tab</label>
+                                            <select id="logs-filter-section">
+                                                <option value="">All tabs</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="logs-filter-user">User</label>
+                                            <select id="logs-filter-user">
+                                                <option value="">All users</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="logs-sort-order">Sort</label>
+                                            <select id="logs-sort-order">
+                                                <option value="desc">Newest first</option>
+                                                <option value="asc">Oldest first</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-row">
+                                            <label for="logs-page-size">Rows</label>
+                                            <select id="logs-page-size">
+                                                <option value="10" selected>10</option>
+                                                <option value="25">25</option>
+                                                <option value="50">50</option>
+                                                <option value="all">All</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="config-form-group">
+                                    <h4>Audit Log</h4>
+                                    <div class="backup-table-wrapper logs-table-wrapper">
+                                        <table class="backup-table logs-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Changed</th>
+                                                    <th>Tab</th>
+                                                    <th>User</th>
+                                                    <th>Action</th>
+                                                    <th>Details</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="logs-history-rows">
+                                                <tr><td colspan="5" class="muted">Loading recent changes.</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="logs-pagination">
+                                        <button type="button" id="logs-page-prev" class="ghost-btn">Previous</button>
+                                        <span id="logs-page-status" class="muted">Page 1 of 1</span>
+                                        <button type="button" id="logs-page-next" class="ghost-btn">Next</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="panel-section">
+                            <div class="panel-section-head">
+                                <div class="panel-section-title">
+                                    <h3>Log Stream</h3>
+                                    <button type="button" class="section-info-icon" aria-label="Log stream info" title="Log stream info" data-tooltip="Live application log tail. Start the stream to see real-time output from AuthPortal. The stream auto-refreshes at the chosen interval until paused.">i</button>
+                                </div>
+                                <span id="logs-stream-status" class="muted">Stream is off.</span>
+                            </div>
+                            <div class="config-fields">
+                                <div class="config-form-group">
+                                    <h4>Stream Controls</h4>
+                                    <div class="logs-stream-controls">
+                                        <div class="form-row">
+                                            <label for="logs-stream-interval">Auto refresh</label>
+                                            <select id="logs-stream-interval">
+                                                <option value="5000">Every 5 seconds</option>
+                                                <option value="10000">Every 10 seconds</option>
+                                                <option value="30000">Every 30 seconds</option>
+                                                <option value="60000">Every 60 seconds</option>
+                                            </select>
+                                        </div>
+                                        <div class="logs-stream-actions">
+                                            <button type="button" id="logs-stream-start" class="success-btn">Start</button>
+                                            <button type="button" id="logs-stream-pause" class="ghost-btn">Pause</button>
+                                            <button type="button" id="logs-stream-refresh" class="ghost-btn">Refresh</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="config-form-group">
+                                    <h4>Stream Output</h4>
+                                    <div id="logs-stream-empty" class="muted">Log stream is off. Start the stream to load entries.</div>
+                                    <pre id="logs-stream-output" class="logs-stream-output" hidden></pre>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
                 </div>
             </div>
-        </section>
-    </main>
+            </main>
 
+            <footer class="admin-footer">
+                <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>
+                <a class="admin-sidebar-version" href="https://github.com/modom-ofn/auth-portal/" target="_blank" rel="noopener noreferrer">AuthPortal {{.AppVersion}} created by Modom.</a>
+            </footer>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         DIALOGS (rendered outside the main layout)
+         ================================================================ -->
     <dialog id="help-modal" class="modal" hidden aria-labelledby="help-modal-title">
         <div class="modal-backdrop" data-help-close></div>
         <div class="modal-dialog">
@@ -185,25 +1150,17 @@
         </div>
     </dialog>
 
-    <dialog id="recent-changes-modal" class="modal" hidden aria-labelledby="recent-changes-modal-title">
-        <div class="modal-backdrop" data-recent-close></div>
-        <div class="modal-dialog">
-            <button type="button" id="recent-changes-modal-close" class="icon-btn close-btn" aria-label="Close recent changes" title="Close">×</button>
-            <h3 id="recent-changes-modal-title">Recent Changes</h3>
-            <div class="modal-body">
-                <ul id="recent-changes-list" class="history-list recent-changes-list">
-                    <li>Loading.</li>
-                </ul>
-            </div>
-        </div>
-    </dialog>
-
     <dialog id="oauth-detail-modal" class="modal" hidden aria-labelledby="oauth-detail-title">
         <div class="modal-backdrop" data-oauth-detail-close></div>
         <div class="modal-dialog">
             <button type="button" id="oauth-detail-close" class="icon-btn close-btn" aria-label="Close OAuth details" title="Close">×</button>
             <h3 id="oauth-detail-title">OAuth Client Details</h3>
             <div id="oauth-detail-body" class="modal-body"></div>
+            <div class="form-row oauth-detail-reason-row">
+                <label for="oauth-detail-reason">Change Reason</label>
+                <textarea id="oauth-detail-reason" rows="2" maxlength="200" placeholder="Why are you rotating the secret or deleting this client?"></textarea>
+                <span class="field-hint">Required only if you want a specific reason recorded in audit history.</span>
+            </div>
             <div class="oauth-detail-actions">
                 <button type="button" id="oauth-detail-edit" class="primary-btn">Edit</button>
                 <button type="button" id="oauth-detail-rotate" class="success-btn">Rotate Secret</button>
@@ -211,10 +1168,6 @@
             </div>
         </div>
     </dialog>
-
-    <footer class="admin-footer">
-        <p>Configuration updates apply immediately. Make sure to keep backups before major changes.</p>
-    </footer>
 
     <script type="module" src="/static/admin.js"></script>
 </body>

@@ -26,13 +26,14 @@ const (
 	backupEnvelopeVersion  = "enc-v1"
 
 	appSettingsSectionKey = "app-settings"
+	ldapSyncSectionKey    = "ldap-sync"
 )
 
 var (
 	errUnknownBackupSection = errors.New("unknown backup section")
 )
 
-var defaultBackupSections = []string{"providers", "security", "mfa", appSettingsSectionKey}
+var defaultBackupSections = []string{"providers", "security", "mfa", appSettingsSectionKey, ldapSyncSectionKey}
 
 type backupService struct {
 	store *configstore.Store
@@ -532,6 +533,7 @@ func decodeSectionPayload(key string, raw json.RawMessage) (any, error) {
 		"security":            func(r json.RawMessage) (any, error) { return parseSecurityPayload(r) },
 		"mfa":                 func(r json.RawMessage) (any, error) { return parseMFAPayload(r) },
 		appSettingsSectionKey: func(r json.RawMessage) (any, error) { return parseAppSettingsPayload(r) },
+		ldapSyncSectionKey:    func(r json.RawMessage) (any, error) { return parseLDAPSyncPayload(r) },
 	}
 	decoder, ok := decoders[key]
 	if !ok {
@@ -647,7 +649,7 @@ func normalizeBackupSections(sections []string) []string {
 	for _, section := range sections {
 		key := strings.ToLower(strings.TrimSpace(section))
 		switch key {
-		case "providers", "security", "mfa", appSettingsSectionKey:
+		case "providers", "security", "mfa", appSettingsSectionKey, ldapSyncSectionKey:
 			set[key] = struct{}{}
 		}
 	}

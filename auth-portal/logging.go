@@ -4,7 +4,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -31,6 +33,30 @@ func firstNonEmpty(vals ...string) string {
 var (
 	curLevel             = parseLogLevel(firstNonEmpty(os.Getenv("log_level"), os.Getenv("LOG_LEVEL")))
 	trustedProxyNetworks = parseTrustedProxies(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	sensitiveLogKeys     = map[string]struct{}{
+		"accesstoken":   {},
+		"access_token":  {},
+		"api_key":       {},
+		"apikey":        {},
+		"authorization": {},
+		"auth_token":    {},
+		"client_secret": {},
+		"code":          {},
+		"cookie":        {},
+		"idtoken":       {},
+		"id_token":      {},
+		"password":      {},
+		"refreshtoken":  {},
+		"refresh_token": {},
+		"secret":        {},
+		"state":         {},
+		"token":         {},
+		"x-plex-token":  {},
+	}
+	authHeaderPattern  = regexp.MustCompile(`(?i)(authorization["=: ]+(?:[A-Za-z]+ )?)([^",\s]+)`)
+	cookiePattern      = regexp.MustCompile(`(?i)(cookie["=: ]+)([^",\s]+)`)
+	jsonSecretPattern  = regexp.MustCompile(`(?i)("?(?:accesstoken|access_token|password|secret|client_secret|refreshtoken|refresh_token|idtoken|id_token|token|apikey|api_key|authorization)"?\s*:\s*")([^"]+)(")`)
+	querySecretPattern = regexp.MustCompile(`(?i)((?:password|secret|token|apikey|api_key|client_secret|refresh_token|access_token)=)([^&\s]+)`)
 )
 
 func parseLogLevel(s string) logLevel {
@@ -81,8 +107,35 @@ func WithRequestLogging(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 		dur := time.Since(start).Round(time.Millisecond)
 		Debugf(`http %s %s -> %d %dB in %s ua=%q ip=%s`,
-			r.Method, r.URL.RequestURI(), rec.status, rec.written, dur, r.UserAgent(), clientIP(r))
+			r.Method, sanitizeLoggedRequestURI(r.URL), rec.status, rec.written, dur, r.UserAgent(), clientIP(r))
 	})
+}
+
+func sanitizeLoggedRequestURI(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	cloned := *u
+	query := cloned.Query()
+	for key := range query {
+		if _, ok := sensitiveLogKeys[strings.ToLower(strings.TrimSpace(key))]; ok {
+			query.Set(key, "[REDACTED]")
+		}
+	}
+	cloned.RawQuery = query.Encode()
+	return sanitizeLoggedText(cloned.RequestURI())
+}
+
+func sanitizeLoggedText(raw string) string {
+	sanitized := strings.TrimSpace(raw)
+	if sanitized == "" {
+		return sanitized
+	}
+	sanitized = authHeaderPattern.ReplaceAllString(sanitized, `${1}[REDACTED]`)
+	sanitized = cookiePattern.ReplaceAllString(sanitized, `${1}[REDACTED]`)
+	sanitized = jsonSecretPattern.ReplaceAllString(sanitized, `${1}[REDACTED]${3}`)
+	sanitized = querySecretPattern.ReplaceAllString(sanitized, `${1}[REDACTED]`)
+	return sanitized
 }
 
 type statusRecorder struct {

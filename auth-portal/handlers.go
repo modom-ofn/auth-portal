@@ -21,6 +21,7 @@ const (
 	loginTemplate     = "login.html"
 	headerContentType = "Content-Type"
 	contentTypeJSON   = "application/json"
+	signInTitleSuffix = "Sign In"
 )
 
 // providerUI returns the provider key used by code ("plex"/"emby")
@@ -53,43 +54,70 @@ func extraLink() (urlStr, text string) {
 }
 
 type portalServiceButton struct {
-	Text      string
-	URL       string
-	Color     string
-	TextColor string
+	Text               string
+	URL                string
+	Color              string
+	TextColor          string
+	RequiredPermission string
 }
 
-func serviceButtons() []portalServiceButton {
+func serviceButtons(permissions []string) []portalServiceButton {
 	cfg := currentRuntimeConfig().AppSettings
 	buttons := make([]portalServiceButton, 0, len(cfg.ServiceLinks))
 	seen := make(map[string]struct{}, len(cfg.ServiceLinks))
-	appendButton := func(text, rawURL, color string) {
-		safeURL := sanitizeDisplayURL(rawURL)
-		safeText := strings.TrimSpace(text)
-		if safeURL == "" || safeText == "" {
-			return
-		}
-		safeColor := sanitizeHexColor(color)
-		key := strings.ToLower(safeText) + "|" + safeURL
-		if _, exists := seen[key]; exists {
-			return
-		}
-		seen[key] = struct{}{}
-		textColor := ""
-		if safeColor != "" {
-			textColor = readableTextForHex(safeColor)
-		}
-		buttons = append(buttons, portalServiceButton{
-			Text:      safeText,
-			URL:       safeURL,
-			Color:     safeColor,
-			TextColor: textColor,
-		})
-	}
+	permissionSet := permissionNameSet(permissions)
 	for _, item := range cfg.ServiceLinks {
-		appendButton(item.Name, item.URL, item.Color)
+		button, ok := buildServiceButton(item, permissionSet, seen)
+		if !ok {
+			continue
+		}
+		buttons = append(buttons, button)
 	}
 	return buttons
+}
+
+func permissionNameSet(permissions []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(permissions))
+	for _, permission := range permissions {
+		if permission = normalizeRBACName(permission); permission != "" {
+			out[permission] = struct{}{}
+		}
+	}
+	return out
+}
+
+func buildServiceButton(item AppServiceLink, permissionSet map[string]struct{}, seen map[string]struct{}) (portalServiceButton, bool) {
+	safeURL := sanitizeDisplayURL(item.URL)
+	safeText := strings.TrimSpace(item.Name)
+	if safeURL == "" || safeText == "" {
+		return portalServiceButton{}, false
+	}
+	requiredPermission := normalizeRBACName(item.RequiredPermission)
+	if requiredPermission != "" {
+		if _, ok := permissionSet[requiredPermission]; !ok {
+			return portalServiceButton{}, false
+		}
+	}
+	key := strings.ToLower(safeText) + "|" + safeURL
+	if _, exists := seen[key]; exists {
+		return portalServiceButton{}, false
+	}
+	seen[key] = struct{}{}
+	safeColor := sanitizeHexColor(item.Color)
+	return portalServiceButton{
+		Text:               safeText,
+		URL:                safeURL,
+		Color:              safeColor,
+		TextColor:          serviceButtonTextColor(safeColor),
+		RequiredPermission: requiredPermission,
+	}, true
+}
+
+func serviceButtonTextColor(color string) string {
+	if color == "" {
+		return ""
+	}
+	return readableTextForHex(color)
 }
 
 func portalBackgroundPresentation() (heroColor, modeClass string) {
@@ -107,6 +135,64 @@ func portalModalPresentation() (cardColor, modeClass string) {
 		cardColor = "#111827"
 	}
 	return cardColor, "card-mode-solid"
+}
+
+func portalTitleColor() string {
+	color := sanitizeHexColor(currentRuntimeConfig().AppSettings.PortalTitleColor)
+	if color == "" {
+		return "#e5e7eb"
+	}
+	return color
+}
+
+func portalBodyTextColor() string {
+	color := sanitizeHexColor(currentRuntimeConfig().AppSettings.PortalBodyTextColor)
+	if color == "" {
+		return "#94a3b8"
+	}
+	return color
+}
+
+func portalAppName() string {
+	name := strings.TrimSpace(currentRuntimeConfig().AppSettings.PortalAppName)
+	if name == "" {
+		return "AuthPortal"
+	}
+	return name
+}
+
+func portalLogoURL() string {
+	logoURL := sanitizeDisplayURL(currentRuntimeConfig().AppSettings.PortalLogoURL)
+	if logoURL == "" {
+		return "/static/authportal-logo.svg"
+	}
+	return logoURL
+}
+
+func portalFooterEnabled() bool {
+	return !currentRuntimeConfig().AppSettings.DisableFooter
+}
+
+func portalPageTitle(suffix string) string {
+	suffix = strings.TrimSpace(suffix)
+	if suffix == "" {
+		return portalAppName()
+	}
+	return portalAppName() + " — " + suffix
+}
+
+func renderPortalCopy(raw string, values map[string]string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"{{username}}", values["username"],
+		"{{providerName}}", values["providerName"],
+		"{{provider}}", values["providerName"],
+		"{{appName}}", values["appName"],
+	)
+	return replacer.Replace(text)
 }
 
 func getRequestAccess(providerDisplay string) (email, subj, subjQP string) {
@@ -187,6 +273,15 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	extraURL, extraText := extraLink()
 	heroColor, modeClass := portalBackgroundPresentation()
 	cardColor, cardMode := portalModalPresentation()
+	titleColor := portalTitleColor()
+	bodyTextColor := portalBodyTextColor()
+	appName := portalAppName()
+	logoURL := portalLogoURL()
+	showFooter := portalFooterEnabled()
+	loginBodyText := renderPortalCopy(currentRuntimeConfig().AppSettings.LoginBodyText, map[string]string{
+		"providerName": name,
+		"appName":      appName,
+	})
 
 	// If no session, show login page right away.
 	c, err := r.Cookie(sessionCookie)
@@ -201,6 +296,13 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle(signInTitleSuffix),
+			"LoginBodyText":       loginBodyText,
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
@@ -221,6 +323,13 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle(signInTitleSuffix),
+			"LoginBodyText":       loginBodyText,
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
@@ -238,6 +347,13 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle(signInTitleSuffix),
+			"LoginBodyText":       loginBodyText,
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
@@ -277,11 +393,21 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) {
+	roles, roleErr := userRoles(uuidFrom(r.Context()), usernameFrom(r.Context()))
+	if roleErr != nil {
+		log.Printf("me: role lookup failed: %v", roleErr)
+	}
+	permissions, permErr := userPermissions(uuidFrom(r.Context()), usernameFrom(r.Context()))
+	if permErr != nil {
+		log.Printf("me: permission lookup failed: %v", permErr)
+	}
 	w.Header().Set(headerContentType, contentTypeJSON)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"username": usernameFrom(r.Context()),
-		"uuid":     uuidFrom(r.Context()),
-		"admin":    adminFrom(r.Context()),
+		"username":    usernameFrom(r.Context()),
+		"uuid":        uuidFrom(r.Context()),
+		"admin":       adminFrom(r.Context()),
+		"roles":       roles,
+		"permissions": permissions,
 	})
 }
 
@@ -290,56 +416,86 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 // it returns authenticated=false along with provider info so the UI can
 // render the correct login button.
 func whoamiHandler(w http.ResponseWriter, r *http.Request) {
-	type resp struct {
-		OK              bool   `json:"ok"`
-		Authenticated   bool   `json:"authenticated"`
-		Provider        string `json:"provider"`
-		ProviderDisplay string `json:"providerDisplay"`
-		Username        string `json:"username,omitempty"`
-		UUID            string `json:"uuid,omitempty"`
-		Email           string `json:"email,omitempty"`
-		MediaAccess     bool   `json:"mediaAccess"`
-		LoginPath       string `json:"loginPath"`
-		IssuedAt        string `json:"issuedAt,omitempty"`
-		Expiry          string `json:"expiry,omitempty"`
-		Admin           bool   `json:"admin"`
-	}
-
 	key, display := providerUI()
-	out := resp{OK: true, Provider: key, ProviderDisplay: display, LoginPath: "/auth/start-web"}
+	out := whoamiResponse{OK: true, Provider: key, ProviderDisplay: display, LoginPath: "/auth/start-web"}
 
 	ident := extractSessionIdentity(r)
 	supplementIdentityFromContext(&ident, r.Context())
 
 	if ident.Username == "" && ident.UUID == "" {
-		w.Header().Set(headerContentType, contentTypeJSON)
-		_ = json.NewEncoder(w).Encode(out)
+		writeWhoamiResponse(w, out)
 		return
 	}
 
+	populateWhoamiIdentity(&out, ident, r.Context())
+	populateWhoamiRoles(&out, ident)
+	populateWhoamiAuthorization(&out, ident)
+	populateWhoamiEmail(&out, ident.UUID)
+	writeWhoamiResponse(w, out)
+}
+
+type whoamiResponse struct {
+	OK              bool     `json:"ok"`
+	Authenticated   bool     `json:"authenticated"`
+	Provider        string   `json:"provider"`
+	ProviderDisplay string   `json:"providerDisplay"`
+	Username        string   `json:"username,omitempty"`
+	UUID            string   `json:"uuid,omitempty"`
+	Email           string   `json:"email,omitempty"`
+	MediaAccess     bool     `json:"mediaAccess"`
+	LoginPath       string   `json:"loginPath"`
+	IssuedAt        string   `json:"issuedAt,omitempty"`
+	Expiry          string   `json:"expiry,omitempty"`
+	Admin           bool     `json:"admin"`
+	Roles           []string `json:"roles,omitempty"`
+	Permissions     []string `json:"permissions,omitempty"`
+}
+
+func populateWhoamiIdentity(out *whoamiResponse, ident sessionIdentity, ctx context.Context) {
 	out.Authenticated = true
 	out.Username = ident.Username
 	out.UUID = ident.UUID
 	out.IssuedAt = ident.IssuedAt
 	out.Expiry = ident.Expiry
-	out.Admin = ident.Admin || adminFrom(r.Context())
+	out.Admin = ident.Admin || adminFrom(ctx)
+}
 
+func populateWhoamiRoles(out *whoamiResponse, ident sessionIdentity) {
+	if roles, err := userRoles(ident.UUID, ident.Username); err == nil {
+		out.Roles = roles
+	} else {
+		log.Printf("whoami role lookup failed for %s (%s): %v", ident.Username, ident.UUID, err)
+	}
+	if permissions, err := userPermissions(ident.UUID, ident.Username); err == nil {
+		out.Permissions = permissions
+	} else {
+		log.Printf("whoami permission lookup failed for %s (%s): %v", ident.Username, ident.UUID, err)
+	}
+}
+
+func populateWhoamiAuthorization(out *whoamiResponse, ident sessionIdentity) {
 	if authorized, err := activeProvider().IsAuthorized(ident.UUID, ident.Username); err != nil {
 		log.Printf("whoami authz check failed for %s (%s): %v", ident.Username, ident.UUID, err)
 	} else {
 		out.MediaAccess = authorized
 	}
+}
 
-	if ident.UUID != "" {
-		if u, err := getUserByUUIDPreferred(ident.UUID); err == nil {
-			if u.Email.Valid {
-				out.Email = strings.TrimSpace(u.Email.String)
-			}
-		} else {
-			log.Printf("whoami: user lookup failed for %s: %v", ident.UUID, err)
-		}
+func populateWhoamiEmail(out *whoamiResponse, uuid string) {
+	if uuid == "" {
+		return
 	}
+	u, err := getUserByUUIDPreferred(uuid)
+	if err != nil {
+		log.Printf("whoami: user lookup failed for %s: %v", uuid, err)
+		return
+	}
+	if u.Email.Valid {
+		out.Email = strings.TrimSpace(u.Email.String)
+	}
+}
 
+func writeWhoamiResponse(w http.ResponseWriter, out whoamiResponse) {
 	w.Header().Set(headerContentType, contentTypeJSON)
 	_ = json.NewEncoder(w).Encode(out)
 }
@@ -425,9 +581,23 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	extraURL, extraText := extraLink()
 	heroColor, modeClass := portalBackgroundPresentation()
 	cardColor, cardMode := portalModalPresentation()
+	titleColor := portalTitleColor()
+	bodyTextColor := portalBodyTextColor()
+	appName := portalAppName()
+	logoURL := portalLogoURL()
+	showFooter := portalFooterEnabled()
 
 	if authorized {
-		serviceLinks := serviceButtons()
+		permissions, permErr := userPermissions(uid, uname)
+		if permErr != nil {
+			log.Printf("home: permission lookup failed for %s (%s): %v", uname, uid, permErr)
+		}
+		serviceLinks := serviceButtons(permissions)
+		copyValues := map[string]string{
+			"username":     uname,
+			"providerName": providerDisplay,
+			"appName":      appName,
+		}
 		render(w, "portal_authorized.html", map[string]any{
 			"Username":            uname,
 			"ProviderName":        providerDisplay, // exact casing
@@ -438,12 +608,25 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
+			"PortalTitleColor":    titleColor,
+			"PortalBodyTextColor": bodyTextColor,
+			"PortalAppName":       appName,
+			"PortalLogoURL":       logoURL,
+			"PageTitle":           portalPageTitle("Authorized"),
+			"WelcomeTitle":        renderPortalCopy(currentRuntimeConfig().AppSettings.AuthorizedTitleText, copyValues),
+			"BodyText":            renderPortalCopy(currentRuntimeConfig().AppSettings.AuthorizedBodyText, copyValues),
+			"ShowFooter":          showFooter,
 		})
 		return
 	}
 
 	// Unauthorized page: build mailto params from env
 	email, subj, subjQP := getRequestAccess(providerDisplay)
+	copyValues := map[string]string{
+		"username":     uname,
+		"providerName": providerDisplay,
+		"appName":      appName,
+	}
 	render(w, "portal_unauthorized.html", map[string]any{
 		"Username":            uname,
 		"ProviderName":        providerDisplay, // exact casing
@@ -454,6 +637,14 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"HeroBackgroundMode":  modeClass,
 		"PortalCardColor":     cardColor,
 		"PortalCardMode":      cardMode,
+		"PortalTitleColor":    titleColor,
+		"PortalBodyTextColor": bodyTextColor,
+		"PortalAppName":       appName,
+		"PortalLogoURL":       logoURL,
+		"PageTitle":           portalPageTitle("Access Pending"),
+		"WelcomeTitle":        renderPortalCopy(currentRuntimeConfig().AppSettings.UnauthorizedTitleText, copyValues),
+		"BodyText":            renderPortalCopy(currentRuntimeConfig().AppSettings.UnauthorizedBodyText, copyValues),
+		"ShowFooter":          showFooter,
 	})
 }
 
@@ -482,9 +673,15 @@ func mfaChallengePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	heroColor, heroMode := portalBackgroundPresentation()
+	cardColor, cardMode := portalModalPresentation()
 	render(w, "mfa_challenge.html", map[string]any{
-		"Username": strings.TrimSpace(claims.Username),
-		"Issuer":   mfaIssuer,
+		"Username":            strings.TrimSpace(claims.Username),
+		"Issuer":              mfaIssuer,
+		"HeroBackgroundColor": heroColor,
+		"HeroBackgroundMode":  heroMode,
+		"PortalCardColor":     cardColor,
+		"PortalCardMode":      cardMode,
 	})
 }
 func mfaEnrollPage(w http.ResponseWriter, r *http.Request) {
@@ -493,8 +690,14 @@ func mfaEnrollPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, providers.PostAuthRedirectHome, http.StatusFound)
 		return
 	}
+	heroColor, heroMode := portalBackgroundPresentation()
+	cardColor, cardMode := portalModalPresentation()
 	render(w, "mfa_enroll.html", map[string]any{
-		"Username": uname,
-		"Issuer":   mfaIssuer,
+		"Username":            uname,
+		"Issuer":              mfaIssuer,
+		"HeroBackgroundColor": heroColor,
+		"HeroBackgroundMode":  heroMode,
+		"PortalCardColor":     cardColor,
+		"PortalCardMode":      cardMode,
 	})
 }
