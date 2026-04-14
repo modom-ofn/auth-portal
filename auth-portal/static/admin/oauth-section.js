@@ -41,7 +41,7 @@ const buildScopePill = (scope, onRemove) => {
   return pill;
 };
 
-export const createOAuthSectionController = ({
+export function createOAuthSectionController({
   api,
   panel,
   reloadBtn,
@@ -69,7 +69,7 @@ export const createOAuthSectionController = ({
   appTimeZone = 'UTC',
   showStatus,
   recordActivity,
-}) => {
+}) {
   const defaultScopes = ['openid', 'profile', 'email'];
   const state = {
     clients: [],
@@ -531,119 +531,98 @@ export const createOAuthSectionController = ({
     }
   };
 
-  const bind = () => {
+  const buildPayload = () => ({
+    name: nameInput?.value?.trim() || '',
+    redirectUris: parseRedirectList(redirectsInput?.value || ''),
+    scopes: normalizeScopes(state.selectedScopes),
+    reason: currentFormReason(),
+  });
+
+  const setFormButtonsDisabled = (disabled) => {
+    if (saveBtn) {
+      saveBtn.disabled = disabled;
+    }
     if (cancelBtn) {
-      cancelBtn.addEventListener('click', () => {
-        resetForm();
-        clearSecretBanner();
-      });
+      cancelBtn.disabled = disabled;
+    }
+  };
+
+  const handleFormSubmit = async (event) => {
+    event.preventDefault();
+    if (state.loading) {
+      return;
     }
 
-    if (form) {
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (state.loading) {
-          return;
-        }
+    const payload = buildPayload();
+    const clientId = idInput?.value?.trim() || '';
+    setFormButtonsDisabled(true);
+    showStatus(clientId ? 'Updating client.' : 'Creating client.', 'info');
 
-        const payload = {
-          name: nameInput?.value?.trim() || '',
-          redirectUris: parseRedirectList(redirectsInput?.value || ''),
-          scopes: normalizeScopes(state.selectedScopes),
-          reason: currentFormReason(),
-        };
-        const clientId = idInput?.value?.trim() || '';
+    try {
+      const json = clientId
+        ? await api.updateOAuthClient(clientId, payload)
+        : await api.createOAuthClient(payload);
 
-        if (saveBtn) {
-          saveBtn.disabled = true;
-        }
-        if (cancelBtn) {
-          cancelBtn.disabled = true;
-        }
+      showStatus(clientId ? 'Client updated.' : 'Client created.', 'success');
+      const activityName = json.client?.name || payload.name || clientId || 'client';
+      recordActivity('oauth', clientId ? 'Client updated' : 'Client created', payload.reason || activityName);
 
-        showStatus(clientId ? 'Updating client.' : 'Creating client.', 'info');
+      if (json.clientSecret) {
+        showSecretBanner(`Client secret for ${activityName}: ${json.clientSecret}`);
+      }
 
-        try {
-          const json = clientId
-            ? await api.updateOAuthClient(clientId, payload)
-            : await api.createOAuthClient(payload);
-
-          showStatus(clientId ? 'Client updated.' : 'Client created.', 'success');
-          const activityName = json.client?.name || payload.name || clientId || 'client';
-          recordActivity('oauth', clientId ? 'Client updated' : 'Client created', payload.reason || activityName);
-
-          if (json.clientSecret) {
-            showSecretBanner(`Client secret for ${activityName}: ${json.clientSecret}`);
-          }
-
-          resetForm();
-          await loadClients();
-        } catch (err) {
-          showStatus(toUserMessage(err, 'Save failed'), 'error');
-        } finally {
-          if (saveBtn) {
-            saveBtn.disabled = false;
-          }
-          if (cancelBtn) {
-            cancelBtn.disabled = false;
-          }
-        }
-      });
+      resetForm();
+      await loadClients();
+    } catch (err) {
+      showStatus(toUserMessage(err, 'Save failed'), 'error');
+    } finally {
+      setFormButtonsDisabled(false);
     }
+  };
 
-    if (reloadBtn) {
-      reloadBtn.addEventListener('click', async () => {
-        await loadClients({ announce: true });
-      });
+  const handleDetailModalClick = (event) => {
+    const target = event.target;
+    const isClose = target?.dataset?.oauthDetailClose !== undefined;
+    if (target === detailModal || isClose) {
+      closeDetailModal();
     }
+  };
 
-    if (detailCloseBtn) {
-      detailCloseBtn.addEventListener('click', () => {
-        closeDetailModal();
-      });
+  const withSelectedClient = async (action) => {
+    const client = findClientById(state.selectedClientId);
+    if (!client) {
+      return;
     }
+    await action(client);
+  };
 
-    if (detailModal) {
-      detailModal.addEventListener('click', (event) => {
-        const target = event.target;
-        const isClose = target?.dataset?.oauthDetailClose !== undefined;
-        if (target === detailModal || isClose) {
-          closeDetailModal();
-        }
-      });
-    }
-
-    if (detailEditBtn) {
-      detailEditBtn.addEventListener('click', () => {
-        const client = findClientById(state.selectedClientId);
-        if (!client) {
-          return;
-        }
+  const bind = () => {
+    cancelBtn?.addEventListener('click', () => {
+      resetForm();
+      clearSecretBanner();
+    });
+    form?.addEventListener('submit', handleFormSubmit);
+    reloadBtn?.addEventListener('click', async () => {
+      await loadClients({ announce: true });
+    });
+    detailCloseBtn?.addEventListener('click', closeDetailModal);
+    detailModal?.addEventListener('click', handleDetailModalClick);
+    detailEditBtn?.addEventListener('click', async () => {
+      await withSelectedClient(async (client) => {
         prefillFormForClient(client);
         closeDetailModal();
       });
-    }
-
-    if (detailRotateBtn) {
-      detailRotateBtn.addEventListener('click', async () => {
-        const client = findClientById(state.selectedClientId);
-        if (!client) {
-          return;
-        }
+    });
+    detailRotateBtn?.addEventListener('click', async () => {
+      await withSelectedClient(async (client) => {
         await rotateSecret(client, detailRotateBtn);
       });
-    }
-
-    if (detailDeleteBtn) {
-      detailDeleteBtn.addEventListener('click', async () => {
-        const client = findClientById(state.selectedClientId);
-        if (!client) {
-          return;
-        }
+    });
+    detailDeleteBtn?.addEventListener('click', async () => {
+      await withSelectedClient(async (client) => {
         await deleteClient(client, detailDeleteBtn);
       });
-    }
-
+    });
     scopeAddBtn?.addEventListener('click', () => {
       addSelectedScope(scopePicker?.value || '');
     });
@@ -654,4 +633,4 @@ export const createOAuthSectionController = ({
     loadClients,
     clearSecretBanner,
   };
-};
+}

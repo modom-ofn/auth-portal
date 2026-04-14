@@ -32,6 +32,7 @@ const (
 	permissionRBACWrite    = "rbac.write"
 	permissionPortalAccess = "portal.access"
 
+	errRoleRequired            = "role required"
 	errUnknownRoleFormat       = "unknown role %q"
 	errUnknownPermissionFormat = "unknown permission %q"
 )
@@ -624,7 +625,7 @@ func upsertRoleDefinition(currentName string, def RoleDefinition) error {
 func deleteRoleDefinition(roleName string) error {
 	roleName = normalizeRBACName(roleName)
 	if roleName == "" {
-		return errors.New("role required")
+		return errors.New(errRoleRequired)
 	}
 	if isSystemRole(roleName) {
 		return errors.New("system roles cannot be deleted")
@@ -896,7 +897,7 @@ func setUserRoleByUsername(username, roleName, source, grantedBy, externalRef st
 		return errors.New("username required")
 	}
 	if roleName == "" {
-		return errors.New("role required")
+		return errors.New(errRoleRequired)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
@@ -954,7 +955,7 @@ func syncUsersToRole(roleName string, usernames []string, source, externalRef, a
 	externalRef = strings.TrimSpace(externalRef)
 	usernames = normalizeDistinctStrings(usernames)
 	if roleName == "" {
-		return 0, 0, errors.New("role required")
+		return 0, 0, errors.New(errRoleRequired)
 	}
 	if source == "" {
 		return 0, 0, errors.New("source required")
@@ -982,17 +983,21 @@ func syncUsersToRole(roleName string, usernames []string, source, externalRef, a
 	if err != nil {
 		return 0, 0, err
 	}
-	target := stringSet(usernames)
-	changedUserIDs := make(map[int]struct{})
-	added, err := addMissingUsersToRoleTx(ctx, tx, roleID, usernames, source, externalRef, actor, existing, changedUserIDs)
+	cfg := roleSyncTxConfig{roleID: roleID, source: source, externalRef: externalRef, actor: actor}
+	state := &roleSyncState{
+		existing:       existing,
+		target:         stringSet(usernames),
+		changedUserIDs: make(map[int]struct{}),
+	}
+	added, err := addMissingUsersToRoleTx(ctx, tx, cfg, usernames, state)
 	if err != nil {
 		return 0, 0, err
 	}
-	removed, err := removeExtraUsersFromRoleTx(ctx, tx, roleID, source, externalRef, existing, target, changedUserIDs)
+	removed, err := removeExtraUsersFromRoleTx(ctx, tx, cfg, state)
 	if err != nil {
 		return 0, 0, err
 	}
-	if err := refreshChangedUsersTx(ctx, tx, changedUserIDs, actor); err != nil {
+	if err := refreshChangedUsersTx(ctx, tx, state.changedUserIDs, actor); err != nil {
 		return 0, 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -1169,10 +1174,23 @@ SELECT ur.user_id, u.username
 	return existing, rows.Err()
 }
 
-func addMissingUsersToRoleTx(ctx context.Context, tx *sql.Tx, roleID int, usernames []string, source, externalRef, actor string, existing map[string]int, changedUserIDs map[int]struct{}) (int, error) {
+type roleSyncTxConfig struct {
+	roleID      int
+	source      string
+	externalRef string
+	actor       string
+}
+
+type roleSyncState struct {
+	existing       map[string]int
+	target         map[string]struct{}
+	changedUserIDs map[int]struct{}
+}
+
+func addMissingUsersToRoleTx(ctx context.Context, tx *sql.Tx, cfg roleSyncTxConfig, usernames []string, state *roleSyncState) (int, error) {
 	added := 0
 	for _, username := range usernames {
-		if _, ok := existing[username]; ok {
+		if _, ok := state.existing[username]; ok {
 			continue
 		}
 		var userID int
@@ -1185,19 +1203,19 @@ VALUES ($1, $2, $3, $4, NULLIF($5, ''))
 ON CONFLICT (user_id, role_id, source, external_ref) DO UPDATE
    SET granted_by = NULLIF(EXCLUDED.granted_by, ''),
        updated_at = now()
-`, userID, roleID, source, externalRef, strings.TrimSpace(actor)); err != nil {
+`, userID, cfg.roleID, cfg.source, cfg.externalRef, strings.TrimSpace(cfg.actor)); err != nil {
 			return 0, err
 		}
-		changedUserIDs[userID] = struct{}{}
+		state.changedUserIDs[userID] = struct{}{}
 		added++
 	}
 	return added, nil
 }
 
-func removeExtraUsersFromRoleTx(ctx context.Context, tx *sql.Tx, roleID int, source, externalRef string, existing map[string]int, target map[string]struct{}, changedUserIDs map[int]struct{}) (int, error) {
+func removeExtraUsersFromRoleTx(ctx context.Context, tx *sql.Tx, cfg roleSyncTxConfig, state *roleSyncState) (int, error) {
 	removed := 0
-	for username, userID := range existing {
-		if _, ok := target[username]; ok {
+	for username, userID := range state.existing {
+		if _, ok := state.target[username]; ok {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -1206,10 +1224,10 @@ DELETE FROM user_roles
    AND role_id = $2
    AND source = $3
    AND external_ref = $4
-`, userID, roleID, source, externalRef); err != nil {
+`, userID, cfg.roleID, cfg.source, cfg.externalRef); err != nil {
 			return 0, err
 		}
-		changedUserIDs[userID] = struct{}{}
+		state.changedUserIDs[userID] = struct{}{}
 		removed++
 	}
 	return removed, nil

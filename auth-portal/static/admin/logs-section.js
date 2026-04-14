@@ -196,8 +196,9 @@ export const createLogsSectionController = ({
     } else {
       entries.forEach((entry) => {
         const tr = document.createElement('tr');
+        const detailSeparator = entry.details ? ' - ' : '';
         const detailPrefix = entry.subject
-          ? `${entry.subject}${entry.details ? ' - ' : ''}`
+          ? `${entry.subject}${detailSeparator}`
           : '';
         tr.innerHTML = `
           <td>${escapeHTML(formatDate(entry.updatedAt))}</td>
