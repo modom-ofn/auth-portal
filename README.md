@@ -68,7 +68,10 @@ AuthPortal authenticates users directly against their connected media server acc
 ### UI Preview
 
 <p align="center">
-  <img src="./screenshots/ui-preview-rotating.gif" alt="Rotating AuthPortal UI preview banner showing authorized and unauthorized views, MFA flow, and admin tabs for providers, security, MFA, app settings, OAuth clients, LDAP Sync, backups, and logs." />
+  <img src="./screenshots/authporta-providers-page.png" alt="AuthPortal UI preview showing light theme." />
+</p>
+<p align="center">
+  <img src="./screenshots/authporta-providers-page-dark.png" alt="AuthPortal UI preview showing dark theme." />
 </p>
 
 ---
@@ -398,6 +401,8 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - `SESSION_COOKIE_DOMAIN`  domain scope for session + pending-MFA cookies (e.g., `auth.example.com`).
 - `MEDIA_SERVER`  `plex`, `jellyfin`, or `emby`.
 - `SESSION_SECRET`  HMAC secret for the session JWT cookie (required, 32+ random bytes; the service refuses to start if unset or using the legacy default).
+- `SESSION_TTL`  authorized-session lifetime as a Go duration (default `24h`).
+- `SESSION_SAMESITE`  cookie SameSite mode: `lax` (default), `strict`, or `none` (`none` requires HTTPS/Secure cookies).
 - `DATA_KEY`  base64 32-byte key for sealing provider tokens at rest (required).
 - `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
 - `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
@@ -529,7 +534,7 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 - Headers:
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.
   Adds `Strict-Transport-Security: max-age=86400; includeSubDomains; preload` when `APP_BASE_URL` is HTTPS.
-  Popup pages set a narrowed CSP that allows the tiny inline closing script.
+  Popup/auth completion pages keep a narrowed CSP with `script-src 'self'`; popup handoff is performed by `static/login.js` rather than inline script.
 
 ---
 
@@ -732,8 +737,8 @@ DEBUG plex: resources match via machine id
 - Admin flag changes immediately revoke outstanding sessions by bumping an internal session version; reissue cookies after any privilege change.
 - Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
-- Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).
-- If the portal is only used for same-origin apps, switch to SESSION_SAMESITE=strict; the fallback logic keeps you safe when Secure cookies aren’t yet possible (main.go:379-407).
+- Enforce MFA everywhere by setting `MFA_ENABLE=1` and `MFA_ENFORCE=1`; the code already backstops `MFA_ENABLE` when enforcement is on.
+- If the portal is only used for same-origin apps, consider `SESSION_SAMESITE=strict`; use `none` only with HTTPS because Secure cookies are required.
 - Keep rate limits aligned with your threat model; newIPRateLimiter accepts tighter limits if you need to clamp brute force attempts (rate_limiter.go:10-74).
 
 ---
@@ -787,7 +792,7 @@ What that means in practice:
 - I use automated scanning and analysis to catch issues early, but I do not rely on automation alone.
 - I will revise or reject AI-generated output when it does not meet the project standard.
 
-I have more than 25 years of experience across infrastructure, application support, and migrations/deployments. That experience is what governs the decisions in this project. AI helps me move faster, but it does not replace accountability, operational caution, or hands-on verification.
+I have more than 25 years of experience across enterprise IT infrastructure, application support, and migrations/deployments. That experience is what governs the decisions in this project. AI helps me move faster, but it does not replace accountability, operational caution, or hands-on verification.
 
 If you are cautious about AI use in open source, that caution is reasonable. The goal here is to be transparent about the workflow: AI is used to speed delivery, while review, testing, and release responsibility stay with me.
 
@@ -802,7 +807,7 @@ https://github.com/modom-ofn/auth-portal/issues
 
 ## License
 
-GPL-3.0  https://opensource.org/license/lgpl-3-0
+GPL-3.0  https://opensource.org/license/gpl-3-0/
 
 
 > [!IMPORTANT]

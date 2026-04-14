@@ -9,6 +9,7 @@ Security fixes are provided for actively maintained release lines. Anything outs
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
 | `v2.0.5` (latest: `v2.0.5`) | ✅ Supported | Receives all security and high-priority bug fixes, including RBAC, LDAP sync, OAuth/OIDC hardening, and admin logging updates. |
+| `v2.0.4` | ✅ Supported | Previous minor line still covered during the overlap window while operators upgrade to `v2.0.5`. |
 | `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
 | `< v2.0.4` | ❌ End-of-life | Please upgrade to a supported release. |
 

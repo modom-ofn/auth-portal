@@ -40,7 +40,7 @@
 
 ### Pre-release Scan Summary
 - Docker Scout: `0` HIGH/CRITICAL findings.
-- ...remaining scans to be documented.
+- Additional CI scan outputs were not archived in this working tree at release-note update time; attach the final Trivy/Grype artifacts to the release record if they are generated during the cut.
 
 ## v2.0.4 - 2026-03-11
 
