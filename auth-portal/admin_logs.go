@@ -23,7 +23,27 @@ const (
 	adminLogBufferMaxLines = 500
 	adminLogDefaultLimit   = 100
 	adminLogMaxFetchLimit  = 500
+	adminLogConfigUpdated  = "Configuration updated"
 )
+
+type adminLogHistorySource struct {
+	section configstore.Section
+	output  string
+	key     string
+	label   string
+	action  string
+}
+
+var adminLogHistorySources = []adminLogHistorySource{
+	{section: configstore.SectionProviders, output: "providers", key: configstore.SectionDocumentKey, label: "Providers", action: adminLogConfigUpdated},
+	{section: configstore.SectionSecurity, output: "security", key: configstore.SectionDocumentKey, label: "Security", action: adminLogConfigUpdated},
+	{section: configstore.SectionMFA, output: "mfa", key: configstore.SectionDocumentKey, label: "MFA", action: adminLogConfigUpdated},
+	{section: configstore.SectionAppSettings, output: "app-settings", key: configstore.SectionDocumentKey, label: "App Settings", action: adminLogConfigUpdated},
+	{section: configstore.SectionOAuth, output: "oauth", key: oauthHistoryKey, label: "OAuth Clients"},
+	{section: configstore.SectionLDAPSync, output: "ldap-sync", key: configstore.SectionDocumentKey, label: "LDAP Sync", action: adminLogConfigUpdated},
+	{section: configstore.SectionBackups, output: "backups", key: adminAuditEventsKey, label: "Backups"},
+	{section: configstore.SectionRBAC, output: "access-control", key: adminAuditEventsKey, label: "Access Control"},
+}
 
 type adminAuditPayload struct {
 	Action  string `json:"action"`
@@ -193,57 +213,14 @@ func adminLogsHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		limit = adminLogMaxFetchLimit
 	}
 
-	type historySource struct {
-		section configstore.Section
-		output  string
-		key     string
-		label   string
-		action  string
-	}
-	sources := []historySource{
-		{section: configstore.SectionProviders, output: "providers", key: configstore.SectionDocumentKey, label: "Providers", action: "Configuration updated"},
-		{section: configstore.SectionSecurity, output: "security", key: configstore.SectionDocumentKey, label: "Security", action: "Configuration updated"},
-		{section: configstore.SectionMFA, output: "mfa", key: configstore.SectionDocumentKey, label: "MFA", action: "Configuration updated"},
-		{section: configstore.SectionAppSettings, output: "app-settings", key: configstore.SectionDocumentKey, label: "App Settings", action: "Configuration updated"},
-		{section: configstore.SectionOAuth, output: "oauth", key: oauthHistoryKey, label: "OAuth Clients"},
-		{section: configstore.SectionLDAPSync, output: "ldap-sync", key: configstore.SectionDocumentKey, label: "LDAP Sync", action: "Configuration updated"},
-		{section: configstore.SectionBackups, output: "backups", key: adminAuditEventsKey, label: "Backups"},
-		{section: configstore.SectionRBAC, output: "access-control", key: adminAuditEventsKey, label: "Access Control"},
-	}
-
 	entries := make([]adminLogsHistoryEntry, 0, limit)
-	for _, source := range sources {
-		history, err := configStore.History(r.Context(), source.section, source.key, limit)
+	for _, source := range adminLogHistorySources {
+		sourceEntries, err := loadAdminLogHistoryEntries(r.Context(), source, limit)
 		if err != nil {
-			log.Printf("admin logs history failed for %s/%s: %v", source.section, source.key, err)
 			respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "history lookup failed"})
 			return
 		}
-		for _, item := range history {
-			entry := adminLogsHistoryEntry{
-				Section:   source.output,
-				Label:     source.label,
-				Action:    source.action,
-				Version:   item.Version,
-				UpdatedAt: item.UpdatedAt.UTC(),
-				UpdatedBy: strings.TrimSpace(item.UpdatedBy),
-				Details:   strings.TrimSpace(item.Reason),
-			}
-			if source.key == configstore.SectionDocumentKey {
-				if entry.Action == "" {
-					entry.Action = "Configuration updated"
-				}
-			} else {
-				entry = mergeAuditPayload(entry, item.Value)
-				if entry.Action == "" {
-					entry.Action = "Updated"
-				}
-				if entry.Details == "" {
-					entry.Details = strings.TrimSpace(item.Reason)
-				}
-			}
-			entries = append(entries, entry)
-		}
+		entries = append(entries, sourceEntries...)
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -262,6 +239,45 @@ func adminLogsHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func loadAdminLogHistoryEntries(ctx context.Context, source adminLogHistorySource, limit int) ([]adminLogsHistoryEntry, error) {
+	history, err := configStore.History(ctx, source.section, source.key, limit)
+	if err != nil {
+		log.Printf("admin logs history failed for %s/%s: %v", source.section, source.key, err)
+		return nil, err
+	}
+	entries := make([]adminLogsHistoryEntry, 0, len(history))
+	for _, item := range history {
+		entries = append(entries, buildAdminLogHistoryEntry(source, item))
+	}
+	return entries, nil
+}
+
+func buildAdminLogHistoryEntry(source adminLogHistorySource, item configstore.HistoryEntry) adminLogsHistoryEntry {
+	entry := adminLogsHistoryEntry{
+		Section:   source.output,
+		Label:     source.label,
+		Action:    source.action,
+		Version:   item.Version,
+		UpdatedAt: item.UpdatedAt.UTC(),
+		UpdatedBy: strings.TrimSpace(item.UpdatedBy),
+		Details:   strings.TrimSpace(item.Reason),
+	}
+	if source.key == configstore.SectionDocumentKey {
+		return ensureAdminLogDefaults(entry, adminLogConfigUpdated, item.Reason)
+	}
+	return ensureAdminLogDefaults(mergeAuditPayload(entry, item.Value), "Updated", item.Reason)
+}
+
+func ensureAdminLogDefaults(entry adminLogsHistoryEntry, action, reason string) adminLogsHistoryEntry {
+	if entry.Action == "" {
+		entry.Action = action
+	}
+	if entry.Details == "" {
+		entry.Details = strings.TrimSpace(reason)
+	}
+	return entry
+}
+
 func mergeAuditPayload(entry adminLogsHistoryEntry, raw json.RawMessage) adminLogsHistoryEntry {
 	var payload adminAuditPayload
 	if len(raw) == 0 || json.Unmarshal(raw, &payload) != nil {
@@ -276,22 +292,44 @@ func mergeAuditPayload(entry adminLogsHistoryEntry, raw json.RawMessage) adminLo
 	if details := strings.TrimSpace(payload.Details); details != "" {
 		entry.Details = details
 	}
+	rawFields, ok := decodeAuditRawFields(raw)
+	if !ok {
+		return entry
+	}
+	entry.Subject = mergeAuditSubject(entry.Subject, rawFields)
+	entry.Details = mergeAuditDetails(entry.Details, entry.Subject, rawFields)
+	return entry
+}
+
+func decodeAuditRawFields(raw json.RawMessage) (map[string]any, bool) {
 	var rawFields map[string]any
-	if json.Unmarshal(raw, &rawFields) == nil {
-		if entry.Subject == "" {
-			if name := stringifyAuditField(rawFields["name"]); name != "" {
-				entry.Subject = name
-			} else if clientID := stringifyAuditField(rawFields["clientId"]); clientID != "" {
-				entry.Subject = clientID
-			}
-		}
-		if entry.Details == "" {
-			if clientID := stringifyAuditField(rawFields["clientId"]); clientID != "" && clientID != entry.Subject {
-				entry.Details = clientID
-			}
+	if json.Unmarshal(raw, &rawFields) != nil {
+		return nil, false
+	}
+	return rawFields, true
+}
+
+func mergeAuditSubject(subject string, rawFields map[string]any) string {
+	if subject != "" {
+		return subject
+	}
+	for _, key := range []string{"name", "clientId"} {
+		if value := stringifyAuditField(rawFields[key]); value != "" {
+			return value
 		}
 	}
-	return entry
+	return subject
+}
+
+func mergeAuditDetails(details, subject string, rawFields map[string]any) string {
+	if details != "" {
+		return details
+	}
+	clientID := stringifyAuditField(rawFields["clientId"])
+	if clientID != "" && clientID != subject {
+		return clientID
+	}
+	return details
 }
 
 func stringifyAuditField(value any) string {

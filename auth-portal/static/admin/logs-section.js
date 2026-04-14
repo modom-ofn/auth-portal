@@ -191,17 +191,20 @@ export const createLogsSectionController = ({
     state.currentPage = paginated.currentPage;
     const entries = paginated.entries;
     historyRows.innerHTML = '';
-    if (!entries.length) {
+    if (entries.length === 0) {
       historyRows.innerHTML = '<tr><td colspan="5" class="muted">No matching log entries.</td></tr>';
     } else {
       entries.forEach((entry) => {
         const tr = document.createElement('tr');
+        const detailPrefix = entry.subject
+          ? `${entry.subject}${entry.details ? ' - ' : ''}`
+          : '';
         tr.innerHTML = `
           <td>${escapeHTML(formatDate(entry.updatedAt))}</td>
           <td>${escapeHTML(entry.label || sectionLabels[entry.section] || entry.section || '-')}</td>
           <td>${escapeHTML(entry.updatedBy || 'system')}</td>
           <td>${escapeHTML(entry.action || '-')}</td>
-          <td>${escapeHTML(entry.subject ? `${entry.subject}${entry.details ? ' - ' : ''}` : '')}${escapeHTML(entry.details || '-')}</td>
+          <td>${escapeHTML(detailPrefix)}${escapeHTML(entry.details || '-')}</td>
         `;
         historyRows.appendChild(tr);
       });

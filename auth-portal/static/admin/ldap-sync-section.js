@@ -1,5 +1,17 @@
 import { toUserMessage } from './admin-errors.js';
 
+const applyInputValue = (input, value) => {
+  if (input) {
+    input.value = value;
+  }
+};
+
+const applyInputChecked = (input, value) => {
+  if (input) {
+    input.checked = Boolean(value);
+  }
+};
+
 export const createLDAPSyncSectionController = ({
   api,
   panel,
@@ -115,51 +127,21 @@ export const createLDAPSyncSectionController = ({
 
   const renderConfig = () => {
     const config = state.config || {};
-    if (hostInput) {
-      hostInput.value = config.ldapHost || '';
-    }
-    if (adminDnInput) {
-      adminDnInput.value = config.ldapAdminDn || '';
-    }
-    if (passwordInput) {
-      passwordInput.value = config.ldapAdminPassword || '';
-    }
-    if (baseDnInput) {
-      baseDnInput.value = config.baseDn || '';
-    }
-    if (startTlsInput) {
-      startTlsInput.checked = Boolean(config.ldapStartTls);
-    }
-    if (deleteStaleInput) {
-      deleteStaleInput.checked = Boolean(config.deleteStaleEntries);
-    }
-    if (groupSyncEnabledInput) {
-      groupSyncEnabledInput.checked = Boolean(config.groupSyncEnabled);
-    }
-    if (groupSearchBaseDnInput) {
-      groupSearchBaseDnInput.value = config.groupSearchBaseDn || '';
-    }
-    if (groupNameAttributeInput) {
-      groupNameAttributeInput.value = config.groupNameAttribute || 'cn';
-    }
-    if (groupMemberAttributeInput) {
-      groupMemberAttributeInput.value = config.groupMemberAttribute || 'memberUid';
-    }
-    if (scheduleEnabledInput) {
-      scheduleEnabledInput.checked = Boolean(config.scheduleEnabled);
-    }
-    if (frequencyInput) {
-      frequencyInput.value = config.scheduleFrequency || 'daily';
-    }
-    if (timeInput) {
-      timeInput.value = config.scheduleTimeOfDay || '02:15';
-    }
-    if (weekdayInput) {
-      weekdayInput.value = config.scheduleDayOfWeek || 'sunday';
-    }
-    if (minuteInput) {
-      minuteInput.value = typeof config.scheduleMinute === 'number' ? config.scheduleMinute : 15;
-    }
+    applyInputValue(hostInput, config.ldapHost || '');
+    applyInputValue(adminDnInput, config.ldapAdminDn || '');
+    applyInputValue(passwordInput, config.ldapAdminPassword || '');
+    applyInputValue(baseDnInput, config.baseDn || '');
+    applyInputChecked(startTlsInput, config.ldapStartTls);
+    applyInputChecked(deleteStaleInput, config.deleteStaleEntries);
+    applyInputChecked(groupSyncEnabledInput, config.groupSyncEnabled);
+    applyInputValue(groupSearchBaseDnInput, config.groupSearchBaseDn || '');
+    applyInputValue(groupNameAttributeInput, config.groupNameAttribute || 'cn');
+    applyInputValue(groupMemberAttributeInput, config.groupMemberAttribute || 'memberUid');
+    applyInputChecked(scheduleEnabledInput, config.scheduleEnabled);
+    applyInputValue(frequencyInput, config.scheduleFrequency || 'daily');
+    applyInputValue(timeInput, config.scheduleTimeOfDay || '02:15');
+    applyInputValue(weekdayInput, config.scheduleDayOfWeek || 'sunday');
+    applyInputValue(minuteInput, typeof config.scheduleMinute === 'number' ? config.scheduleMinute : 15);
     renderGroupRoleMappings(config.groupRoleMappings || []);
     updateScheduleVisibility();
   };

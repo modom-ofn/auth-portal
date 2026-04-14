@@ -379,6 +379,7 @@ a:hover{opacity:.9}
 .config-form-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
 .config-form-row{display:flex;flex-direction:column;gap:.4rem;}
 .config-form-row label{font-weight:600;font-size:.88rem;}
+.form-label{font-weight:600;font-size:.9rem;}
 .config-form-row input,.config-form-row select,.config-form-row textarea{background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:.55rem .8rem;font-family:inherit;font-size:.9rem;}
 .config-form-row textarea{resize:vertical;min-height:80px;}
 .config-form-group{border:1px dashed rgba(148,163,184,.3);border-radius:8px;padding:1rem;display:flex;flex-direction:column;gap:.8rem;}

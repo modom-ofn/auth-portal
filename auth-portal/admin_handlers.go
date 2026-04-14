@@ -30,6 +30,20 @@ const (
 	oauthHistoryKey     = "clients"
 )
 
+func decodeAdminJSONRequest(body io.Reader, target any) bool {
+	return json.NewDecoder(body).Decode(target) == nil
+}
+
+func decodeOptionalAdminJSONRequest(body io.Reader, target any) error {
+	if body == nil {
+		return nil
+	}
+	if err := json.NewDecoder(body).Decode(target); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
 type adminConfigSectionProviders struct {
 	Version int64           `json:"version"`
 	Config  ProvidersConfig `json:"config"`
@@ -476,8 +490,8 @@ func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminOAuthClientRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminJSONRequest(r.Body, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	payload, err := sanitizeOAuthClientRequest(req)
@@ -510,8 +524,8 @@ func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminOAuthClientRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminJSONRequest(r.Body, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	payload, err := sanitizeOAuthClientRequest(req)
@@ -547,11 +561,9 @@ func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminOAuthActionRequest
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-			return
-		}
+	if err := decodeOptionalAdminJSONRequest(r.Body, &req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
+		return
 	}
 	client, err := oauthService.Client(r.Context(), clientID)
 	if err != nil {
@@ -591,11 +603,9 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminOAuthActionRequest
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-			return
-		}
+	if err := decodeOptionalAdminJSONRequest(r.Body, &req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
+		return
 	}
 	client, err := oauthService.Client(r.Context(), clientID)
 	if err != nil {

@@ -4,7 +4,6 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"log"
 	"strings"
 
 	"github.com/lib/pq"
@@ -562,7 +561,8 @@ func pickAccess(u User) bool {
 // - Never overwrite non-empty DB values with blanks
 // - Always touch updated_at on change
 func upsertUser(u User) (int, error) {
-	if strings.TrimSpace(u.Username) == "" {
+	username := strings.TrimSpace(u.Username)
+	if username == "" {
 		return 0, errors.New("username required")
 	}
 
@@ -570,10 +570,20 @@ func upsertUser(u User) (int, error) {
 	token := pickToken(u)
 	access := pickAccess(u)
 
-	// Prefer UUID path if present
 	if uuid != "" {
-		var id int
-		err := db.QueryRow(`
+		return upsertUserByUUID(username, nn(u.Email), uuid, token, access)
+	}
+
+	id, err := upsertUserByUsername(username, nn(u.Email), token, access)
+	if err != nil {
+		return 0, err
+	}
+	return ensureUpsertedUserRole(id)
+}
+
+func upsertUserByUUID(username, email, uuid, token string, access bool) (int, error) {
+	var id int
+	err := db.QueryRow(`
 	INSERT INTO users (media_uuid, username, email, media_token, media_access)
 	VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5)
 	ON CONFLICT (media_uuid) DO UPDATE
@@ -583,16 +593,14 @@ func upsertUser(u User) (int, error) {
 	    media_access = EXCLUDED.media_access,
 	    updated_at   = now()
 	RETURNING id
-	`, uuid, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
-		if err == nil {
-			if roleErr := ensureDefaultUserRoleAssignment(id); roleErr != nil {
-				return 0, roleErr
-			}
-			return id, nil
-		}
-		var pqErr *pq.Error
-		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "users_username_key" {
-			err = db.QueryRow(`
+	`, uuid, username, email, token, access).Scan(&id)
+	if err == nil {
+		return ensureUpsertedUserRole(id)
+	}
+	if !isUsernameConflict(err) {
+		return 0, err
+	}
+	err = db.QueryRow(`
 	UPDATE users
 	   SET email        = COALESCE(NULLIF($2, ''), users.email),
 	       media_token  = COALESCE(NULLIF($3, ''), users.media_token),
@@ -601,19 +609,14 @@ func upsertUser(u User) (int, error) {
 	       updated_at   = now()
 	 WHERE username = $1
 	 RETURNING id
-	`, strings.TrimSpace(u.Username), nn(u.Email), token, access, uuid).Scan(&id)
-			if err != nil {
-				return 0, err
-			}
-			if roleErr := ensureDefaultUserRoleAssignment(id); roleErr != nil {
-				return 0, roleErr
-			}
-			return id, nil
-		}
+	`, username, email, token, access, uuid).Scan(&id)
+	if err != nil {
 		return 0, err
 	}
+	return ensureUpsertedUserRole(id)
+}
 
-	// Username path (no UUID yet)
+func upsertUserByUsername(username, email, token string, access bool) (int, error) {
 	var id int
 	err := db.QueryRow(`
 INSERT INTO users (username, email, media_token, media_access)
@@ -624,28 +627,20 @@ SET email        = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
     media_access = EXCLUDED.media_access,
     updated_at   = now()
 RETURNING id
-`, strings.TrimSpace(u.Username), nn(u.Email), token, access).Scan(&id)
-	if err != nil {
+`, username, email, token, access).Scan(&id)
+	return id, err
+}
+
+func ensureUpsertedUserRole(id int) (int, error) {
+	if err := ensureDefaultUserRoleAssignment(id); err != nil {
 		return 0, err
 	}
-	if roleErr := ensureDefaultUserRoleAssignment(id); roleErr != nil {
-		return 0, roleErr
-	}
-
-	// If a UUID became known later, set it once (no overwrite if already set)
-	if uuid != "" {
-		if _, err := db.Exec(`
-UPDATE users
-   SET media_uuid = COALESCE(media_uuid, $2),
-       updated_at = now()
- WHERE id = $1
-`, id, uuid); err != nil {
-			// Not fatal; just log
-			log.Printf("upsertUser: uuid backfill failed for user id=%d: %v", id, err)
-		}
-	}
-
 	return id, nil
+}
+
+func isUsernameConflict(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "users_username_key"
 }
 
 //lint:ignore U1000 kept for future provider use (UUID-based access toggles)

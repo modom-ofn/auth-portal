@@ -1,5 +1,46 @@
 import { toUserMessage } from './admin-errors.js';
 
+const parseRedirectList = (value) =>
+  (value || '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const createDateFormatter = (appTimeZone) => {
+  const options = {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  };
+  try {
+    return new Intl.DateTimeFormat(undefined, { ...options, timeZone: appTimeZone || 'UTC' });
+  } catch {
+    return new Intl.DateTimeFormat(undefined, options);
+  }
+};
+
+const normalizeScopes = (values = []) => Array.from(new Set((values || [])
+  .map((scope) => (scope || '').trim())
+  .filter(Boolean)));
+
+const buildScopePill = (scope, onRemove) => {
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'ghost-btn oauth-scope-pill';
+  pill.textContent = scope;
+
+  const remove = document.createElement('span');
+  remove.className = 'oauth-scope-remove';
+  remove.textContent = '×';
+  pill.appendChild(remove);
+  pill.addEventListener('click', onRemove);
+  return pill;
+};
+
 export const createOAuthSectionController = ({
   api,
   panel,
@@ -39,30 +80,7 @@ export const createOAuthSectionController = ({
     selectedClientId: '',
   };
 
-  const parseRedirectList = (value) =>
-    (value || '')
-      .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-  const createDateFormatter = () => {
-    const options = {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZoneName: 'short',
-    };
-    try {
-      return new Intl.DateTimeFormat(undefined, { ...options, timeZone: appTimeZone || 'UTC' });
-    } catch {
-      return new Intl.DateTimeFormat(undefined, options);
-    }
-  };
-
-  const dateFormatter = createDateFormatter();
+  const dateFormatter = createDateFormatter(appTimeZone);
 
   const formatDate = (value) => {
     if (!value) {
@@ -80,10 +98,6 @@ export const createOAuthSectionController = ({
   };
 
   const findClientById = (clientId) => state.clients.find((client) => client.clientId === clientId) || null;
-
-  const normalizeScopes = (values = []) => Array.from(new Set((values || [])
-    .map((scope) => (scope || '').trim())
-    .filter(Boolean)));
 
   const renderScopePicker = () => {
     if (!scopePicker) {
@@ -111,17 +125,7 @@ export const createOAuthSectionController = ({
       return;
     }
     state.selectedScopes.forEach((scope) => {
-      const pill = document.createElement('button');
-      pill.type = 'button';
-      pill.className = 'ghost-btn oauth-scope-pill';
-      pill.textContent = scope;
-
-      const remove = document.createElement('span');
-      remove.className = 'oauth-scope-remove';
-      remove.textContent = '×';
-      pill.appendChild(remove);
-
-      pill.addEventListener('click', () => {
+      const pill = buildScopePill(scope, () => {
         state.selectedScopes = state.selectedScopes.filter((item) => item !== scope);
         renderSelectedScopes();
       });

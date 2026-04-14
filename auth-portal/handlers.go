@@ -65,47 +65,59 @@ func serviceButtons(permissions []string) []portalServiceButton {
 	cfg := currentRuntimeConfig().AppSettings
 	buttons := make([]portalServiceButton, 0, len(cfg.ServiceLinks))
 	seen := make(map[string]struct{}, len(cfg.ServiceLinks))
-	permissionSet := make(map[string]struct{}, len(permissions))
-	for _, permission := range permissions {
-		permission = normalizeRBACName(permission)
-		if permission != "" {
-			permissionSet[permission] = struct{}{}
-		}
-	}
-	appendButton := func(text, rawURL, color, requiredPermission string) {
-		safeURL := sanitizeDisplayURL(rawURL)
-		safeText := strings.TrimSpace(text)
-		if safeURL == "" || safeText == "" {
-			return
-		}
-		requiredPermission = normalizeRBACName(requiredPermission)
-		if requiredPermission != "" {
-			if _, ok := permissionSet[requiredPermission]; !ok {
-				return
-			}
-		}
-		safeColor := sanitizeHexColor(color)
-		key := strings.ToLower(safeText) + "|" + safeURL
-		if _, exists := seen[key]; exists {
-			return
-		}
-		seen[key] = struct{}{}
-		textColor := ""
-		if safeColor != "" {
-			textColor = readableTextForHex(safeColor)
-		}
-		buttons = append(buttons, portalServiceButton{
-			Text:               safeText,
-			URL:                safeURL,
-			Color:              safeColor,
-			TextColor:          textColor,
-			RequiredPermission: requiredPermission,
-		})
-	}
+	permissionSet := permissionNameSet(permissions)
 	for _, item := range cfg.ServiceLinks {
-		appendButton(item.Name, item.URL, item.Color, item.RequiredPermission)
+		button, ok := buildServiceButton(item, permissionSet, seen)
+		if !ok {
+			continue
+		}
+		buttons = append(buttons, button)
 	}
 	return buttons
+}
+
+func permissionNameSet(permissions []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(permissions))
+	for _, permission := range permissions {
+		if permission = normalizeRBACName(permission); permission != "" {
+			out[permission] = struct{}{}
+		}
+	}
+	return out
+}
+
+func buildServiceButton(item AppServiceLink, permissionSet map[string]struct{}, seen map[string]struct{}) (portalServiceButton, bool) {
+	safeURL := sanitizeDisplayURL(item.URL)
+	safeText := strings.TrimSpace(item.Name)
+	if safeURL == "" || safeText == "" {
+		return portalServiceButton{}, false
+	}
+	requiredPermission := normalizeRBACName(item.RequiredPermission)
+	if requiredPermission != "" {
+		if _, ok := permissionSet[requiredPermission]; !ok {
+			return portalServiceButton{}, false
+		}
+	}
+	key := strings.ToLower(safeText) + "|" + safeURL
+	if _, exists := seen[key]; exists {
+		return portalServiceButton{}, false
+	}
+	seen[key] = struct{}{}
+	safeColor := sanitizeHexColor(item.Color)
+	return portalServiceButton{
+		Text:               safeText,
+		URL:                safeURL,
+		Color:              safeColor,
+		TextColor:          serviceButtonTextColor(safeColor),
+		RequiredPermission: requiredPermission,
+	}, true
+}
+
+func serviceButtonTextColor(color string) string {
+	if color == "" {
+		return ""
+	}
+	return readableTextForHex(color)
 }
 
 func portalBackgroundPresentation() (heroColor, modeClass string) {
@@ -404,41 +416,51 @@ func meHandler(w http.ResponseWriter, r *http.Request) {
 // it returns authenticated=false along with provider info so the UI can
 // render the correct login button.
 func whoamiHandler(w http.ResponseWriter, r *http.Request) {
-	type resp struct {
-		OK              bool     `json:"ok"`
-		Authenticated   bool     `json:"authenticated"`
-		Provider        string   `json:"provider"`
-		ProviderDisplay string   `json:"providerDisplay"`
-		Username        string   `json:"username,omitempty"`
-		UUID            string   `json:"uuid,omitempty"`
-		Email           string   `json:"email,omitempty"`
-		MediaAccess     bool     `json:"mediaAccess"`
-		LoginPath       string   `json:"loginPath"`
-		IssuedAt        string   `json:"issuedAt,omitempty"`
-		Expiry          string   `json:"expiry,omitempty"`
-		Admin           bool     `json:"admin"`
-		Roles           []string `json:"roles,omitempty"`
-		Permissions     []string `json:"permissions,omitempty"`
-	}
-
 	key, display := providerUI()
-	out := resp{OK: true, Provider: key, ProviderDisplay: display, LoginPath: "/auth/start-web"}
+	out := whoamiResponse{OK: true, Provider: key, ProviderDisplay: display, LoginPath: "/auth/start-web"}
 
 	ident := extractSessionIdentity(r)
 	supplementIdentityFromContext(&ident, r.Context())
 
 	if ident.Username == "" && ident.UUID == "" {
-		w.Header().Set(headerContentType, contentTypeJSON)
-		_ = json.NewEncoder(w).Encode(out)
+		writeWhoamiResponse(w, out)
 		return
 	}
 
+	populateWhoamiIdentity(&out, ident, r.Context())
+	populateWhoamiRoles(&out, ident)
+	populateWhoamiAuthorization(&out, ident)
+	populateWhoamiEmail(&out, ident.UUID)
+	writeWhoamiResponse(w, out)
+}
+
+type whoamiResponse struct {
+	OK              bool     `json:"ok"`
+	Authenticated   bool     `json:"authenticated"`
+	Provider        string   `json:"provider"`
+	ProviderDisplay string   `json:"providerDisplay"`
+	Username        string   `json:"username,omitempty"`
+	UUID            string   `json:"uuid,omitempty"`
+	Email           string   `json:"email,omitempty"`
+	MediaAccess     bool     `json:"mediaAccess"`
+	LoginPath       string   `json:"loginPath"`
+	IssuedAt        string   `json:"issuedAt,omitempty"`
+	Expiry          string   `json:"expiry,omitempty"`
+	Admin           bool     `json:"admin"`
+	Roles           []string `json:"roles,omitempty"`
+	Permissions     []string `json:"permissions,omitempty"`
+}
+
+func populateWhoamiIdentity(out *whoamiResponse, ident sessionIdentity, ctx context.Context) {
 	out.Authenticated = true
 	out.Username = ident.Username
 	out.UUID = ident.UUID
 	out.IssuedAt = ident.IssuedAt
 	out.Expiry = ident.Expiry
-	out.Admin = ident.Admin || adminFrom(r.Context())
+	out.Admin = ident.Admin || adminFrom(ctx)
+}
+
+func populateWhoamiRoles(out *whoamiResponse, ident sessionIdentity) {
 	if roles, err := userRoles(ident.UUID, ident.Username); err == nil {
 		out.Roles = roles
 	} else {
@@ -449,23 +471,31 @@ func whoamiHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("whoami permission lookup failed for %s (%s): %v", ident.Username, ident.UUID, err)
 	}
+}
 
+func populateWhoamiAuthorization(out *whoamiResponse, ident sessionIdentity) {
 	if authorized, err := activeProvider().IsAuthorized(ident.UUID, ident.Username); err != nil {
 		log.Printf("whoami authz check failed for %s (%s): %v", ident.Username, ident.UUID, err)
 	} else {
 		out.MediaAccess = authorized
 	}
+}
 
-	if ident.UUID != "" {
-		if u, err := getUserByUUIDPreferred(ident.UUID); err == nil {
-			if u.Email.Valid {
-				out.Email = strings.TrimSpace(u.Email.String)
-			}
-		} else {
-			log.Printf("whoami: user lookup failed for %s: %v", ident.UUID, err)
-		}
+func populateWhoamiEmail(out *whoamiResponse, uuid string) {
+	if uuid == "" {
+		return
 	}
+	u, err := getUserByUUIDPreferred(uuid)
+	if err != nil {
+		log.Printf("whoami: user lookup failed for %s: %v", uuid, err)
+		return
+	}
+	if u.Email.Valid {
+		out.Email = strings.TrimSpace(u.Email.String)
+	}
+}
 
+func writeWhoamiResponse(w http.ResponseWriter, out whoamiResponse) {
 	w.Header().Set(headerContentType, contentTypeJSON)
 	_ = json.NewEncoder(w).Encode(out)
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const providerRedacted = "[REDACTED]"
+
 var providerSensitiveQueryKeys = map[string]struct{}{
 	"accesstoken":   {},
 	"access_token":  {},
@@ -46,7 +48,7 @@ func redactURLForLog(raw string) string {
 	query := parsed.Query()
 	for key := range query {
 		if _, ok := providerSensitiveQueryKeys[strings.ToLower(strings.TrimSpace(key))]; ok {
-			query.Set(key, "[REDACTED]")
+			query.Set(key, providerRedacted)
 		}
 	}
 	parsed.RawQuery = query.Encode()
@@ -64,12 +66,12 @@ func sanitizeLogText(raw string) string {
 		return marshalSanitizedJSON(asJSON)
 	}
 
-	sanitized = providerAuthHeaderPattern.ReplaceAllString(sanitized, `${1}[REDACTED]`)
+	sanitized = providerAuthHeaderPattern.ReplaceAllString(sanitized, `${1}`+providerRedacted)
 	for _, pattern := range providerHeaderTokenPatterns {
-		sanitized = pattern.ReplaceAllString(sanitized, `${1}[REDACTED]`)
+		sanitized = pattern.ReplaceAllString(sanitized, `${1}`+providerRedacted)
 	}
-	sanitized = providerJSONSecretPattern.ReplaceAllString(sanitized, `${1}[REDACTED]${3}`)
-	sanitized = providerQuerySecretPattern.ReplaceAllString(sanitized, `${1}[REDACTED]`)
+	sanitized = providerJSONSecretPattern.ReplaceAllString(sanitized, `${1}`+providerRedacted+`${3}`)
+	sanitized = providerQuerySecretPattern.ReplaceAllString(sanitized, `${1}`+providerRedacted)
 	return sanitized
 }
 
@@ -77,7 +79,7 @@ func marshalSanitizedJSON(value any) string {
 	sanitized := sanitizeJSONValue(value)
 	encoded, err := json.Marshal(sanitized)
 	if err != nil {
-		return "[REDACTED]"
+		return providerRedacted
 	}
 	return string(encoded)
 }
@@ -88,7 +90,7 @@ func sanitizeJSONValue(value any) any {
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
 			if _, ok := providerSensitiveQueryKeys[strings.ToLower(strings.TrimSpace(key))]; ok {
-				out[key] = "[REDACTED]"
+				out[key] = providerRedacted
 				continue
 			}
 			out[key] = sanitizeJSONValue(child)

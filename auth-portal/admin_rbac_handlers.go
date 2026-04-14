@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -9,6 +8,12 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+const errRBACLookupFailed = "rbac lookup failed"
+
+func decodeAdminRBACRequest(body *http.Request, target any) bool {
+	return decodeAdminJSONRequest(body.Body, target)
+}
 
 type adminRBACResponse struct {
 	OK          bool                   `json:"ok"`
@@ -65,7 +70,7 @@ func adminRBACGetHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)
@@ -78,8 +83,8 @@ func adminRBACBindingUpsertHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req adminRBACBindingRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminRBACRequest(r, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
@@ -108,7 +113,7 @@ func adminRBACBindingUpsertHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)
@@ -121,8 +126,8 @@ func adminRBACRoleCreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req adminRBACRoleRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminRBACRequest(r, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	if err := upsertRoleDefinition("", RoleDefinition{
@@ -143,7 +148,7 @@ func adminRBACRoleCreateHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)
@@ -157,8 +162,8 @@ func adminRBACRoleUpdateHandler(w http.ResponseWriter, r *http.Request) {
 
 	currentName := strings.TrimSpace(mux.Vars(r)["name"])
 	var req adminRBACRoleRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminRBACRequest(r, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -182,7 +187,7 @@ func adminRBACRoleUpdateHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)
@@ -209,7 +214,7 @@ func adminRBACRoleDeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)
@@ -222,8 +227,8 @@ func adminRBACPermissionCreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req adminRBACPermissionRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminRBACRequest(r, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	if err := upsertPermissionDefinition("", PermissionDefinition{Name: req.Name, Description: req.Description}); err != nil {
@@ -240,7 +245,7 @@ func adminRBACPermissionCreateHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)
@@ -254,8 +259,8 @@ func adminRBACPermissionUpdateHandler(w http.ResponseWriter, r *http.Request) {
 
 	currentName := strings.TrimSpace(mux.Vars(r)["name"])
 	var req adminRBACPermissionRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminRBACRequest(r, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -275,7 +280,7 @@ func adminRBACPermissionUpdateHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)
@@ -302,7 +307,7 @@ func adminRBACPermissionDeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := loadAdminRBACResponse()
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "rbac lookup failed"})
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errRBACLookupFailed})
 		return
 	}
 	respondJSON(w, http.StatusOK, resp)

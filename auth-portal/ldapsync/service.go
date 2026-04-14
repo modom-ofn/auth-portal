@@ -143,32 +143,52 @@ func (s *Service) Run(ctx context.Context, cfg Config, actor string) (Result, er
 }
 
 func ValidateConfig(cfg Config) error {
-	if strings.TrimSpace(cfg.LDAPHost) == "" {
-		return errors.New("ldap host is required")
+	if err := validateRequiredConfigFields(cfg); err != nil {
+		return err
 	}
-	if strings.TrimSpace(cfg.LDAPAdminDN) == "" {
-		return errors.New("ldap admin DN is required")
+	return validateGroupSyncConfig(cfg)
+}
+
+func validateRequiredConfigFields(cfg Config) error {
+	required := []struct {
+		value string
+		err   string
+	}{
+		{value: cfg.LDAPHost, err: "ldap host is required"},
+		{value: cfg.LDAPAdminDN, err: "ldap admin DN is required"},
+		{value: cfg.BaseDN, err: "base DN is required"},
 	}
-	if strings.TrimSpace(cfg.BaseDN) == "" {
-		return errors.New("base DN is required")
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			return errors.New(field.err)
+		}
 	}
-	if cfg.GroupSyncEnabled {
-		if strings.TrimSpace(cfg.GroupSearchBaseDN) == "" {
-			return errors.New("group search base DN is required when LDAP group sync is enabled")
+	return nil
+}
+
+func validateGroupSyncConfig(cfg Config) error {
+	if !cfg.GroupSyncEnabled {
+		return nil
+	}
+	required := []struct {
+		value string
+		err   string
+	}{
+		{value: cfg.GroupSearchBaseDN, err: "group search base DN is required when LDAP group sync is enabled"},
+		{value: cfg.GroupNameAttribute, err: "group name attribute is required when LDAP group sync is enabled"},
+		{value: cfg.GroupMemberAttribute, err: "group member attribute is required when LDAP group sync is enabled"},
+	}
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			return errors.New(field.err)
 		}
-		if strings.TrimSpace(cfg.GroupNameAttribute) == "" {
-			return errors.New("group name attribute is required when LDAP group sync is enabled")
-		}
-		if strings.TrimSpace(cfg.GroupMemberAttribute) == "" {
-			return errors.New("group member attribute is required when LDAP group sync is enabled")
-		}
-		if len(cfg.GroupRoleMappings) == 0 {
-			return errors.New("at least one LDAP group role mapping is required when LDAP group sync is enabled")
-		}
-		for _, mapping := range cfg.GroupRoleMappings {
-			if strings.TrimSpace(mapping.LDAPGroup) == "" || strings.TrimSpace(mapping.Role) == "" {
-				return errors.New("LDAP group mappings must include both ldapGroup and role")
-			}
+	}
+	if len(cfg.GroupRoleMappings) == 0 {
+		return errors.New("at least one LDAP group role mapping is required when LDAP group sync is enabled")
+	}
+	for _, mapping := range cfg.GroupRoleMappings {
+		if strings.TrimSpace(mapping.LDAPGroup) == "" || strings.TrimSpace(mapping.Role) == "" {
+			return errors.New("LDAP group mappings must include both ldapGroup and role")
 		}
 	}
 	return nil
