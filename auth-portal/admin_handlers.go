@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/mail"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"auth-portal/ldapsync"
+
 	"github.com/gorilla/mux"
 
 	"auth-portal/configstore"
@@ -23,7 +27,22 @@ import (
 const (
 	errClientIDRequired = "client id required"
 	errClientNotFound   = "client not found"
+	oauthHistoryKey     = "clients"
 )
+
+func decodeAdminJSONRequest(body io.Reader, target any) bool {
+	return json.NewDecoder(body).Decode(target) == nil
+}
+
+func decodeOptionalAdminJSONRequest(body io.Reader, target any) error {
+	if body == nil {
+		return nil
+	}
+	if err := json.NewDecoder(body).Decode(target); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
 
 type adminConfigSectionProviders struct {
 	Version int64           `json:"version"`
@@ -45,12 +64,18 @@ type adminConfigSectionAppSettings struct {
 	Config  AppSettingsConfig `json:"config"`
 }
 
+type adminConfigSectionLDAPSync struct {
+	Version int64          `json:"version"`
+	Config  LDAPSyncConfig `json:"config"`
+}
+
 type adminConfigResponse struct {
 	OK          bool                          `json:"ok"`
 	Providers   adminConfigSectionProviders   `json:"providers"`
 	Security    adminConfigSectionSecurity    `json:"security"`
 	MFA         adminConfigSectionMFA         `json:"mfa"`
 	AppSettings adminConfigSectionAppSettings `json:"appSettings"`
+	LDAPSync    adminConfigSectionLDAPSync    `json:"ldapSync"`
 	LoadedAt    time.Time                     `json:"loadedAt"`
 }
 
@@ -74,6 +99,11 @@ type adminConfigHistoryResponse struct {
 	Entries []adminConfigHistoryEntry `json:"entries"`
 }
 
+type adminConfigPermissionCatalogResponse struct {
+	OK          bool                   `json:"ok"`
+	Permissions []PermissionDefinition `json:"permissions"`
+}
+
 type adminOAuthClient struct {
 	ClientID      string    `json:"clientId"`
 	Name          string    `json:"name"`
@@ -90,6 +120,25 @@ type adminOAuthClientsResponse struct {
 	Clients []adminOAuthClient `json:"clients"`
 }
 
+type adminOAuthScopeDefinition struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	System      bool   `json:"system"`
+}
+
+type adminOAuthScopeCatalogResponse struct {
+	OK     bool                        `json:"ok"`
+	Scopes []adminOAuthScopeDefinition `json:"scopes"`
+}
+
+type adminOAuthAuditPayload struct {
+	Action       string   `json:"action"`
+	ClientID     string   `json:"clientId"`
+	Name         string   `json:"name,omitempty"`
+	RedirectURIs []string `json:"redirectUris,omitempty"`
+	Scopes       []string `json:"scopes,omitempty"`
+}
+
 type adminOAuthClientResponse struct {
 	OK           bool             `json:"ok"`
 	Client       adminOAuthClient `json:"client"`
@@ -100,6 +149,23 @@ type adminOAuthClientRequest struct {
 	Name         string   `json:"name"`
 	RedirectURIs []string `json:"redirectUris"`
 	Scopes       []string `json:"scopes"`
+	Reason       string   `json:"reason"`
+}
+
+type adminOAuthActionRequest struct {
+	Reason string `json:"reason"`
+}
+
+type adminLDAPSyncResponse struct {
+	OK     bool                       `json:"ok"`
+	Config adminConfigSectionLDAPSync `json:"config"`
+	Status ldapSyncStatusView         `json:"status"`
+	Runs   []ldapSyncRunRecord        `json:"runs"`
+}
+
+type adminLDAPSyncTestResponse struct {
+	OK     bool                          `json:"ok"`
+	Result ldapsync.ConnectionTestResult `json:"result"`
 }
 
 func adminConfigGetHandler(w http.ResponseWriter, _ *http.Request) {
@@ -188,6 +254,8 @@ func buildConfigPayload(section configstore.Section, raw json.RawMessage) (any, 
 		return parseMFAPayload(raw)
 	case configstore.SectionAppSettings:
 		return parseAppSettingsPayload(raw)
+	case configstore.SectionLDAPSync:
+		return parseLDAPSyncPayload(raw)
 	default:
 		return nil, errors.New("unsupported section")
 	}
@@ -236,6 +304,18 @@ func parseAppSettingsPayload(raw json.RawMessage) (AppSettingsConfig, error) {
 	}
 	normalizeAppSettingsConfig(&cfg)
 	if err := validateAppSettingsConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func parseLDAPSyncPayload(raw json.RawMessage) (LDAPSyncConfig, error) {
+	var cfg LDAPSyncConfig
+	if json.Unmarshal(raw, &cfg) != nil {
+		return cfg, errors.New("invalid ldap sync config")
+	}
+	normalizeLDAPSyncConfig(&cfg)
+	if err := validateLDAPSyncConfig(cfg); err != nil {
 		return cfg, err
 	}
 	return cfg, nil
@@ -303,6 +383,19 @@ func adminConfigHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
+func adminConfigPermissionCatalogHandler(w http.ResponseWriter, _ *http.Request) {
+	permissions, err := listPermissionDefinitions()
+	if err != nil {
+		log.Printf("admin config permission catalog failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "permission catalog unavailable"})
+		return
+	}
+	respondJSON(w, http.StatusOK, adminConfigPermissionCatalogResponse{
+		OK:          true,
+		Permissions: permissions,
+	})
+}
+
 func adminOAuthClientsList(w http.ResponseWriter, r *http.Request) {
 	clients, err := oauthService.ListClients(r.Context())
 	if err != nil {
@@ -320,14 +413,85 @@ func adminOAuthClientsList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func adminOAuthHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
+		return
+	}
+	limit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if configStore == nil {
+		log.Printf("admin oauth history unavailable: config store not initialized")
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "config store unavailable"})
+		return
+	}
+
+	history, err := configStore.History(r.Context(), configstore.SectionOAuth, oauthHistoryKey, limit)
+	if err != nil {
+		log.Printf("admin oauth history failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "history lookup failed"})
+		return
+	}
+
+	resp := adminConfigHistoryResponse{
+		OK:      true,
+		Section: "oauth",
+		Entries: make([]adminConfigHistoryEntry, 0, len(history)),
+	}
+	for _, entry := range history {
+		resp.Entries = append(resp.Entries, adminConfigHistoryEntry{
+			Version:   entry.Version,
+			UpdatedAt: entry.UpdatedAt,
+			UpdatedBy: entry.UpdatedBy,
+			Reason:    entry.Reason,
+			Config:    entry.Value,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func adminOAuthScopeCatalogHandler(w http.ResponseWriter, r *http.Request) {
+	scopes := []adminOAuthScopeDefinition{
+		{Name: "openid", Description: "Sign in with AuthPortal and share the user identifier.", System: true},
+		{Name: "profile", Description: "Access the user's basic profile information.", System: true},
+		{Name: "email", Description: "Access the user's email address.", System: true},
+		{Name: "offline_access", Description: "Allow refresh tokens for long-lived sessions.", System: true},
+	}
+	permissions, err := listPermissionDefinitions()
+	if err != nil {
+		log.Printf("admin oauth scope catalog: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "scope catalog unavailable"})
+		return
+	}
+	for _, permission := range permissions {
+		scopes = append(scopes, adminOAuthScopeDefinition{
+			Name:        permission.Name,
+			Description: permission.Description,
+			System:      permission.System,
+		})
+	}
+	respondJSON(w, http.StatusOK, adminOAuthScopeCatalogResponse{
+		OK:     true,
+		Scopes: scopes,
+	})
+}
+
 func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
 		return
 	}
 	var req adminOAuthClientRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminJSONRequest(r.Body, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	payload, err := sanitizeOAuthClientRequest(req)
@@ -341,6 +505,7 @@ func adminOAuthClientCreate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client create failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "created", actorFromRequest(r), client, payload.Reason)
 	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
 		OK:           true,
 		Client:       mapOAuthClient(client),
@@ -359,8 +524,8 @@ func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req adminOAuthClientRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+	if !decodeAdminJSONRequest(r.Body, &req) {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
 		return
 	}
 	payload, err := sanitizeOAuthClientRequest(req)
@@ -378,6 +543,7 @@ func adminOAuthClientUpdate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client update failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "updated", actorFromRequest(r), client, payload.Reason)
 	respondJSON(w, http.StatusOK, adminOAuthClientResponse{
 		OK:     true,
 		Client: mapOAuthClient(client),
@@ -394,6 +560,21 @@ func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errClientIDRequired})
 		return
 	}
+	var req adminOAuthActionRequest
+	if err := decodeOptionalAdminJSONRequest(r.Body, &req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
+		return
+	}
+	client, err := oauthService.Client(r.Context(), clientID)
+	if err != nil {
+		if errors.Is(err, oauth.ErrClientNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
+			return
+		}
+		log.Printf("admin oauth rotate lookup: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client lookup failed"})
+		return
+	}
 	secret, err := oauthService.RotateClientSecret(r.Context(), clientID)
 	if err != nil {
 		if errors.Is(err, oauth.ErrClientNotFound) {
@@ -404,6 +585,7 @@ func adminOAuthClientRotateSecret(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "secret rotation failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "secret rotated", actorFromRequest(r), client, sanitizeAdminReason(req.Reason))
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ok":           true,
 		"clientSecret": secret,
@@ -420,6 +602,21 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errClientIDRequired})
 		return
 	}
+	var req adminOAuthActionRequest
+	if err := decodeOptionalAdminJSONRequest(r.Body, &req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errInvalidRequest})
+		return
+	}
+	client, err := oauthService.Client(r.Context(), clientID)
+	if err != nil {
+		if errors.Is(err, oauth.ErrClientNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
+			return
+		}
+		log.Printf("admin oauth delete lookup: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client lookup failed"})
+		return
+	}
 	if err := oauthService.DeleteClient(r.Context(), clientID); err != nil {
 		if errors.Is(err, oauth.ErrClientNotFound) {
 			respondJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": errClientNotFound})
@@ -429,15 +626,122 @@ func adminOAuthClientDelete(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "client delete failed"})
 		return
 	}
+	recordOAuthAudit(r.Context(), "deleted", actorFromRequest(r), client, sanitizeAdminReason(req.Reason))
 	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func adminPageHandler(w http.ResponseWriter, _ *http.Request) {
+func adminPageHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := currentRuntimeConfig()
 	render(w, "admin.html", map[string]any{
 		"ProviderDisplay": mediaProviderDisplay,
 		"ConfigLoadedAt":  cfg.loadedAt().Format(time.RFC3339),
 		"AppTimeZone":     appTimeZone,
+		"AppVersion":      appVersion,
+		"CurrentUser":     usernameFrom(r.Context()),
+	})
+}
+
+func adminLDAPSyncGetHandler(w http.ResponseWriter, _ *http.Request) {
+	cfg := currentRuntimeConfig()
+	status := ldapSyncStatusView{}
+	runs := []ldapSyncRunRecord{}
+	if manager := currentLDAPSyncManager(); manager != nil {
+		var err error
+		status, err = manager.Status(10)
+		if err != nil {
+			log.Printf("admin ldap sync status failed: %v", err)
+			respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "ldap sync status unavailable"})
+			return
+		}
+		runs, err = manager.ListRuns(10)
+		if err != nil {
+			log.Printf("admin ldap sync history failed: %v", err)
+			respondJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "ldap sync history unavailable"})
+			return
+		}
+	}
+	respondJSON(w, http.StatusOK, adminLDAPSyncResponse{
+		OK: true,
+		Config: adminConfigSectionLDAPSync{
+			Version: cfg.LDAPSyncVersion,
+			Config:  cfg.LDAPSync,
+		},
+		Status: status,
+		Runs:   runs,
+	})
+}
+
+func adminLDAPSyncRunHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
+		return
+	}
+	manager := currentLDAPSyncManager()
+	if manager == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "ldap sync unavailable"})
+		return
+	}
+	actor := strings.TrimSpace(usernameFrom(r.Context()))
+	if actor == "" {
+		actor = "admin"
+	}
+	result, status, err := manager.Run(r.Context(), actor, "manual")
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if errors.Is(err, ldapsync.ErrRunInProgress) {
+			statusCode = http.StatusConflict
+		} else if strings.Contains(strings.ToLower(err.Error()), "required") {
+			statusCode = http.StatusBadRequest
+		}
+		respondJSON(w, statusCode, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"result": result,
+		"status": status,
+	})
+}
+
+func adminLDAPSyncTestConnectionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": errMethodNotAllowed})
+		return
+	}
+	if ldapSyncSvc == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "ldap sync unavailable"})
+		return
+	}
+	var raw json.RawMessage
+	if json.NewDecoder(r.Body).Decode(&raw) != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request body"})
+		return
+	}
+	cfg, err := parseLDAPSyncPayload(raw)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	result, err := ldapSyncSvc.TestConnection(r.Context(), ldapsync.Config{
+		LDAPHost:             cfg.LDAPHost,
+		LDAPAdminDN:          cfg.LDAPAdminDN,
+		LDAPAdminPassword:    cfg.LDAPAdminPassword,
+		BaseDN:               cfg.BaseDN,
+		LDAPStartTLS:         cfg.LDAPStartTLS,
+		DeleteStaleEntries:   cfg.DeleteStaleEntries,
+		GroupSyncEnabled:     cfg.GroupSyncEnabled,
+		GroupSearchBaseDN:    cfg.GroupSearchBaseDN,
+		GroupNameAttribute:   cfg.GroupNameAttribute,
+		GroupMemberAttribute: cfg.GroupMemberAttribute,
+		GroupRoleMappings:    mapLDAPGroupRoleMappings(cfg.GroupRoleMappings),
+	})
+	if err != nil {
+		respondJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, adminLDAPSyncTestResponse{
+		OK:     true,
+		Result: result,
 	})
 }
 
@@ -460,6 +764,10 @@ func buildAdminConfigResponse(cfg RuntimeConfig) adminConfigResponse {
 			Version: cfg.AppSettingsVersion,
 			Config:  cfg.AppSettings,
 		},
+		LDAPSync: adminConfigSectionLDAPSync{
+			Version: cfg.LDAPSyncVersion,
+			Config:  cfg.LDAPSync,
+		},
 		LoadedAt: cfg.loadedAt(),
 	}
 }
@@ -474,6 +782,8 @@ func sectionFromKey(key string) (configstore.Section, error) {
 		return configstore.SectionMFA, nil
 	case "app-settings":
 		return configstore.SectionAppSettings, nil
+	case "ldap-sync":
+		return configstore.SectionLDAPSync, nil
 	default:
 		return "", errors.New("unknown section")
 	}
@@ -489,6 +799,39 @@ func mapOAuthClient(c oauth.Client) adminOAuthClient {
 		ResponseTypes: append([]string(nil), c.ResponseTypes...),
 		CreatedAt:     c.CreatedAt.UTC(),
 		UpdatedAt:     c.UpdatedAt.UTC(),
+	}
+}
+
+func actorFromRequest(r *http.Request) string {
+	actor := strings.TrimSpace(usernameFrom(r.Context()))
+	if actor == "" {
+		return "admin"
+	}
+	return actor
+}
+
+func recordOAuthAudit(ctx context.Context, action string, actor string, client oauth.Client, reason string) {
+	if configStore == nil {
+		return
+	}
+	name := strings.TrimSpace(client.Name)
+	if name == "" {
+		name = client.ClientID
+	}
+	message := fmt.Sprintf("Client %s: %s (%s)", strings.TrimSpace(action), name, client.ClientID)
+	err := configStore.AppendHistory(ctx, configstore.SectionOAuth, adminOAuthAuditPayload{
+		Action:       strings.TrimSpace(action),
+		ClientID:     strings.TrimSpace(client.ClientID),
+		Name:         strings.TrimSpace(client.Name),
+		RedirectURIs: append([]string(nil), client.RedirectURIs...),
+		Scopes:       append([]string(nil), client.Scopes...),
+	}, configstore.UpdateOptions{
+		Key:       oauthHistoryKey,
+		UpdatedBy: actor,
+		Reason:    sanitizeAdminReason(firstNonEmpty(strings.TrimSpace(reason), message)),
+	})
+	if err != nil {
+		log.Printf("admin oauth audit failed: %v", err)
 	}
 }
 
@@ -511,11 +854,41 @@ func sanitizeOAuthClientRequest(req adminOAuthClientRequest) (adminOAuthClientRe
 	if len(scopes) == 0 {
 		scopes = []string{"openid", "profile", "email"}
 	}
+	if err := validateOAuthScopes(scopes); err != nil {
+		return adminOAuthClientRequest{}, err
+	}
 	return adminOAuthClientRequest{
 		Name:         name,
 		RedirectURIs: redirects,
 		Scopes:       scopes,
+		Reason:       sanitizeAdminReason(req.Reason),
 	}, nil
+}
+
+func validateOAuthScopes(scopes []string) error {
+	allowed := make(map[string]struct{}, 16)
+	for _, scope := range []string{"openid", "profile", "email", "offline_access"} {
+		allowed[scope] = struct{}{}
+	}
+	if db != nil {
+		available, err := listPermissionNames()
+		if err != nil {
+			return errors.New("scope validation failed")
+		}
+		for _, scope := range available {
+			allowed[normalizeRBACName(scope)] = struct{}{}
+		}
+	}
+	for _, scope := range scopes {
+		scope = normalizeRBACName(scope)
+		if scope == "" {
+			continue
+		}
+		if _, ok := allowed[scope]; !ok {
+			return fmt.Errorf("unknown oauth scope %q", scope)
+		}
+	}
+	return nil
 }
 
 func normalizeAdminStringList(values []string) []string {
@@ -574,10 +947,19 @@ func normalizeAppSettingsConfig(cfg *AppSettingsConfig) {
 	defaults := defaultAppSettingsConfig()
 	cfg.LoginExtraLinkURL = strings.TrimSpace(firstNonEmpty(cfg.LoginExtraLinkURL, defaults.LoginExtraLinkURL))
 	cfg.LoginExtraLinkText = strings.TrimSpace(firstNonEmpty(cfg.LoginExtraLinkText, defaults.LoginExtraLinkText))
+	cfg.PortalAppName = strings.TrimSpace(firstNonEmpty(cfg.PortalAppName, defaults.PortalAppName))
+	cfg.PortalLogoURL = strings.TrimSpace(firstNonEmpty(cfg.PortalLogoURL, defaults.PortalLogoURL))
+	cfg.LoginBodyText = strings.TrimSpace(firstNonEmpty(cfg.LoginBodyText, defaults.LoginBodyText))
+	cfg.AuthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.AuthorizedTitleText, defaults.AuthorizedTitleText))
+	cfg.AuthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.AuthorizedBodyText, defaults.AuthorizedBodyText))
+	cfg.UnauthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.UnauthorizedTitleText, defaults.UnauthorizedTitleText))
+	cfg.UnauthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.UnauthorizedBodyText, defaults.UnauthorizedBodyText))
 	cfg.UnauthRequestEmail = strings.TrimSpace(firstNonEmpty(cfg.UnauthRequestEmail, defaults.UnauthRequestEmail))
 	cfg.UnauthRequestSubject = strings.TrimSpace(firstNonEmpty(cfg.UnauthRequestSubject, defaults.UnauthRequestSubject))
 	cfg.PortalBackgroundColor = strings.TrimSpace(firstNonEmpty(cfg.PortalBackgroundColor, defaults.PortalBackgroundColor))
 	cfg.PortalModalColor = strings.TrimSpace(firstNonEmpty(cfg.PortalModalColor, defaults.PortalModalColor))
+	cfg.PortalTitleColor = strings.TrimSpace(firstNonEmpty(cfg.PortalTitleColor, defaults.PortalTitleColor))
+	cfg.PortalBodyTextColor = strings.TrimSpace(firstNonEmpty(cfg.PortalBodyTextColor, defaults.PortalBodyTextColor))
 	cfg.ServiceLinks = normalizeServiceLinks(cfg.ServiceLinks)
 }
 
@@ -599,9 +981,10 @@ func normalizeServiceLinks(links []AppServiceLink) []AppServiceLink {
 		}
 		seen[key] = struct{}{}
 		normalized = append(normalized, AppServiceLink{
-			Name:  name,
-			URL:   rawURL,
-			Color: strings.TrimSpace(link.Color),
+			Name:               name,
+			URL:                rawURL,
+			Color:              strings.TrimSpace(link.Color),
+			RequiredPermission: normalizeRBACName(link.RequiredPermission),
 		})
 		if len(normalized) >= 20 {
 			break
@@ -666,6 +1049,14 @@ func validateOptionalPortalLink(raw string) error {
 	return nil
 }
 
+func validateOptionalLogoLink(raw string) error {
+	link := strings.TrimSpace(raw)
+	if link != "" && !isValidPortalLinkURL(link) {
+		return errors.New("portal logo URL must be a relative path or absolute URL")
+	}
+	return nil
+}
+
 func validateOptionalRequestEmail(raw string) error {
 	email := strings.TrimSpace(raw)
 	if email == "" {
@@ -685,6 +1076,13 @@ func validateOptionalPortalColor(raw, field string) error {
 	return nil
 }
 
+func validatePortalTextLength(raw, field string, max int) error {
+	if len(strings.TrimSpace(raw)) > max {
+		return fmt.Errorf("%s exceeds %d characters", field, max)
+	}
+	return nil
+}
+
 func validateServiceLinkEntry(idx int, item AppServiceLink) error {
 	if strings.TrimSpace(item.Name) == "" {
 		return fmt.Errorf("service link %d name is required", idx+1)
@@ -698,21 +1096,50 @@ func validateServiceLinkEntry(idx int, item AppServiceLink) error {
 	if color := strings.TrimSpace(item.Color); color != "" && !isValidServiceLinkColor(color) {
 		return fmt.Errorf("service link %d color must be a #RRGGBB value", idx+1)
 	}
+	if permission := normalizeRBACName(item.RequiredPermission); permission != "" {
+		var exists bool
+		if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM permissions WHERE name = $1)`, permission).Scan(&exists); err != nil {
+			return fmt.Errorf("service link %d permission lookup failed", idx+1)
+		}
+		if !exists {
+			return fmt.Errorf("service link %d permission %q does not exist", idx+1, permission)
+		}
+	}
 	return nil
 }
 
 func validateAppSettingsConfig(cfg AppSettingsConfig) error {
-	if err := validateOptionalPortalLink(cfg.LoginExtraLinkURL); err != nil {
-		return err
+	optionalChecks := []func() error{
+		func() error { return validateOptionalPortalLink(cfg.LoginExtraLinkURL) },
+		func() error { return validateOptionalLogoLink(cfg.PortalLogoURL) },
+		func() error { return validateOptionalRequestEmail(cfg.UnauthRequestEmail) },
+		func() error { return validateOptionalPortalColor(cfg.PortalBackgroundColor, "portal background color") },
+		func() error { return validateOptionalPortalColor(cfg.PortalModalColor, "portal modal color") },
+		func() error { return validateOptionalPortalColor(cfg.PortalTitleColor, "portal title color") },
+		func() error { return validateOptionalPortalColor(cfg.PortalBodyTextColor, "portal body text color") },
 	}
-	if err := validateOptionalRequestEmail(cfg.UnauthRequestEmail); err != nil {
-		return err
+	for _, check := range optionalChecks {
+		if err := check(); err != nil {
+			return err
+		}
 	}
-	if err := validateOptionalPortalColor(cfg.PortalBackgroundColor, "portal background color"); err != nil {
-		return err
+
+	textLengthChecks := []struct {
+		value string
+		field string
+		max   int
+	}{
+		{value: cfg.PortalAppName, field: "portal app name", max: 80},
+		{value: cfg.LoginBodyText, field: "login body text", max: 240},
+		{value: cfg.AuthorizedTitleText, field: "authorized title text", max: 160},
+		{value: cfg.AuthorizedBodyText, field: "authorized body text", max: 500},
+		{value: cfg.UnauthorizedTitleText, field: "unauthorized title text", max: 160},
+		{value: cfg.UnauthorizedBodyText, field: "unauthorized body text", max: 500},
 	}
-	if err := validateOptionalPortalColor(cfg.PortalModalColor, "portal modal color"); err != nil {
-		return err
+	for _, check := range textLengthChecks {
+		if err := validatePortalTextLength(check.value, check.field, check.max); err != nil {
+			return err
+		}
 	}
 
 	for idx, item := range cfg.ServiceLinks {
@@ -721,6 +1148,106 @@ func validateAppSettingsConfig(cfg AppSettingsConfig) error {
 		}
 	}
 	return nil
+}
+
+func normalizeLDAPSyncConfig(cfg *LDAPSyncConfig) {
+	defaults := defaultLDAPSyncConfig()
+	cfg.LDAPHost = strings.TrimSpace(firstNonEmpty(cfg.LDAPHost, defaults.LDAPHost))
+	cfg.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPAdminDN, defaults.LDAPAdminDN))
+	cfg.LDAPAdminPassword = strings.TrimSpace(firstNonEmpty(cfg.LDAPAdminPassword, defaults.LDAPAdminPassword))
+	cfg.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.BaseDN, defaults.BaseDN))
+	cfg.GroupSearchBaseDN = strings.TrimSpace(firstNonEmpty(cfg.GroupSearchBaseDN, defaults.GroupSearchBaseDN))
+	cfg.GroupNameAttribute = strings.TrimSpace(firstNonEmpty(cfg.GroupNameAttribute, defaults.GroupNameAttribute))
+	cfg.GroupMemberAttribute = strings.TrimSpace(firstNonEmpty(cfg.GroupMemberAttribute, defaults.GroupMemberAttribute))
+	cfg.ScheduleFrequency = strings.ToLower(strings.TrimSpace(firstNonEmpty(cfg.ScheduleFrequency, defaults.ScheduleFrequency)))
+	cfg.ScheduleTimeOfDay = strings.TrimSpace(firstNonEmpty(cfg.ScheduleTimeOfDay, defaults.ScheduleTimeOfDay))
+	cfg.ScheduleDayOfWeek = strings.ToLower(strings.TrimSpace(firstNonEmpty(cfg.ScheduleDayOfWeek, defaults.ScheduleDayOfWeek)))
+	if cfg.ScheduleMinute < 0 || cfg.ScheduleMinute > 59 {
+		cfg.ScheduleMinute = defaults.ScheduleMinute
+	}
+	cfg.GroupRoleMappings = normalizeLDAPGroupRoleMappings(cfg.GroupRoleMappings)
+}
+
+func validateLDAPSyncConfig(cfg LDAPSyncConfig) error {
+	if err := ldapsync.ValidateConfig(ldapsync.Config{
+		LDAPHost:             cfg.LDAPHost,
+		LDAPAdminDN:          cfg.LDAPAdminDN,
+		LDAPAdminPassword:    cfg.LDAPAdminPassword,
+		BaseDN:               cfg.BaseDN,
+		LDAPStartTLS:         cfg.LDAPStartTLS,
+		GroupSyncEnabled:     cfg.GroupSyncEnabled,
+		GroupSearchBaseDN:    cfg.GroupSearchBaseDN,
+		GroupNameAttribute:   cfg.GroupNameAttribute,
+		GroupMemberAttribute: cfg.GroupMemberAttribute,
+		GroupRoleMappings:    mapLDAPGroupRoleMappings(cfg.GroupRoleMappings),
+	}); err != nil {
+		return err
+	}
+	switch cfg.ScheduleFrequency {
+	case "hourly", "daily", "weekly":
+	default:
+		return fmt.Errorf("unsupported ldap sync frequency %q", cfg.ScheduleFrequency)
+	}
+	if cfg.ScheduleFrequency == "hourly" {
+		if cfg.ScheduleMinute < 0 || cfg.ScheduleMinute > 59 {
+			return fmt.Errorf("invalid ldap sync minute %d", cfg.ScheduleMinute)
+		}
+		return nil
+	}
+	if _, _, err := parseTimeOfDay(cfg.ScheduleTimeOfDay); err != nil {
+		return fmt.Errorf("invalid ldap sync time: %w", err)
+	}
+	if cfg.ScheduleFrequency == "weekly" {
+		if _, err := parseWeekday(cfg.ScheduleDayOfWeek); err != nil {
+			return fmt.Errorf("invalid ldap sync weekday: %w", err)
+		}
+	}
+	return nil
+}
+
+func normalizeLDAPGroupRoleMappings(values []LDAPGroupRoleMapping) []LDAPGroupRoleMapping {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]LDAPGroupRoleMapping, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		group := strings.TrimSpace(value.LDAPGroup)
+		role := normalizeRBACName(value.Role)
+		if group == "" || role == "" {
+			continue
+		}
+		key := strings.ToLower(group) + "|" + role
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, LDAPGroupRoleMapping{
+			LDAPGroup: group,
+			Role:      role,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if strings.EqualFold(out[i].LDAPGroup, out[j].LDAPGroup) {
+			return out[i].Role < out[j].Role
+		}
+		return strings.ToLower(out[i].LDAPGroup) < strings.ToLower(out[j].LDAPGroup)
+	})
+	return out
+}
+
+func mapLDAPGroupRoleMappings(values []LDAPGroupRoleMapping) []ldapsync.GroupRoleMapping {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]ldapsync.GroupRoleMapping, 0, len(values))
+	for _, value := range values {
+		out = append(out, ldapsync.GroupRoleMapping{
+			LDAPGroup: strings.TrimSpace(value.LDAPGroup),
+			Role:      normalizeRBACName(value.Role),
+		})
+	}
+	return out
 }
 
 var serviceLinkColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)

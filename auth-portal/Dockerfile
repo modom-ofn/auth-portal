@@ -1,10 +1,11 @@
 # ---- builder ----
-FROM golang:1.26.1-alpine3.23 AS build
+# dhi.io/golang:1.26.2-alpine3.23-dev
+FROM dhi.io/golang@sha256:0d916bcd9ca2060863389d96c8ea686d72e03ccc48ebf498be2150f21f720999 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
 RUN apk add --no-cache "busybox>=1.37.0-r27" && \
-    apk add --no-cache ca-certificates git openssl && update-ca-certificates
+    apk add --no-cache ca-certificates git tzdata && update-ca-certificates
 
 # 1) Prime module cache (copies go.mod/go.sum if present)
 COPY go.mod go.sum ./
@@ -18,6 +19,7 @@ COPY providers ./providers
 COPY oauth ./oauth
 COPY configstore ./configstore
 COPY health ./health
+COPY ldapsync ./ldapsync
 COPY static ./static
 COPY templates ./templates
 RUN go mod tidy -compat=1.26
@@ -28,19 +30,16 @@ RUN mkdir -p /out && \
     go build -v -x -buildvcs=false -trimpath -ldflags="-s -w" -o /out/auth-portal .
 
 # ---- runtime ----
-FROM dhi.io/alpine-base:3.23-alpine3.23-dev
+# dhi.io/alpine-base:3.23-alpine3.23
+FROM dhi.io/alpine-base@sha256:27d91b0ae2dbb1bbf89398f4ee4564a0c7a14a82c34c8cffd3b2687033a9d97a
 WORKDIR /app
 
-RUN apk add --no-cache "busybox>=1.37.0-r27" && \
-    apk add --no-cache ca-certificates openssl tzdata && \
-    apk --no-cache upgrade musl && update-ca-certificates
+COPY --from=build --chown=65532:65532 /out/auth-portal /app/auth-portal
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --chown=65532:65532 templates ./templates
+COPY --chown=65532:65532 static ./static
 
-COPY --from=build /out/auth-portal /app/auth-portal
-COPY templates ./templates
-COPY static ./static
-
-RUN adduser -D -H -u 10001 app && chown -R app:app /app
-USER 10001:10001
+USER 65532:65532
 
 EXPOSE 8080
 ENTRYPOINT ["/app/auth-portal"]

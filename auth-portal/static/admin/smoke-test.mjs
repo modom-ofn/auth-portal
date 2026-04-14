@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { createSectionRouter } from './section-router.js';
 import { createConfigSectionController } from './config-section.js';
 import { createHelpModalController } from './help-modal.js';
-import { createRecentChangesController } from './recent-changes.js';
+import { createLogsSectionController } from './logs-section.js';
 import { createOAuthSectionController } from './oauth-section.js';
+import { createLDAPSyncSectionController } from './ldap-sync-section.js';
 import { createBackupsSectionController } from './backups-section.js';
 import { createAdminAPI } from './admin-api.js';
 
@@ -36,7 +37,7 @@ const makeEl = () => {
 };
 
 const runRouterSmoke = async () => {
-  const tabs = ['providers', 'oauth', 'backups'].map((section) => ({
+  const tabs = ['providers', 'oauth', 'ldap-sync', 'backups'].map((section) => ({
     dataset: { section },
     classList: {
       active: false,
@@ -48,6 +49,7 @@ const runRouterSmoke = async () => {
   }));
   const configPanel = makeEl();
   const oauthPanel = makeEl();
+  const ldapSyncPanel = makeEl();
   const backupsPanel = makeEl();
   const events = [];
 
@@ -55,6 +57,7 @@ const runRouterSmoke = async () => {
     tabs,
     configPanel,
     oauthPanel,
+    ldapSyncPanel,
     backupsPanel,
     initialSection: 'providers',
     isConfigSection: (section) => section === 'providers',
@@ -62,23 +65,28 @@ const runRouterSmoke = async () => {
     onSectionChange: async (section) => events.push(`change:${section}`),
     onConfigSection: async (section) => events.push(`config:${section}`),
     onOAuthSection: async (section) => events.push(`oauth:${section}`),
+    onLDAPSyncSection: async (section) => events.push(`ldap:${section}`),
     onBackupsSection: async (section) => events.push(`backups:${section}`),
   });
 
   router.init();
   await router.activate('providers');
   await router.activate('oauth');
+  await router.activate('ldap-sync');
   await router.activate('backups');
 
   assert.equal(router.getCurrentSection(), 'backups');
   assert.equal(configPanel.hidden, true);
   assert.equal(oauthPanel.hidden, true);
+  assert.equal(ldapSyncPanel.hidden, true);
   assert.equal(backupsPanel.hidden, false);
   assert.deepEqual(events, [
     'change:providers',
     'config:providers',
     'change:oauth',
     'oauth:oauth',
+    'change:ldap-sync',
+    'ldap:ldap-sync',
     'change:backups',
     'backups:backups',
   ]);
@@ -97,6 +105,7 @@ const runConfigSmoke = async () => {
         security: { version: 1, config: {} },
         mfa: { version: 1, config: {} },
         appSettings: { version: 1, config: {} },
+        ldapSync: { version: 1, config: {} },
         loadedAt: '2026-03-08T00:00:00Z',
       };
     },
@@ -109,6 +118,7 @@ const runConfigSmoke = async () => {
         security: { version: 1, config: {} },
         mfa: { version: 1, config: {} },
         appSettings: { version: 1, config: {} },
+        ldapSync: { version: 1, config: {} },
         loadedAt: '2026-03-08T00:00:00Z',
       };
     },
@@ -150,7 +160,7 @@ const runConfigSmoke = async () => {
   assert.equal(recorded, 'providers:Configuration saved');
 };
 
-const runHelpAndRecentSmoke = () => {
+const runHelpAndLogsSmoke = () => {
   const helpBtn = makeEl();
   const help = createHelpModalController({
     button: helpBtn,
@@ -168,22 +178,32 @@ const runHelpAndRecentSmoke = () => {
   help.updateButton('oauth');
   assert.equal(helpBtn.hidden, true);
 
-  const historyState = { providers: [] };
-  const recent = createRecentChangesController({
-    recentChangesBtn: makeEl(),
-    recentChangesModal: makeEl(),
-    recentChangesModalClose: makeEl(),
-    recentChangesModalTitle: makeEl(),
-    recentChangesList: { ...makeEl(), innerHTML: '', appendChild() {} },
-    labels: { providers: 'Providers' },
-    isConfigSection: () => false,
-    fetchHistory: async () => {},
-    nowISO: () => '2026-03-08T00:00:00Z',
-    getCurrentSection: () => 'providers',
-    historyState,
+  const logs = createLogsSectionController({
+    api: {
+      async getLogsHistory() {
+        return { entries: [] };
+      },
+      async getLogStream() {
+        return { cursor: 0, entries: [] };
+      },
+    },
+    panel: makeEl(),
+    refreshBtn: makeEl(),
+    historySummaryEl: makeEl(),
+    sectionFilterEl: { ...makeEl(), value: '', innerHTML: '', appendChild() {}, addEventListener() {} },
+    userFilterEl: { ...makeEl(), value: '', innerHTML: '', appendChild() {}, addEventListener() {} },
+    sortOrderEl: { ...makeEl(), value: 'desc', addEventListener() {} },
+    historyRows: { ...makeEl(), innerHTML: '', appendChild() {} },
+    streamStatusEl: makeEl(),
+    streamIntervalEl: { ...makeEl(), value: '5000' },
+    streamStartBtn: makeEl(),
+    streamPauseBtn: makeEl(),
+    streamRefreshBtn: makeEl(),
+    streamEmptyEl: makeEl(),
+    streamOutputEl: { ...makeEl(), hidden: true, scrollTop: 0, scrollHeight: 0 },
+    showStatus() {},
   });
-  recent.recordLocalActivity('providers', 'Changed');
-  assert.equal(historyState.providers.length, 1);
+  assert.equal(typeof logs.load, 'function');
 };
 
 const runConstructionSmoke = () => {
@@ -191,6 +211,8 @@ const runConstructionSmoke = () => {
   const methods = [
     'getConfig',
     'getConfigHistory',
+    'getLogsHistory',
+    'getLogStream',
     'updateConfig',
     'listOAuthClients',
     'createOAuthClient',
@@ -198,6 +220,9 @@ const runConstructionSmoke = () => {
     'deleteOAuthClient',
     'rotateOAuthSecret',
     'listBackups',
+    'getLDAPSync',
+    'testLDAPSyncConnection',
+    'runLDAPSync',
     'createBackup',
     'updateBackupSchedule',
     'deleteBackup',
@@ -228,6 +253,50 @@ const runConstructionSmoke = () => {
   });
   assert.equal(typeof oauth.bind, 'function');
   assert.equal(typeof oauth.loadClients, 'function');
+
+  const ldapSync = createLDAPSyncSectionController({
+    api: {},
+    panel: makeEl(),
+    refreshBtn: makeEl(),
+    exportBtn: makeEl(),
+    importBtn: makeEl(),
+    importInput: makeEl(),
+    testBtn: makeEl(),
+    runBtn: makeEl(),
+    form: makeEl(),
+    hostInput: makeEl(),
+    adminDnInput: makeEl(),
+    passwordInput: makeEl(),
+    baseDnInput: makeEl(),
+    startTlsInput: makeEl(),
+    deleteStaleInput: makeEl(),
+    scheduleEnabledInput: makeEl(),
+    frequencyInput: makeEl(),
+    timeInput: makeEl(),
+    weekdayInput: makeEl(),
+    minuteInput: makeEl(),
+    nextRunEl: makeEl(),
+    frequencyRows: [],
+    reasonInput: makeEl(),
+    saveBtn: makeEl(),
+    statusSummary: makeEl(),
+    statusState: makeEl(),
+    statusStartedAt: makeEl(),
+    statusFinishedAt: makeEl(),
+    statusSuccessAt: makeEl(),
+    statusTriggeredBy: makeEl(),
+    testResultEl: makeEl(),
+    testDetailsEl: makeEl(),
+    testConnectedEl: makeEl(),
+    testBoundEl: makeEl(),
+    testBaseExistsEl: makeEl(),
+    testBaseCreatableEl: makeEl(),
+    runRows: { ...makeEl(), innerHTML: '', appendChild() {} },
+    showStatus() {},
+    recordActivity() {},
+  });
+  assert.equal(typeof ldapSync.bind, 'function');
+  assert.equal(typeof ldapSync.load, 'function');
 
   const backups = createBackupsSectionController({
     api: {},
@@ -260,7 +329,7 @@ const runConstructionSmoke = () => {
 const run = async () => {
   await runRouterSmoke();
   await runConfigSmoke();
-  runHelpAndRecentSmoke();
+  runHelpAndLogsSmoke();
   runConstructionSmoke();
   console.log('admin smoke tests passed');
 };

@@ -3,13 +3,16 @@
 <head>
     <meta charset="utf-8">
     <title>Authorize {{.ClientDisplay}}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/authportal-logo.svg">
+    <link rel="icon" type="image/x-icon" href="/static/authportal-logo.ico">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="bg">
     <div class="center">
         <div class="card consent-card">
             <div class="brand">
-                <img class="logo" src="/static/plex.svg" alt="AuthPortal">
+                <img class="logo" src="/static/authportal-logo.svg" alt="AuthPortal">
                 <h1>Authorize {{.ClientDisplay}}</h1>
                 <p class="muted">This application is requesting access to your AuthPortal account.</p>
             </div>

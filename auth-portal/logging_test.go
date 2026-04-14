@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -76,6 +77,35 @@ func TestClientIPUntrustedRemoteIgnoresRealIP(t *testing.T) {
 	if got := clientIP(req); got != "203.0.113.1" {
 		t.Fatalf("expected remote IP when proxy untrusted, got %q", got)
 	}
+}
+
+func TestSanitizeLoggedRequestURIRedactsSensitiveQueryValues(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/oidc/callback?code=abc123&state=opaque&client_id=public", nil)
+
+	got := sanitizeLoggedRequestURI(req.URL)
+	if got != "/oidc/callback?client_id=public&code=%5BREDACTED%5D&state=%5BREDACTED%5D" {
+		t.Fatalf("unexpected sanitized URI: %q", got)
+	}
+}
+
+func TestSanitizeLoggedTextRedactsTokenLikeValues(t *testing.T) {
+	raw := `Authorization Bearer abc123 password=hunter2 access_token=xyz`
+	got := sanitizeLoggedText(raw)
+	if got == raw {
+		t.Fatalf("expected sanitized output to differ")
+	}
+	if containsAny(got, "abc123", "hunter2", "xyz") {
+		t.Fatalf("expected sensitive values to be redacted, got %q", got)
+	}
+}
+
+func containsAny(haystack string, needles ...string) bool {
+	for _, needle := range needles {
+		if needle != "" && strings.Contains(haystack, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 const (

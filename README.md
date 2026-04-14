@@ -1,11 +1,10 @@
-# AuthPortal (v2.0.4)
+# AuthPortal (v2.0.5)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26.2%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
-[![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-OpenAI_Codex-purple)](https://developers.openai.com/codex/windows)
-
+[![AI-Assisted Development](https://img.shields.io/badge/AI--Assisted_Development-Yes-6c757d)](#ai-assisted-development)
 [![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=modom-ofn_auth-portal)
 [![SonarCloud Bugs](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=bugs)](https://sonarcloud.io/component_measures?id=modom-ofn_auth-portal&metric=reliability_rating&view=list)
 [![SonarCloud Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=vulnerabilities)](https://sonarcloud.io/project/security_hotspots?id=modom-ofn_auth-portal)
@@ -49,9 +48,18 @@ AuthPortal authenticates users directly against their connected media server acc
   - Dark, modern UI with branded login buttons
 
 - **Runtime configuration & admin console**
-  - Web-based editing of Providers, Security, and MFA JSON with versioning and history
-  - OAuth client management (list/create/update/delete + secret rotation) without leaving the browser
+  - Web-based editing of Providers, Security, MFA, App Settings, and LDAP Sync config with versioning and history
+  - Dedicated admin shell with persistent sidebar navigation, collapsible layout toggle, theme picker, and account menu
+  - Access Control tab for RBAC roles, permissions, and manual user-role bindings
+  - OAuth client management (list/create/update/delete + secret rotation) with persistent audit history and change reasons
   - Config backup tab with manual exports, scheduled runs (hourly/daily/weekly), retention, and one-click restore/download actions
+  - Logs tab with consolidated admin audit history, tab/user filters, date sorting, and a live admin log stream viewer
+
+- **RBAC, app entitlements, and directory mapping**
+  - Database-backed roles, permissions, role-permission mappings, and user-role bindings
+  - Seeded system roles: `admin`, `viewer`, and `user`
+  - Optional LDAP group-to-role synchronization during LDAP sync runs
+  - Permission-gated portal app buttons and permission-backed OAuth scopes for downstream apps
 
 - **First-party OAuth 2.1 / OIDC**
   - Authorization-code + PKCE, optional `offline_access` refresh rotation, RS256-signed ID tokens
@@ -60,31 +68,23 @@ AuthPortal authenticates users directly against their connected media server acc
 ### UI Preview
 
 <p align="center">
-  <img src="./screenshots/ui-preview-rotating.gif" alt="Rotating AuthPortal UI preview banner showing authorized and unauthorized views, MFA flow, and admin tabs for providers, security, MFA, app settings, OAuth clients, and backups." />
+  <img src="./screenshots/authporta-providers-page.png" alt="AuthPortal UI preview showing light theme." />
 </p>
-
-Frame descriptions (alt text):
-1. Authorized user home with service buttons and account summary.
-2. Unauthorized user view with restricted/guest access messaging.
-3. MFA enrollment screen showing TOTP setup and verification flow.
-4. Signed-in flow after MFA challenge completion.
-5. Admin Providers tab for Plex, Jellyfin, and Emby configuration.
-6. Admin Security tab for session and authentication controls.
-7. Admin MFA settings tab with enforcement and recovery options.
-8. Admin App Settings tab for portal behavior and branding controls.
-9. Admin OAuth Clients tab showing client cards and management actions.
-10. Admin Backups tab with exports, scheduling, retention, and restore actions.
+<p align="center">
+  <img src="./screenshots/authporta-providers-page-dark.png" alt="AuthPortal UI preview showing dark theme." />
+</p>
 
 ---
 
 ## Table of Contents
 
 - [Features](#features)
-- [What's New in v2.0.4](#whats-new-in-v204)
-- [ldap-sync](#ldap-sync)
+- [What's New in v2.0.5](#whats-new-in-v205)
+- [LDAP Sync](#ldap-sync)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Admin Console & Config Store (new in v2.0.4)](#admin-console--config-store-new-in-v204)
+  - [LDAP Sync (new in v2.0.5)](#ldap-sync-new-in-v205)
   - [Backups](#backups)
   - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.4)](#oauth-21--oidc-authorization-server-new-in-v204)
   - [Multi-factor authentication](#multi-factor-authentication)
@@ -102,31 +102,60 @@ Frame descriptions (alt text):
 - [Customization](#customization)
 - [Security best practices](#security-best-practices)
 - [Security scans and code analysis](#security-scans-and-code-analysis)
+- [AI-Assisted Development](#ai-assisted-development)
 - [Contributing](#contributing)
 - [License](#license)
-- [Upgrade Guide (to v2.0.4)](#upgrade-guide-from--v203)
+- [Upgrade Guide (to v2.0.5)](#upgrade-guide-to-v205)
 
 ---
 
-## What's New in v2.0.4
+## What's New in v2.0.5
 
-- **Admin UX modularization and tab isolation:** refactored section logic into module controllers so Providers, Security, MFA, App Settings, OAuth, and Backups no longer trample each other’s state.
-- **Shared Recent Changes module:** standardized recent-changes behavior/presentation across tabs, including Backups schedule updates with required change reason support.
-- **Form-first admin configuration:** replaced fragile raw JSON editing paths with normalized forms while preserving import/export compatibility for valid JSON backups.
-- **OAuth client UX redesign:** migrated OAuth clients from table rows to card layout with detail modal actions (edit, rotate secret, delete) and consistent button behaviors.
-- **Consistency and clarity improvements:** unified button styling tokens across admin/authorized/unauthorized pages; replaced legacy `?` help popups with per-field hover helper text.
-- **Authorized User service buttons:** removed legacy single-link fields, added add/remove/edit support with per-button colors, and updated authorized portal rendering to only use service-button entries.
-- **Portal styling simplification:** removed custom image/mode upload flows and standardized to secure color-only controls for page background and modal color.
-- **Provider login reliability hardening:** reduced Plex pin-polling failure behavior during 429 rate-limit windows to prevent stale popup flows ending in `Auth failed`.
-- **Container hardening:** runtime image moved to `dhi.io/alpine-base:3.23-alpine3.23-dev`; compose defaults updated to local hardened builds.
+- **RBAC is now built into AuthPortal:** AuthPortal now has database-backed roles, permissions, role bindings, and permission middleware instead of relying only on a broad admin flag.
+- **Access Control admin tab:** operators can create custom roles and custom permissions, assign permissions to roles, and manage manual user-role bindings from the browser.
+- **Permission-aware app entitlements:** App Settings service buttons can require a selected custom permission, and downstream OAuth/OIDC clients can request those same permissions as scopes.
+- **OAuth client scope and audit improvements:** OAuth Clients now uses a scope picker backed by the RBAC permission catalog, stores persistent server-side audit history, and captures admin-supplied change reasons for create/update/delete/rotate actions.
+- **Admin shell refresh:** the console now uses a dedicated sidebar layout with section icons, a collapsible navigation rail, a light/dark/system theme picker, and a header user menu to make the expanded admin surface easier to navigate.
+- **LDAP Sync is now first-class in AuthPortal:** the former standalone `ldap-sync` companion workflow is replaced by a built-in `LDAP Sync` admin tab with persisted runtime config.
+- **Manual and scheduled LDAP sync runs:** run syncs on demand or on an hourly/daily/weekly schedule directly from the admin console, with next-run calculation and persisted run history.
+- **LDAP group-to-role mapping:** optional LDAP group synchronization can map directory groups onto RBAC roles during sync.
+- **Connection validation before save/run:** test LDAP connectivity, bind credentials, and Base DN reachability from the UI before committing config.
+- **Safe stale-entry cleanup:** optional deletion of stale LDAP records now only targets entries previously marked as AuthPortal-managed under the configured Base DN.
+- **Improved LDAP observability and UX:** per-user sync failures are logged with the affected username, completion summaries are logged per run, and the admin panel now exposes structured connection-test results, audit-history integration, and a cleaner sectioned layout.
+- **OpenLDAP bootstrap simplification:** the old `ldap-seed` helper is no longer part of the recommended workflow because AuthPortal can create the configured Base DN when it is missing and creatable.
+- **Dedicated Logs admin tab:** admin audit history is now consolidated into a single Logs surface with tab/user filters, date sorting, and a live application log stream that admins can start, pause, or refresh on demand.
+- **Expanded server-side audit coverage:** Access Control and Backups actions now emit persistent audit events so the Logs tab reflects real server history instead of browser-local state.
 
 ---
 
-## ldap-sync
+## LDAP Sync
 
-> [!NOTE]
-> - ldap-sync has been moved to its own repository.  
-> - You can now find it at: https://github.com/modom-ofn/ldap-sync
+LDAP sync is built into AuthPortal in `v2.0.5`. Configure it in the Admin Console under `LDAP Sync` to run manual syncs or schedule recurring LDAP exports of authorized users.
+
+What it does:
+
+- Connects to LDAP with the configured host, bind DN, and password.
+- Creates the configured Base DN when it is missing and creatable.
+- Exports currently authorized AuthPortal users as LDAP entries.
+- Supports manual sync and built-in hourly/daily/weekly scheduling.
+- Records recent run history in the admin UI.
+- Optionally deletes stale LDAP entries that were previously marked as managed by AuthPortal.
+- Optionally maps LDAP groups to RBAC roles during sync when group sync is enabled.
+
+What changed from the old workflow:
+
+- There is no longer a separate `ldap-sync` service or repo dependency in the recommended AuthPortal deployment path.
+- The old `ldap-seed` helper for `ou=users` is no longer required for the default setup.
+- LDAP sync configuration, change history, and schedule state now live with the rest of the AuthPortal admin/runtime config.
+
+Operational notes:
+
+- Use the `Test Connection` button before saving or running a sync.
+- `Base DN Exists = PASS` means the target branch is already usable.
+- `Base DN Exists = FAIL` and `Base DN Creatable = PASS` means AuthPortal should be able to create the branch on the first sync.
+- `Base DN Exists = FAIL` and `Base DN Creatable = FAIL` means you need to fix the directory layout or LDAP ACLs first.
+- Stale deletion only applies to entries previously stamped as AuthPortal-managed.
+- When LDAP group sync is enabled, configure the group search base DN, group name/member attributes, and at least one LDAP group-to-role mapping before saving.
 
 ---
 
@@ -186,8 +215,17 @@ TRUSTED_REDIRECT_HOSTS=
 # Logging # DEBUG | INFO | WARN | ERROR
 LOG_LEVEL=INFO
 
-# ---------- LDAP (only if using `--profile ldap`) ----------
+# ---------- LDAP Sync (optional; point to your existing LDAP server) ----------
+LDAP_HOST=ldap://ldap.example.com:389
+LDAP_ADMIN_DN=cn=admin,dc=authportal,dc=local
 LDAP_ADMIN_PASSWORD=change-me-strong
+BASE_DN=ou=users,dc=authportal,dc=local
+LDAP_STARTTLS=false
+LDAP_DELETE_STALE_ENTRIES=false
+LDAP_SYNC_SCHEDULE_ENABLED=false
+LDAP_SYNC_SCHEDULE_FREQUENCY=daily
+LDAP_SYNC_SCHEDULE_TIME=02:15
+LDAP_SYNC_SCHEDULE_DAY=sunday
 
 # ---------- Plex ----------
 # Optional but recommended for server-authorization checks
@@ -200,7 +238,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.4
+EMBY_APP_VERSION=2.0.5
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -209,7 +247,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.4
+JELLYFIN_APP_VERSION=2.0.5
 ```
 
 
@@ -299,6 +337,18 @@ services:
       # DB
       DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
 
+      # LDAP Sync
+      LDAP_HOST: ${LDAP_HOST:-ldap://ldap.example.com:389}
+      LDAP_ADMIN_DN: ${LDAP_ADMIN_DN:-cn=admin,dc=authportal,dc=local}
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-}
+      BASE_DN: ${BASE_DN:-ou=users,dc=authportal,dc=local}
+      LDAP_STARTTLS: ${LDAP_STARTTLS:-false}
+      LDAP_DELETE_STALE_ENTRIES: ${LDAP_DELETE_STALE_ENTRIES:-false}
+      LDAP_SYNC_SCHEDULE_ENABLED: ${LDAP_SYNC_SCHEDULE_ENABLED:-false}
+      LDAP_SYNC_SCHEDULE_FREQUENCY: ${LDAP_SYNC_SCHEDULE_FREQUENCY:-daily}
+      LDAP_SYNC_SCHEDULE_TIME: ${LDAP_SYNC_SCHEDULE_TIME:-02:15}
+      LDAP_SYNC_SCHEDULE_DAY: ${LDAP_SYNC_SCHEDULE_DAY:-sunday}
+
       # Plex
       PLEX_OWNER_TOKEN: ${PLEX_OWNER_TOKEN:-}
       PLEX_SERVER_MACHINE_ID: ${PLEX_SERVER_MACHINE_ID:-}
@@ -308,12 +358,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.4}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.5}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.4}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.5}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -329,70 +379,8 @@ services:
       retries: 3
     networks: [authnet]
 
-  openldap:
-    image: osixia/openldap:1.5.0
-    profiles: ["ldap"]
-    environment:
-      LDAP_ORGANISATION: AuthPortal
-      LDAP_DOMAIN: authportal.local
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      TZ: ${TZ:-UTC}
-    # Uncomment if you need external LDAP access from host:
-    # ports:
-    #   - "389:389"
-    #   - "636:636"
-    volumes:
-      - ldap_data:/var/lib/ldap
-      - ldap_config:/etc/ldap/slapd.d
-      # Seed OU/users if desired:
-      # - ./ldap-seed:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
-    restart: unless-stopped
-    healthcheck:
-      # Use service DNS name inside the network, not localhost
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://openldap -D 'cn=admin,dc=authportal,dc=local' -w \"$LDAP_ADMIN_PASSWORD\" -b 'dc=authportal,dc=local' -s base dn >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [authnet]
-
-  ldap-sync:
-    image: modomofn/ldap-sync:latest
-    profiles: ["ldap"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      openldap:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://authportal:${POSTGRES_PASSWORD:?set-in-.env}@postgres:5432/authportaldb?sslmode=disable
-      LDAP_HOST: ldap://openldap:389
-      LDAP_ADMIN_DN: cn=admin,dc=authportal,dc=local
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set-in-.env}
-      BASE_DN: ou=users,dc=authportal,dc=local
-      # LDAP_STARTTLS: "true"   # enable if your server supports StartTLS
-      TZ: ${TZ:-UTC}
-    restart: "no"
-    networks: [authnet]
-
-  phpldapadmin:
-    image: osixia/phpldapadmin:0.9.0
-    profiles: ["ldap"]
-    environment:
-      PHPLDAPADMIN_LDAP_HOSTS: openldap
-      PHPLDAPADMIN_HTTPS: "false"
-      TZ: ${TZ:-UTC}
-    ports:
-      - "8087:80"
-    depends_on:
-      openldap:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [authnet]
-
 volumes:
   pgdata:
-  ldap_data:
-  ldap_config:
 
 networks:
   authnet:
@@ -405,11 +393,7 @@ docker compose up -d --build
 # Visit http://localhost:8089
 ```
 
-*Run with LDAP stack:*
-```bash
-docker compose --profile ldap up -d --build
-# Visit http://localhost:8089
-```
+If you plan to use LDAP Sync, point the LDAP environment variables at your existing LDAP implementation, then open `Admin -> LDAP Sync` in AuthPortal to save connection settings, run a manual sync, or enable the built-in scheduler.
 
 ## Configuration
 
@@ -417,6 +401,8 @@ docker compose --profile ldap up -d --build
 - `SESSION_COOKIE_DOMAIN`  domain scope for session + pending-MFA cookies (e.g., `auth.example.com`).
 - `MEDIA_SERVER`  `plex`, `jellyfin`, or `emby`.
 - `SESSION_SECRET`  HMAC secret for the session JWT cookie (required, 32+ random bytes; the service refuses to start if unset or using the legacy default).
+- `SESSION_TTL`  authorized-session lifetime as a Go duration (default `24h`).
+- `SESSION_SAMESITE`  cookie SameSite mode: `lax` (default), `strict`, or `none` (`none` requires HTTPS/Secure cookies).
 - `DATA_KEY`  base64 32-byte key for sealing provider tokens at rest (required).
 - `MFA_ENABLE` / `MFA_ENFORCE` / `MFA_ISSUER`  multi-factor toggles; see below.
 - `FORCE_SECURE_COOKIE`  set to `1` to force `Secure` on cookies (behind TLS/ingress).
@@ -428,20 +414,33 @@ docker compose --profile ldap up -d --build
 - `LOGIN_EXTRA_LINK_TEXT`  text for that authorized-page link.
 - `UNAUTH_REQUEST_EMAIL`  email address for unauthorized page "Request Access" mailto.
 - `UNAUTH_REQUEST_SUBJECT`  subject for the unauthorized-page mailto link.
-- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./backups` relative to the binary).
+- `BACKUP_DIR`  filesystem path inside the container for generated config backups (default `./app/backups` relative to the binary).
+- `LDAP_DELETE_STALE_ENTRIES`  when set to `true`, scheduled or manual LDAP syncs may delete stale entries previously marked as AuthPortal-managed under the configured LDAP base DN.
+- `LDAP_SYNC_SCHEDULE_ENABLED` / `LDAP_SYNC_SCHEDULE_FREQUENCY` / `LDAP_SYNC_SCHEDULE_TIME` / `LDAP_SYNC_SCHEDULE_DAY`  bootstrap defaults for the built-in LDAP scheduler; once saved in Admin, the persisted runtime config takes precedence.
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 
 ### Admin Console & Config Store (new in v2.0.4)
 
 - Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
-- Providers, Security, and MFA settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
+- Providers, Security, MFA, App Settings, and LDAP Sync settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
+- The admin shell now includes a persistent sidebar, collapse toggle, theme selection (`system`, `dark`, `light`), and header user menu to keep the expanded multi-tab console manageable on desktop and smaller screens.
 - Each save accepts an optional change reason and appends to the audit log. Use the Refresh button to pull the latest runtime config before editing if multiple admins are active.
-- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation) backed by the `/api/admin/oauth/*` endpoints.
+- The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation), persistent audit history, and change reasons backed by the `/api/admin/oauth/*` endpoints.
+- The Access Control tab exposes RBAC role, permission, and manual binding management backed by the `/api/admin/rbac/*` endpoints.
+
+### LDAP Sync (new in v2.0.5)
+
+- The **LDAP Sync** tab under `/admin` manages LDAP host/bind/Base-DN settings, StartTLS, optional stale-entry deletion, manual sync runs, and the built-in scheduler.
+- Optional group sync in the same tab can map LDAP groups to AuthPortal RBAC roles.
+- The `Test Connection` action validates connect, bind, Base DN existence, and Base DN creatability before you save or sync.
+- Scheduled runs support `hourly`, `daily`, and `weekly` timing directly in the UI and are reflected in the `Next Scheduled Run` panel state.
+- Recent sync history includes manual and scheduled runs with trigger source, timestamps, result status, entry counts, and summary/error output.
+- LDAP sync config changes participate in the same config history and consolidated audit workflow as the other admin sections.
 
 ### Backups
 
-- The **Backups** tab under `/admin` lets you export the current Providers/Security/MFA documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
-- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
+- The **Backups** tab under `/admin` lets you export the current config documents on demand (`Run Backup`) or configure an automatic schedule (hourly/daily/weekly with retention and section filters).
+- Backup files are JSON blobs stored under `BACKUP_DIR` (default `./app/backups` beside the binary) and include metadata such as author, timestamp, and which sections were captured.
 - Scheduled backup settings now live in the config store (section `backups`), so your cadence, selected sections, and retention persist across container rebuilds and are auditable like other config updates.
 - Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
 - The same functionality is exposed via the REST API (`/api/admin/backups*`); see [HTTP Routes](#http-routes) below for endpoint details.
@@ -456,7 +455,24 @@ docker compose --profile ldap up -d --build
 - `/oidc/token` handles `authorization_code` and `refresh_token` grants. Refresh tokens rotate on every use and are only issued when the `offline_access` scope is granted.
 - `/oidc/userinfo` returns `sub`, `preferred_username`, and optional email claims based on granted scopes. ID tokens are RS256-signed and echo the incoming `nonce`.
 - Provide signing material with `OIDC_SIGNING_KEY_PATH` (PEM on disk) or inline `OIDC_SIGNING_KEY`; override the advertised issuer with `OIDC_ISSUER` when running behind a reverse proxy.
-- Register clients through the admin console (OAuth tab) or the REST API: `GET/POST /api/admin/oauth/clients`, `PUT/DELETE /api/admin/oauth/clients/{id}`, and `POST /api/admin/oauth/clients/{id}/rotate-secret`.
+- Register clients through the admin console (OAuth tab) or the REST API: `GET/POST /api/admin/oauth/clients`, `PUT/DELETE /api/admin/oauth/clients/{id}`, `POST /api/admin/oauth/clients/{id}/rotate-secret`, `GET /api/admin/oauth/scopes`, and `GET /api/admin/oauth/history`.
+- Custom RBAC permissions can be used as OAuth scopes, which lets downstream apps request app-specific entitlements such as `audiobookshelf.read`.
+
+### RBAC / Access Control (new in v2.0.5)
+
+- AuthPortal now stores roles, permissions, role-permission assignments, and user-role bindings in Postgres.
+- Seeded system roles are `admin`, `viewer`, and `user`; system permissions protect core admin surfaces such as config, LDAP, backups, OAuth, and RBAC management.
+- The **Access Control** tab under `/admin` lets operators create custom permissions and custom roles, assign permissions to roles, and manage manual role bindings for users.
+- App Settings service links can require a selected permission. If no permission is selected, the button is shown to all authorized users.
+- `/whoami` and `/me` now expose the caller's effective roles and permissions for downstream integrations.
+
+### Admin Logs
+
+- The **Logs** tab under `/admin` replaces the older per-tab Recent Changes sidebar/modal with a single consolidated audit view.
+- Audit history is aggregated across config sections, OAuth client management, Access Control actions, backup actions, and LDAP Sync-related config history.
+- Operators can filter the table by admin tab and acting user, then sort by change date to review older or newer activity first.
+- The live log stream is off by default and only starts polling after an admin explicitly starts it.
+- While streaming, admins can choose an auto-refresh interval; when paused, they can use manual refresh to poll the latest buffered entries.
 
 ### Multi-factor authentication
 
@@ -511,12 +527,14 @@ All providers implement `IsAuthorized(uuid, username)`; success is cached in `me
 
 - Token sealing: tokens are encrypted with `DATA_KEY` before DB insert/update. Unseal on read; failures clear the in-memory token.
 - Cookies: Session and pending-MFA cookies honour `SESSION_COOKIE_DOMAIN`; they are HTTP-only, SameSite=Lax, and rotate after successful MFA. `Secure` is automatic when `APP_BASE_URL` is HTTPS, or force it with `FORCE_SECURE_COOKIE=1`.
+- Authorization: admin and downstream-app access is enforced through RBAC permissions, not just a legacy admin boolean. Custom app permissions can gate portal links and OAuth scopes.
+- Admin observability: the Logs tab is permission-gated behind admin access, and its audit table is backed by persisted server audit records for OAuth, Access Control, backups, and config changes.
 - Rate limits: login endpoints share a per-IP limiter (burst 5, ~10 req/min); MFA enrollment/challenge use a tighter burst 3, ~5 req/min (tune in `main.go`).
 - CSRF-lite: POST routes require same-origin via Origin/Referer.
 - Headers:
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.
   Adds `Strict-Transport-Security: max-age=86400; includeSubDomains; preload` when `APP_BASE_URL` is HTTPS.
-  Popup pages set a narrowed CSP that allows the tiny inline closing script.
+  Popup/auth completion pages keep a narrowed CSP with `script-src 'self'`; popup handoff is performed by `static/login.js` rather than inline script.
 
 ---
 
@@ -556,14 +574,24 @@ CREATE TABLE IF NOT EXISTS pins (
 - Writes: app upserts into both `users` and `identities` (transition-friendly).
 - Reads: prefer `identities` then fallback to `users` where needed.
 
+### RBAC tables
+
+- `roles`: role catalog with seeded system roles and custom roles.
+- `permissions`: permission catalog containing system permissions plus admin-defined custom permissions.
+- `role_permissions`: many-to-many mapping between roles and permissions.
+- `user_roles`: user-role assignments, including manual and LDAP-synchronized sources.
+
+These tables are created and migrated automatically at startup. Existing legacy admin users are backfilled into the seeded `admin` role during upgrade.
+
 ---
 
 ## Build & Images
 
-- Go: `1.26.1` on `alpine:3.23` (builder stage).
+- Go: `1.26.2` on Docker Hardened Images `dhi.io/golang:1.26.2-alpine3.23-dev` (builder stage).
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.26`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
-- Runtime: `dhi.io/alpine-base:3.23-alpine3.23-dev`, installs CA certs + tzdata, runs as non-root `uid 10001`.
+- Builder: `dhi.io/golang:1.26.2-alpine3.23-dev`.
+- Runtime: `dhi.io/alpine-base:3.23-alpine3.23`, keeps CA certs in-base, copies tzdata from the builder stage, and runs as non-root `uid 65532`.
 
 ---
 
@@ -576,6 +604,10 @@ DEBUG jellyfin/auth POST http://<server>/Users/AuthenticateByName?format=json
 WARN  emby/auth HTTP 401 body="..."
 DEBUG plex: resources match via machine id
 ```
+- **Admin Logs tab**:
+  - Consolidated audit history is available in the admin UI via the `Logs` tab.
+  - The live stream viewer reads from an in-memory recent log buffer exposed only to authenticated admins.
+  - Streaming is opt-in and disabled by default; admins can start, pause, or manually refresh the view.
 - **Postgres**: `LOG_LEVEL` maps to server params:
   - `DEBUG`  `log_min_messages=debug1`, connection/disconnection logging on
   - `INFO`  `log_min_messages=info`
@@ -589,8 +621,8 @@ DEBUG plex: resources match via machine id
 - **Core portal**
   - `GET /`  login page (auto-redirects to `/home` if session present).
   - `GET /home`  renders authorized or unauthorized view based on `IsAuthorized`.
-  - `GET /whoami`  JSON: normalized identity and session metadata.
-  - `GET /me`  JSON `{ username, uuid }` when logged in.
+  - `GET /whoami`  JSON: normalized identity, session metadata, effective roles, and effective permissions.
+  - `GET /me`  JSON profile summary including username, uuid, roles, and permissions when logged in.
   - `POST /logout`  clears cookies; same-origin required.
   - `GET /static/*`  static assets.
 
@@ -621,20 +653,36 @@ DEBUG plex: resources match via machine id
 
 - **Admin console & APIs**
   - `GET /admin`  admin SPA for bootstrap/admin users.
-  - `GET /api/admin/config`  returns Providers/Security/MFA JSON bundle.
+  - `GET /api/admin/config`  returns the admin configuration bundle, including Providers, Security, MFA, App Settings, and LDAP Sync.
   - `PUT /api/admin/config/{section}`  update a configuration section with optimistic concurrency.
   - `GET /api/admin/config/history/{section}`  fetch prior revisions.
+  - `GET /api/admin/config/permissions`  list custom permissions allowed in App Settings service-link gating.
+  - `GET /api/admin/ldap-sync`  fetch LDAP sync config, scheduler status, and recent runs.
+  - `POST /api/admin/ldap-sync/test-connection`  validate LDAP connectivity and Base DN readiness using the submitted form values without saving them.
+  - `POST /api/admin/ldap-sync/run`  trigger a manual LDAP sync run.
+  - `GET /api/admin/logs/history`  fetch consolidated admin audit history across supported tabs.
+  - `GET /api/admin/logs/stream`  fetch the buffered live application log stream for the admin Logs tab.
   - `GET /api/admin/oauth/clients`  list registered OAuth clients.
+  - `GET /api/admin/oauth/history`  fetch persistent OAuth audit history.
+  - `GET /api/admin/oauth/scopes`  list standard OIDC scopes plus custom RBAC permission scopes.
   - `POST /api/admin/oauth/clients`  create a new client.
   - `PUT /api/admin/oauth/clients/{id}`  update client metadata.
   - `DELETE /api/admin/oauth/clients/{id}`  delete a client.
   - `POST /api/admin/oauth/clients/{id}/rotate-secret`  rotate client secret and return the new value.
+  - `GET /api/admin/rbac`  fetch roles, permissions, and current bindings.
+  - `PUT /api/admin/rbac/bindings`  create or replace manual user-role bindings.
+  - `POST /api/admin/rbac/roles`  create a custom role.
+  - `PUT /api/admin/rbac/roles/{name}`  update a role definition.
+  - `DELETE /api/admin/rbac/roles/{name}`  delete a custom role.
+  - `POST /api/admin/rbac/permissions`  create a custom permission.
+  - `PUT /api/admin/rbac/permissions/{name}`  update a custom permission.
+  - `DELETE /api/admin/rbac/permissions/{name}`  delete a custom permission.
   - `GET /api/admin/backups`  return the current schedule metadata plus available backup files.
   - `POST /api/admin/backups`  create a manual backup for the selected sections.
   - `PUT /api/admin/backups/schedule`  update the automated backup schedule (frequency, sections, retention).
   - `GET /api/admin/backups/{name}`  download a specific backup file.
   - `DELETE /api/admin/backups/{name}`  remove a backup file from storage.
-  - `POST /api/admin/backups/{name}/restore`  restore Providers/Security/MFA configs from a saved backup.
+  - `POST /api/admin/backups/{name}/restore`  restore captured config sections from a saved backup.
 
 - **Health & readiness**
   - `GET /healthz`  liveness check.
@@ -672,7 +720,6 @@ DEBUG plex: resources match via machine id
 
 ## Customization
 
-- **Hero background:** put your image at `static/bg.jpg` (1920"1080 works great).  
 - **Logo:** in `templates/login.html`, swap the inline SVG for your logo.  
 - **Colors & button:** tweak in `static/styles.css` (`--brand` etc.).
 - **Authorized / Unauthorized pages:** edit `templates/portal_authorized.html` and `templates/portal_unauthorized.html`
@@ -686,11 +733,12 @@ DEBUG plex: resources match via machine id
 - OAuth client secrets are hashed with bcrypt before storage; rotate legacy secrets so they’re re-hashed and unusable if the DB or backups leak.
 - Access and refresh tokens are stored as deterministic SHA-256 digests, so leaked database rows don’t expose bearer tokens (rotate outstanding tokens after upgrading).
 - Config backups written to disk are encrypted with the same `DATA_KEY`, so keep that key secret and re-bootstrap older plaintext backups if needed.
+- The admin Logs tab can expose recent operational log lines in-browser to authenticated admins, so avoid logging secrets and keep admin access tightly scoped.
 - Admin flag changes immediately revoke outstanding sessions by bumping an internal session version; reissue cookies after any privilege change.
 - Dont expose Postgres or LDAP externally unless necessary.
 - Keep images and dependencies updated.
-- Enforce MFA everywhere by setting MFA_ENABLE=1 and MFA_ENFORCE=1; the code already backstops MFA_ENABLE when enforcement is on (main.go:55-74).
-- If the portal is only used for same-origin apps, switch to SESSION_SAMESITE=strict; the fallback logic keeps you safe when Secure cookies aren’t yet possible (main.go:379-407).
+- Enforce MFA everywhere by setting `MFA_ENABLE=1` and `MFA_ENFORCE=1`; the code already backstops `MFA_ENABLE` when enforcement is on.
+- If the portal is only used for same-origin apps, consider `SESSION_SAMESITE=strict`; use `none` only with HTTPS because Secure cookies are required.
 - Keep rate limits aligned with your threat model; newIPRateLimiter accepts tighter limits if you need to clamp brute force attempts (rate_limiter.go:10-74).
 
 ---
@@ -700,7 +748,8 @@ DEBUG plex: resources match via machine id
 Automated security checks run on this project:
 
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
-- Gitleaks: secret scanning on every push/PR; local hook below to keep commits clean.
+- TruffleHog: secret scanning on every push/PR in CI/CD.
+- git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
 - GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
@@ -708,15 +757,44 @@ Automated security checks run on this project:
 
 If you spot an issue or have questions about these scans, please open an issue or reach out.
 
-### Local secret scanning (pre-commit)
+### Local secret scanning (git-secrets)
 
-Run Gitleaks locally before pushing:
+Install `git-secrets`, then bootstrap the repo hooks:
 
 ```bash
-pip install pre-commit
-pre-commit install
-pre-commit run --all-files
+brew install git-secrets
+./scripts/install-git-secrets-hooks.sh
+git secrets --scan-history
 ```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\install-git-secrets-hooks.ps1
+git secrets --scan-history
+```
+
+The bootstrap scripts install `git-secrets` hooks for this repository and register AWS patterns plus a small set of generic credential patterns for passwords, tokens, API keys, and private keys.
+
+---
+
+## AI-Assisted Development
+
+AuthPortal is developed with AI assistance as part of the delivery workflow, but not as a substitute for engineering judgment. I currently use OpenAI Codex to help with core framework and backend work, and Claude Code to help accelerate frontend interface work.
+
+That said, I remain responsible for every change that lands in this repository. AI-generated code is treated as a draft, not an authority.
+
+What that means in practice:
+
+- I review all generated changes before they are committed or pushed.
+- I test changes locally before publishing updates.
+- I validate behavior against the actual application flow, not just the generated diff.
+- I use automated scanning and analysis to catch issues early, but I do not rely on automation alone.
+- I will revise or reject AI-generated output when it does not meet the project standard.
+
+I have more than 25 years of experience across enterprise IT infrastructure, application support, and migrations/deployments. That experience is what governs the decisions in this project. AI helps me move faster, but it does not replace accountability, operational caution, or hands-on verification.
+
+If you are cautious about AI use in open source, that caution is reasonable. The goal here is to be transparent about the workflow: AI is used to speed delivery, while review, testing, and release responsibility stay with me.
 
 ---
 
@@ -729,7 +807,7 @@ https://github.com/modom-ofn/auth-portal/issues
 
 ## License
 
-GPL-3.0  https://opensource.org/license/lgpl-3-0
+GPL-3.0  https://opensource.org/license/gpl-3-0/
 
 
 > [!IMPORTANT]
@@ -737,14 +815,27 @@ GPL-3.0  https://opensource.org/license/lgpl-3-0
 
 ---
 
-## Upgrade Guide (to v2.0.4)
+## Upgrade Guide (to v2.0.5)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.4` so you pick up the modular admin UX improvements and hardened runtime base image (`dhi.io/alpine-base:3.23-alpine3.23-dev`).
-2) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
-3) Decide on MFA posture:
+1) Rebuild or pull `modomofn/auth-portal:v2.0.5` so you pick up the RBAC, LDAP Sync, and admin audit improvements.
+2) If you previously used the standalone `ldap-sync` workflow, migrate that configuration into `Admin -> LDAP Sync` and stop relying on the external repo/service.
+3) If your compose/docs still reference `ldap-seed` for `ou=users`, remove that dependency unless you intentionally seed extra LDAP structure outside AuthPortal-managed sync.
+4) Review the new Access Control model:
+   - Existing legacy admin users are backfilled into the seeded `admin` role.
+   - Use `Admin -> Access Control` to manage custom roles, custom permissions, and manual user-role bindings.
+   - If you expose downstream apps through App Settings or OAuth, create app-specific permissions first and assign them through roles.
+5) Review LDAP behavior before enabling stale deletion or group-role synchronization:
+   - Leave `Delete stale AuthPortal-managed LDAP entries` off until at least one successful built-in sync has updated the entries you want AuthPortal to own.
+   - Verify the bind account has permission to create entries under the configured Base DN.
+   - If you enable LDAP group sync, verify the group search base DN, name/member attributes, and group-to-role mappings first.
+6) Set `SESSION_COOKIE_DOMAIN` to the host you serve AuthPortal from (e.g., `auth.example.com`) so session + pending-MFA cookies survive redirect flows.
+7) Decide on MFA posture:
    - Leave `MFA_ENABLE=1` to let users enroll.
    - Flip `MFA_ENFORCE=1` if everyone must pass MFA on login; keep `MFA_ENABLE=1` in that case.
-4) Verify end-to-end:
+8) Verify end-to-end:
    - Existing users can log in, enroll, and download recovery codes.
    - Enforced logins reach `/mfa/challenge` and succeed with both TOTP codes and a recovery code.
    - Repeated bad logins or code attempts return HTTP 429 from the per-IP rate limiters.
+   - LDAP `Test Connection` passes, a manual LDAP sync succeeds, and scheduled runs appear in `Recent Sync Runs` when enabled.
+   - Access Control role assignments behave as expected for admin surfaces and app-specific entitlements.
+   - OAuth clients can request intended custom permission scopes and their audit history records the admin-supplied reason.

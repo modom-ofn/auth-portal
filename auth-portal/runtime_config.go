@@ -57,20 +57,55 @@ type MFAConfig struct {
 }
 
 type AppServiceLink struct {
-	Name  string `json:"name"`
-	URL   string `json:"url"`
-	Color string `json:"color,omitempty"`
+	Name               string `json:"name"`
+	URL                string `json:"url"`
+	Color              string `json:"color,omitempty"`
+	RequiredPermission string `json:"requiredPermission,omitempty"`
 }
 
 // AppSettingsConfig captures miscellaneous portal presentation controls.
 type AppSettingsConfig struct {
 	LoginExtraLinkURL     string           `json:"loginExtraLinkUrl"`
 	LoginExtraLinkText    string           `json:"loginExtraLinkText"`
+	PortalAppName         string           `json:"portalAppName,omitempty"`
+	PortalLogoURL         string           `json:"portalLogoUrl,omitempty"`
+	LoginBodyText         string           `json:"loginBodyText,omitempty"`
+	AuthorizedTitleText   string           `json:"authorizedTitleText,omitempty"`
+	AuthorizedBodyText    string           `json:"authorizedBodyText,omitempty"`
+	UnauthorizedTitleText string           `json:"unauthorizedTitleText,omitempty"`
+	UnauthorizedBodyText  string           `json:"unauthorizedBodyText,omitempty"`
+	DisableFooter         bool             `json:"disableFooter,omitempty"`
 	UnauthRequestEmail    string           `json:"unauthRequestEmail"`
 	UnauthRequestSubject  string           `json:"unauthRequestSubject"`
 	ServiceLinks          []AppServiceLink `json:"serviceLinks,omitempty"`
 	PortalBackgroundColor string           `json:"portalBackgroundColor,omitempty"`
 	PortalModalColor      string           `json:"portalModalColor,omitempty"`
+	PortalTitleColor      string           `json:"portalTitleColor,omitempty"`
+	PortalBodyTextColor   string           `json:"portalBodyTextColor,omitempty"`
+}
+
+type LDAPSyncConfig struct {
+	LDAPHost             string                 `json:"ldapHost"`
+	LDAPAdminDN          string                 `json:"ldapAdminDn"`
+	LDAPAdminPassword    string                 `json:"ldapAdminPassword"`
+	BaseDN               string                 `json:"baseDn"`
+	LDAPStartTLS         bool                   `json:"ldapStartTls"`
+	DeleteStaleEntries   bool                   `json:"deleteStaleEntries"`
+	GroupSyncEnabled     bool                   `json:"groupSyncEnabled"`
+	GroupSearchBaseDN    string                 `json:"groupSearchBaseDn,omitempty"`
+	GroupNameAttribute   string                 `json:"groupNameAttribute,omitempty"`
+	GroupMemberAttribute string                 `json:"groupMemberAttribute,omitempty"`
+	ScheduleEnabled      bool                   `json:"scheduleEnabled"`
+	ScheduleFrequency    string                 `json:"scheduleFrequency"`
+	ScheduleTimeOfDay    string                 `json:"scheduleTimeOfDay"`
+	ScheduleDayOfWeek    string                 `json:"scheduleDayOfWeek"`
+	ScheduleMinute       int                    `json:"scheduleMinute"`
+	GroupRoleMappings    []LDAPGroupRoleMapping `json:"groupRoleMappings,omitempty"`
+}
+
+type LDAPGroupRoleMapping struct {
+	LDAPGroup string `json:"ldapGroup"`
+	Role      string `json:"role"`
 }
 
 // RuntimeConfig represents all typed configuration sections with revision metadata.
@@ -87,13 +122,16 @@ type RuntimeConfig struct {
 	AppSettings        AppSettingsConfig
 	AppSettingsVersion int64
 
+	LDAPSync        LDAPSyncConfig
+	LDAPSyncVersion int64
+
 	LoadedAt time.Time
 }
 
 var runtimeConfigValue atomic.Value
 
 func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
-	defaults := make(map[configstore.Section]json.RawMessage, 4)
+	defaults := make(map[configstore.Section]json.RawMessage, 5)
 
 	rawProviders, err := json.Marshal(defaultProvidersConfig())
 	if err != nil {
@@ -118,6 +156,12 @@ func runtimeConfigDefaults() (map[configstore.Section]json.RawMessage, error) {
 		return nil, err
 	}
 	defaults[configstore.SectionAppSettings] = rawAppSettings
+
+	rawLDAPSync, err := json.Marshal(defaultLDAPSyncConfig())
+	if err != nil {
+		return nil, err
+	}
+	defaults[configstore.SectionLDAPSync] = rawLDAPSync
 
 	return defaults, nil
 }
@@ -177,10 +221,19 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	cfg := AppSettingsConfig{
 		LoginExtraLinkURL:     strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_URL")),
 		LoginExtraLinkText:    strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_TEXT")),
+		PortalAppName:         strings.TrimSpace(os.Getenv("PORTAL_APP_NAME")),
+		PortalLogoURL:         strings.TrimSpace(os.Getenv("PORTAL_LOGO_URL")),
+		LoginBodyText:         strings.TrimSpace(os.Getenv("LOGIN_BODY_TEXT")),
+		AuthorizedTitleText:   strings.TrimSpace(os.Getenv("AUTHORIZED_TITLE_TEXT")),
+		AuthorizedBodyText:    strings.TrimSpace(os.Getenv("AUTHORIZED_BODY_TEXT")),
+		UnauthorizedTitleText: strings.TrimSpace(os.Getenv("UNAUTHORIZED_TITLE_TEXT")),
+		UnauthorizedBodyText:  strings.TrimSpace(os.Getenv("UNAUTHORIZED_BODY_TEXT")),
 		UnauthRequestEmail:    strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_EMAIL")),
 		UnauthRequestSubject:  strings.TrimSpace(os.Getenv("UNAUTH_REQUEST_SUBJECT")),
 		PortalBackgroundColor: strings.TrimSpace(os.Getenv("PORTAL_BACKGROUND_COLOR")),
 		PortalModalColor:      strings.TrimSpace(os.Getenv("PORTAL_MODAL_COLOR")),
+		PortalTitleColor:      strings.TrimSpace(os.Getenv("PORTAL_TITLE_COLOR")),
+		PortalBodyTextColor:   strings.TrimSpace(os.Getenv("PORTAL_BODY_TEXT_COLOR")),
 	}
 
 	if cfg.LoginExtraLinkURL == "" {
@@ -188,6 +241,27 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	}
 	if cfg.LoginExtraLinkText == "" {
 		cfg.LoginExtraLinkText = "Open Internal App"
+	}
+	if cfg.PortalAppName == "" {
+		cfg.PortalAppName = "AuthPortal"
+	}
+	if cfg.PortalLogoURL == "" {
+		cfg.PortalLogoURL = "/static/authportal-logo.svg"
+	}
+	if cfg.LoginBodyText == "" {
+		cfg.LoginBodyText = "Sign in with your {{providerName}} account to continue."
+	}
+	if cfg.AuthorizedTitleText == "" {
+		cfg.AuthorizedTitleText = "Welcome, {{username}}"
+	}
+	if cfg.AuthorizedBodyText == "" {
+		cfg.AuthorizedBodyText = "You are authorized on this server."
+	}
+	if cfg.UnauthorizedTitleText == "" {
+		cfg.UnauthorizedTitleText = "Hello, {{username}}"
+	}
+	if cfg.UnauthorizedBodyText == "" {
+		cfg.UnauthorizedBodyText = "You’ve signed in with {{providerName}}, but you’re not yet authorized on this server."
 	}
 	if cfg.UnauthRequestEmail == "" {
 		cfg.UnauthRequestEmail = "admin@example.com"
@@ -201,6 +275,12 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 	if cfg.PortalModalColor == "" {
 		cfg.PortalModalColor = "#111827"
 	}
+	if cfg.PortalTitleColor == "" {
+		cfg.PortalTitleColor = "#e5e7eb"
+	}
+	if cfg.PortalBodyTextColor == "" {
+		cfg.PortalBodyTextColor = "#94a3b8"
+	}
 	cfg.ServiceLinks = []AppServiceLink{
 		{
 			Name:  cfg.LoginExtraLinkText,
@@ -209,6 +289,26 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 		},
 	}
 	return cfg
+}
+
+func defaultLDAPSyncConfig() LDAPSyncConfig {
+	return LDAPSyncConfig{
+		LDAPHost:             strings.TrimSpace(envOr("LDAP_HOST", "ldap://openldap:389")),
+		LDAPAdminDN:          strings.TrimSpace(envOr("LDAP_ADMIN_DN", "cn=admin,dc=authportal,dc=local")),
+		LDAPAdminPassword:    strings.TrimSpace(envOr("LDAP_ADMIN_PASSWORD", "")),
+		BaseDN:               strings.TrimSpace(envOr("BASE_DN", "ou=users,dc=authportal,dc=local")),
+		LDAPStartTLS:         envBool("LDAP_STARTTLS", false),
+		DeleteStaleEntries:   envBool("LDAP_DELETE_STALE_ENTRIES", false),
+		GroupSyncEnabled:     envBool("LDAP_GROUP_SYNC_ENABLED", false),
+		GroupSearchBaseDN:    strings.TrimSpace(envOr("LDAP_GROUP_SEARCH_BASE_DN", "")),
+		GroupNameAttribute:   strings.TrimSpace(envOr("LDAP_GROUP_NAME_ATTRIBUTE", "cn")),
+		GroupMemberAttribute: strings.TrimSpace(envOr("LDAP_GROUP_MEMBER_ATTRIBUTE", "memberUid")),
+		ScheduleEnabled:      envBool("LDAP_SYNC_SCHEDULE_ENABLED", false),
+		ScheduleFrequency:    strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_FREQUENCY", "daily"))),
+		ScheduleTimeOfDay:    strings.TrimSpace(envOr("LDAP_SYNC_SCHEDULE_TIME", "02:15")),
+		ScheduleDayOfWeek:    strings.TrimSpace(strings.ToLower(envOr("LDAP_SYNC_SCHEDULE_DAY", "sunday"))),
+		ScheduleMinute:       15,
+	}
 }
 
 func loadRuntimeConfig(store *configstore.Store) (RuntimeConfig, error) {
@@ -248,6 +348,12 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 		return RuntimeConfig{}, err
 	}
 
+	var ldapSync LDAPSyncConfig
+	lVersion, err := store.Section(configstore.SectionLDAPSync, &ldapSync)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+
 	rc.Providers = providers
 	rc.ProvidersVersion = pVersion
 	rc.Security = security
@@ -256,6 +362,8 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 	rc.MFAVersion = mVersion
 	rc.AppSettings = app
 	rc.AppSettingsVersion = aVersion
+	rc.LDAPSync = ldapSync
+	rc.LDAPSyncVersion = lVersion
 
 	snap := store.Snapshot()
 	if !snap.LoadedAt.IsZero() {
@@ -264,7 +372,7 @@ func loadRuntimeConfigInternal(store *configstore.Store, retried bool) (RuntimeC
 		rc.LoadedAt = time.Now().UTC()
 	}
 
-	missing := detectMissingSections(pVersion, sVersion, mVersion, aVersion)
+	missing := detectMissingSections(pVersion, sVersion, mVersion, aVersion, lVersion)
 	if len(missing) > 0 && !retried {
 		if err := persistInitialSections(store, rc, missing); err != nil {
 			return RuntimeConfig{}, err
@@ -281,6 +389,7 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		Security:    defaultSecurityConfig(),
 		MFA:         defaultMFAConfig(),
 		AppSettings: defaultAppSettingsConfig(),
+		LDAPSync:    defaultLDAPSyncConfig(),
 	}
 
 	selectedProvider := strings.TrimSpace(cfg.Providers.Active)
@@ -347,6 +456,13 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	cfg.AppSettings.LoginExtraLinkURL = loginExtraLinkURL
 	loginExtraLinkText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.LoginExtraLinkText, defaults.AppSettings.LoginExtraLinkText))
 	cfg.AppSettings.LoginExtraLinkText = loginExtraLinkText
+	cfg.AppSettings.PortalAppName = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalAppName, defaults.AppSettings.PortalAppName))
+	cfg.AppSettings.PortalLogoURL = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalLogoURL, defaults.AppSettings.PortalLogoURL))
+	cfg.AppSettings.LoginBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.LoginBodyText, defaults.AppSettings.LoginBodyText))
+	cfg.AppSettings.AuthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.AuthorizedTitleText, defaults.AppSettings.AuthorizedTitleText))
+	cfg.AppSettings.AuthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.AuthorizedBodyText, defaults.AppSettings.AuthorizedBodyText))
+	cfg.AppSettings.UnauthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthorizedTitleText, defaults.AppSettings.UnauthorizedTitleText))
+	cfg.AppSettings.UnauthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthorizedBodyText, defaults.AppSettings.UnauthorizedBodyText))
 	unauthRequestEmail = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthRequestEmail, defaults.AppSettings.UnauthRequestEmail))
 	cfg.AppSettings.UnauthRequestEmail = unauthRequestEmail
 	unauthRequestSubject = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.UnauthRequestSubject, defaults.AppSettings.UnauthRequestSubject))
@@ -354,6 +470,25 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 		unauthRequestSubject = defaults.AppSettings.UnauthRequestSubject
 	}
 	cfg.AppSettings.UnauthRequestSubject = unauthRequestSubject
+	cfg.AppSettings.PortalBackgroundColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalBackgroundColor, defaults.AppSettings.PortalBackgroundColor))
+	cfg.AppSettings.PortalModalColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalModalColor, defaults.AppSettings.PortalModalColor))
+	cfg.AppSettings.PortalTitleColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalTitleColor, defaults.AppSettings.PortalTitleColor))
+	cfg.AppSettings.PortalBodyTextColor = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalBodyTextColor, defaults.AppSettings.PortalBodyTextColor))
+
+	cfg.LDAPSync.LDAPHost = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPHost, defaults.LDAPSync.LDAPHost))
+	cfg.LDAPSync.LDAPAdminDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminDN, defaults.LDAPSync.LDAPAdminDN))
+	cfg.LDAPSync.LDAPAdminPassword = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.LDAPAdminPassword, defaults.LDAPSync.LDAPAdminPassword))
+	cfg.LDAPSync.BaseDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.BaseDN, defaults.LDAPSync.BaseDN))
+	cfg.LDAPSync.GroupSearchBaseDN = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.GroupSearchBaseDN, defaults.LDAPSync.GroupSearchBaseDN))
+	cfg.LDAPSync.GroupNameAttribute = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.GroupNameAttribute, defaults.LDAPSync.GroupNameAttribute))
+	cfg.LDAPSync.GroupMemberAttribute = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.GroupMemberAttribute, defaults.LDAPSync.GroupMemberAttribute))
+	cfg.LDAPSync.ScheduleFrequency = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleFrequency, defaults.LDAPSync.ScheduleFrequency))
+	cfg.LDAPSync.ScheduleTimeOfDay = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleTimeOfDay, defaults.LDAPSync.ScheduleTimeOfDay))
+	cfg.LDAPSync.ScheduleDayOfWeek = strings.TrimSpace(firstNonEmpty(cfg.LDAPSync.ScheduleDayOfWeek, defaults.LDAPSync.ScheduleDayOfWeek))
+	if cfg.LDAPSync.ScheduleMinute < 0 || cfg.LDAPSync.ScheduleMinute > 59 {
+		cfg.LDAPSync.ScheduleMinute = defaults.LDAPSync.ScheduleMinute
+	}
+	cfg.LDAPSync.GroupRoleMappings = normalizeLDAPGroupRoleMappings(cfg.LDAPSync.GroupRoleMappings)
 
 	// Keep provider package configuration in sync with live runtime settings.
 	// Without this, switching providers in Admin can leave auth flows using stale
@@ -377,6 +512,7 @@ func currentRuntimeConfig() RuntimeConfig {
 		Security:    defaultSecurityConfig(),
 		MFA:         defaultMFAConfig(),
 		AppSettings: defaultAppSettingsConfig(),
+		LDAPSync:    defaultLDAPSyncConfig(),
 		LoadedAt:    time.Now().UTC(),
 	}
 }
@@ -424,7 +560,7 @@ func ensureMFAConsistency() {
 	}
 }
 
-func detectMissingSections(pVersion, sVersion, mVersion, aVersion int64) []configstore.Section {
+func detectMissingSections(pVersion, sVersion, mVersion, aVersion, lVersion int64) []configstore.Section {
 	var sections []configstore.Section
 	if pVersion == 0 {
 		sections = append(sections, configstore.SectionProviders)
@@ -437,6 +573,9 @@ func detectMissingSections(pVersion, sVersion, mVersion, aVersion int64) []confi
 	}
 	if aVersion == 0 {
 		sections = append(sections, configstore.SectionAppSettings)
+	}
+	if lVersion == 0 {
+		sections = append(sections, configstore.SectionLDAPSync)
 	}
 	return sections
 }
@@ -454,6 +593,8 @@ func persistInitialSections(store *configstore.Store, cfg RuntimeConfig, section
 			payload = cfg.MFA
 		case configstore.SectionAppSettings:
 			payload = cfg.AppSettings
+		case configstore.SectionLDAPSync:
+			payload = cfg.LDAPSync
 		default:
 			continue
 		}

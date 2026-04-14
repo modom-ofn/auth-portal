@@ -97,11 +97,7 @@ func plexGetJSON(u, token string, out any) error {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		s := strings.TrimSpace(string(body))
-		if len(s) > 200 {
-			s = s[:200] + "…"
-		}
-		return fmt.Errorf("plex %s -> %d: %s", u, resp.StatusCode, s)
+		return fmt.Errorf("plex %s -> %d: %s", redactURLForLog(u), resp.StatusCode, sanitizedSnippet(body, 200))
 	}
 	return json.Unmarshal(body, out)
 }
@@ -143,7 +139,7 @@ func plexCreatePin(clientID string) (plexPin, error) {
 		return plexPin{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return plexPin{}, fmt.Errorf("plex pins non-2xx: %d %s", resp.StatusCode, string(body))
+		return plexPin{}, fmt.Errorf("plex pins non-2xx: %d %s", resp.StatusCode, sanitizedSnippet(body, 200))
 	}
 	var pin plexPin
 	if err := json.Unmarshal(body, &pin); err != nil {
@@ -203,7 +199,7 @@ func plexPollPinOnce(clientID string, id int) (string, plexPinPollStatus, error)
 		return "", plexPinPollRateLimited, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", plexPinPollPending, fmt.Errorf("plex pin poll non-2xx: %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", plexPinPollPending, fmt.Errorf("plex pin poll non-2xx: %d %s", resp.StatusCode, sanitizedSnippet(body, 200))
 	}
 
 	var p plexPin
@@ -236,7 +232,7 @@ func plexFetchUser(token string) (plexUser, error) {
 		return plexUser{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return plexUser{}, fmt.Errorf("plex user non-2xx: %d %s", resp.StatusCode, string(b))
+		return plexUser{}, fmt.Errorf("plex user non-2xx: %d %s", resp.StatusCode, sanitizedSnippet(b, 200))
 	}
 	var u plexUser
 	if err := json.Unmarshal(b, &u); err != nil {
@@ -277,7 +273,7 @@ func plexFetchResources(userToken string) ([]plexResource, error) {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("resources non-2xx: %d %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("resources non-2xx: %d %s", resp.StatusCode, sanitizedSnippet(body, 200))
 	}
 	var rs []plexResource
 	if err := json.Unmarshal(body, &rs); err != nil {

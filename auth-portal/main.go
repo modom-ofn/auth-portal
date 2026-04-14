@@ -21,15 +21,23 @@ import (
 	// e.g., "github.com/modom-ofn/auth-portal/health" or "modom-ofn/auth-portal/health"
 	"auth-portal/configstore"
 	"auth-portal/health"
+	"auth-portal/ldapsync"
 	"auth-portal/oauth"
 	"auth-portal/providers"
 	"golang.org/x/time/rate"
 )
 
+// appVersion is the application version string. Override at build time via:
+//
+//	go build -ldflags "-X main.appVersion=v2.0.6"
+var appVersion = "v2.0.5"
+
 var (
 	db                                     *sql.DB
 	configStore                            *configstore.Store
 	backupSvc                              *backupService
+	ldapSyncSvc                            *ldapsync.Service
+	ldapSyncMgr                            *ldapSyncManager
 	sessionSecret                          []byte
 	appBaseURL                             = envOr("APP_BASE_URL", "http://localhost:8089")
 	appTimeZone                            = envOr("APP_TIMEZONE", "UTC")
@@ -176,6 +184,7 @@ func dbChecker(db *sql.DB) health.Checker {
 
 func main() {
 	appTimeZone, appLocation = resolveLocation(appTimeZone)
+	installAdminLogBuffer()
 
 	db = mustInitDB(os.Getenv("DATABASE_URL"))
 	var runtimeCfg RuntimeConfig
@@ -183,6 +192,8 @@ func main() {
 	applyRuntimeConfig(runtimeCfg)
 
 	backupSvc = mustInitBackupService(configStore)
+	ldapSyncSvc = mustInitLDAPSyncService(db)
+	ldapSyncMgr = mustInitLDAPSyncManager(db, ldapSyncSvc)
 	oauthService = newOAuthService()
 
 	if err := bootstrapAdminUsers(); err != nil {
@@ -257,6 +268,23 @@ func mustInitBackupService(store *configstore.Store) *backupService {
 		log.Fatalf("Backup service init error: %v", err)
 	}
 	return svc
+}
+
+func mustInitLDAPSyncService(db *sql.DB) *ldapsync.Service {
+	svc, err := ldapsync.NewService(db)
+	if err != nil {
+		log.Fatalf("LDAP sync service init error: %v", err)
+	}
+	return svc
+}
+
+func mustInitLDAPSyncManager(db *sql.DB, service *ldapsync.Service) *ldapSyncManager {
+	manager, err := newLDAPSyncManager(db, service)
+	if err != nil {
+		log.Fatalf("LDAP sync manager init error: %v", err)
+	}
+	setLDAPSyncManager(manager)
+	return manager
 }
 
 func newOAuthService() oauth.Service {
@@ -512,26 +540,42 @@ func registerAuthenticatedRoutes(r *mux.Router) {
 }
 
 func registerAdminRoutes(r *mux.Router) {
-	adminProtected := func(h http.Handler) http.Handler {
-		return authMiddleware(requireAdmin(h))
+	adminProtected := func(permission string, h http.Handler) http.Handler {
+		return authMiddleware(requirePermission(permission, h))
 	}
 
 	adminAPI := r.PathPrefix("/api/admin").Subrouter()
-	adminAPI.Handle("/config", adminProtected(http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
-	adminAPI.Handle("/config/{section}", adminProtected(http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
-	adminAPI.Handle("/config/history/{section}", adminProtected(http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
-	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
-	adminAPI.Handle("/oauth/clients", adminProtected(http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
-	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
-	adminAPI.Handle("/oauth/clients/{id}", adminProtected(http.HandlerFunc(adminOAuthClientDelete))).Methods("DELETE")
-	adminAPI.Handle("/oauth/clients/{id}/rotate-secret", adminProtected(http.HandlerFunc(adminOAuthClientRotateSecret))).Methods("POST")
-	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsListHandler))).Methods("GET")
-	adminAPI.Handle("/backups", adminProtected(http.HandlerFunc(adminBackupsCreateHandler))).Methods("POST")
-	adminAPI.Handle("/backups/schedule", adminProtected(http.HandlerFunc(adminBackupsScheduleUpdate))).Methods("PUT")
-	adminAPI.Handle("/backups/{name}/restore", adminProtected(http.HandlerFunc(adminBackupsRestoreHandler))).Methods("POST")
-	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
-	adminAPI.Handle("/backups/{name}", adminProtected(http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
-	r.Handle("/admin", adminProtected(http.HandlerFunc(adminPageHandler))).Methods("GET")
+	adminAPI.Handle("/config", adminProtected(permissionConfigRead, http.HandlerFunc(adminConfigGetHandler))).Methods("GET")
+	adminAPI.Handle("/config/permissions", adminProtected(permissionConfigRead, http.HandlerFunc(adminConfigPermissionCatalogHandler))).Methods("GET")
+	adminAPI.Handle("/config/{section}", adminProtected(permissionConfigWrite, http.HandlerFunc(adminConfigUpdateHandler))).Methods("PUT")
+	adminAPI.Handle("/config/history/{section}", adminProtected(permissionConfigRead, http.HandlerFunc(adminConfigHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/oauth/clients", adminProtected(permissionOAuthRead, http.HandlerFunc(adminOAuthClientsList))).Methods("GET")
+	adminAPI.Handle("/oauth/history", adminProtected(permissionOAuthRead, http.HandlerFunc(adminOAuthHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/logs/history", adminProtected(permissionAdminAccess, http.HandlerFunc(adminLogsHistoryHandler))).Methods("GET")
+	adminAPI.Handle("/logs/stream", adminProtected(permissionAdminAccess, http.HandlerFunc(adminLogsStreamHandler))).Methods("GET")
+	adminAPI.Handle("/oauth/scopes", adminProtected(permissionOAuthRead, http.HandlerFunc(adminOAuthScopeCatalogHandler))).Methods("GET")
+	adminAPI.Handle("/oauth/clients", adminProtected(permissionOAuthWrite, http.HandlerFunc(adminOAuthClientCreate))).Methods("POST")
+	adminAPI.Handle("/oauth/clients/{id}", adminProtected(permissionOAuthWrite, http.HandlerFunc(adminOAuthClientUpdate))).Methods("PUT")
+	adminAPI.Handle("/oauth/clients/{id}", adminProtected(permissionOAuthWrite, http.HandlerFunc(adminOAuthClientDelete))).Methods("DELETE")
+	adminAPI.Handle("/oauth/clients/{id}/rotate-secret", adminProtected(permissionOAuthWrite, http.HandlerFunc(adminOAuthClientRotateSecret))).Methods("POST")
+	adminAPI.Handle("/backups", adminProtected(permissionBackupsRead, http.HandlerFunc(adminBackupsListHandler))).Methods("GET")
+	adminAPI.Handle("/backups", adminProtected(permissionBackupsWrite, http.HandlerFunc(adminBackupsCreateHandler))).Methods("POST")
+	adminAPI.Handle("/backups/schedule", adminProtected(permissionBackupsWrite, http.HandlerFunc(adminBackupsScheduleUpdate))).Methods("PUT")
+	adminAPI.Handle("/backups/{name}/restore", adminProtected(permissionBackupsWrite, http.HandlerFunc(adminBackupsRestoreHandler))).Methods("POST")
+	adminAPI.Handle("/backups/{name}", adminProtected(permissionBackupsRead, http.HandlerFunc(adminBackupsDownloadHandler))).Methods("GET")
+	adminAPI.Handle("/backups/{name}", adminProtected(permissionBackupsWrite, http.HandlerFunc(adminBackupsDeleteHandler))).Methods("DELETE")
+	adminAPI.Handle("/ldap-sync", adminProtected(permissionLDAPRead, http.HandlerFunc(adminLDAPSyncGetHandler))).Methods("GET")
+	adminAPI.Handle("/ldap-sync/test-connection", adminProtected(permissionLDAPWrite, http.HandlerFunc(adminLDAPSyncTestConnectionHandler))).Methods("POST")
+	adminAPI.Handle("/ldap-sync/run", adminProtected(permissionLDAPWrite, http.HandlerFunc(adminLDAPSyncRunHandler))).Methods("POST")
+	adminAPI.Handle("/rbac", adminProtected(permissionRBACRead, http.HandlerFunc(adminRBACGetHandler))).Methods("GET")
+	adminAPI.Handle("/rbac/bindings", adminProtected(permissionRBACWrite, http.HandlerFunc(adminRBACBindingUpsertHandler))).Methods("PUT")
+	adminAPI.Handle("/rbac/roles", adminProtected(permissionRBACWrite, http.HandlerFunc(adminRBACRoleCreateHandler))).Methods("POST")
+	adminAPI.Handle("/rbac/roles/{name}", adminProtected(permissionRBACWrite, http.HandlerFunc(adminRBACRoleUpdateHandler))).Methods("PUT")
+	adminAPI.Handle("/rbac/roles/{name}", adminProtected(permissionRBACWrite, http.HandlerFunc(adminRBACRoleDeleteHandler))).Methods("DELETE")
+	adminAPI.Handle("/rbac/permissions", adminProtected(permissionRBACWrite, http.HandlerFunc(adminRBACPermissionCreateHandler))).Methods("POST")
+	adminAPI.Handle("/rbac/permissions/{name}", adminProtected(permissionRBACWrite, http.HandlerFunc(adminRBACPermissionUpdateHandler))).Methods("PUT")
+	adminAPI.Handle("/rbac/permissions/{name}", adminProtected(permissionRBACWrite, http.HandlerFunc(adminRBACPermissionDeleteHandler))).Methods("DELETE")
+	r.Handle("/admin", adminProtected(permissionAdminAccess, http.HandlerFunc(adminPageHandler))).Methods("GET")
 }
 
 func registerHealthRoutes(r *mux.Router) {
