@@ -106,8 +106,6 @@ jobs:
               fi
               if [[ "$BRANCH_VERSION" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
                 echo "ver=$BRANCH_VERSION" >> $GITHUB_OUTPUT
-                echo "major=v${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-                echo "minor=v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> $GITHUB_OUTPUT
               fi
               ;;
           esac

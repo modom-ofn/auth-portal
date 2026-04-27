@@ -3,6 +3,7 @@
 ## v2.0.3
 
 ### Highlights
+- Security rebuild: updated the container build/runtime stack to Go 1.25.9, OpenSSL 3.3.7-r0, musl 1.2.5-r11, and zlib 1.3.2-r0 to pick up CVE fixes without changing application behavior.
 - Introduced the admin console with JSON-backed Providers/Security/MFA configuration, optimistic locking, change history, and inline editing at `/admin`.
 - Added OAuth client management UI plus `/api/admin/oauth/*` endpoints (list/create/update/delete/rotate) to control authorization-server registrations.
 - Shipped a first-party OAuth 2.1 / OpenID Connect authorization server featuring discovery, PKCE, consent tracking, RS256-signed ID tokens (with nonce), and refresh-token rotation gated on `offline_access`.
@@ -13,6 +14,7 @@
 - Corrected OIDC redirect error behavior to return standards-compliant callback redirects for valid absolute `redirect_uri` values.
 
 ### Upgrade Notes
+- Rebuild or pull the refreshed v2.0.3 image to pick up Go 1.25.9 and patched Alpine packages: OpenSSL 3.3.7-r0, musl 1.2.5-r11, and zlib 1.3.2-r0.
 - Define at least one bootstrap administrator with `ADMIN_BOOTSTRAP_USERS` (`username:email` pairs). Additional admins can be granted through the console later.
 - Provide signing material via `OIDC_SIGNING_KEY_PATH` (preferred) or `OIDC_SIGNING_KEY`; set `OIDC_ISSUER` when the public issuer differs from `APP_BASE_URL`.
 - Database migrations automatically add `config_store` entries and extend `oauth_auth_codes` with a `nonce` column-no manual steps required.

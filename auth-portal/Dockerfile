@@ -1,5 +1,5 @@
 # ---- builder ----
-FROM golang:1.25.7-alpine3.22 AS build
+FROM golang:1.25.9-alpine3.22 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
@@ -32,8 +32,8 @@ FROM alpine:3.21
 WORKDIR /app
 
 RUN apk upgrade --no-cache busybox && \
-    apk add --no-cache ca-certificates openssl=3.3.6-r0 tzdata && \
-    apk --no-cache upgrade musl && update-ca-certificates
+    apk add --no-cache ca-certificates openssl=3.3.7-r0 musl=1.2.5-r11 zlib=1.3.2-r0 tzdata && \
+    update-ca-certificates
 
 COPY --from=build /out/auth-portal /app/auth-portal
 COPY templates ./templates
