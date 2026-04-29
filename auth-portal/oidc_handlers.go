@@ -22,13 +22,18 @@ import (
 )
 
 const (
-	oidcContentTypeJSON = "application/json"
-	oidcHeaderContent   = "Content-Type"
-	oidcHeaderCache     = "Cache-Control"
-	oidcHeaderPragma    = "Pragma"
-	oidcHeaderWWWAuth   = "WWW-Authenticate"
-	oidcCacheNoStore    = "no-store"
-	oidcCacheNoPragma   = "no-cache"
+	oidcContentTypeJSON    = "application/json"
+	oidcHeaderContent      = "Content-Type"
+	oidcHeaderCache        = "Cache-Control"
+	oidcHeaderPragma       = "Pragma"
+	oidcHeaderWWWAuth      = "WWW-Authenticate"
+	oidcHeaderAllowOrigin  = "Access-Control-Allow-Origin"
+	oidcHeaderAllowMethods = "Access-Control-Allow-Methods"
+	oidcHeaderAllowHeaders = "Access-Control-Allow-Headers"
+	oidcHeaderMaxAge       = "Access-Control-Max-Age"
+	oidcHeaderVary         = "Vary"
+	oidcCacheNoStore       = "no-store"
+	oidcCacheNoPragma      = "no-cache"
 
 	errUserNotFound          = "user not found"
 	errCodeVerifierMismatch  = "code_verifier mismatch"
@@ -56,7 +61,13 @@ const (
 	oidcErrDescInvalidRedirectURI  = "invalid redirect_uri"
 )
 
-func oidcDiscoveryHandler(w http.ResponseWriter, _ *http.Request) {
+func oidcDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
+	applyOIDCDiscoveryCORS(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	issuer := oidcIssuer()
 	base := strings.TrimRight(issuer, "/")
 	scopesSupported := supportedOIDCScopes()
@@ -109,6 +120,84 @@ func oidcDiscoveryHandler(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set(oidcHeaderContent, oidcContentTypeJSON)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func applyOIDCDiscoveryCORS(w http.ResponseWriter, r *http.Request) {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return
+	}
+	allowedOrigin := allowedOIDCDiscoveryCORSOrigin(r.Context(), origin)
+	if allowedOrigin == "" {
+		return
+	}
+	w.Header().Set(oidcHeaderAllowOrigin, allowedOrigin)
+	w.Header().Set(oidcHeaderAllowMethods, "GET, OPTIONS")
+	w.Header().Set(oidcHeaderAllowHeaders, "Accept, Content-Type")
+	w.Header().Set(oidcHeaderMaxAge, "3600")
+	w.Header().Add(oidcHeaderVary, "Origin")
+}
+
+func allowedOIDCDiscoveryCORSOrigin(ctx context.Context, origin string) string {
+	normalized := normalizedCORSOrigin(origin)
+	if normalized == "" {
+		return ""
+	}
+	if oidcDiscoveryOriginRegistered(ctx, normalized) {
+		return normalized
+	}
+	return "*"
+}
+
+func oidcDiscoveryOriginRegistered(ctx context.Context, origin string) bool {
+	if oauthService.DB == nil {
+		return false
+	}
+	clients, err := oauthService.ListClients(ctx)
+	if err != nil {
+		log.Printf("oidc discovery: oauth client lookup failed for CORS origin %q: %v", origin, err)
+		return false
+	}
+	for _, client := range clients {
+		for _, redirectURI := range client.RedirectURIs {
+			if redirectURIOrigin(redirectURI) == origin {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func redirectURIOrigin(raw string) string {
+	normalized := normalizeRedirectValue(raw)
+	if normalized == "" {
+		return ""
+	}
+	u, err := url.Parse(normalized)
+	if err != nil || !u.IsAbs() {
+		return ""
+	}
+	return normalizedURLOrigin(u)
+}
+
+func normalizedCORSOrigin(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !u.IsAbs() || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return ""
+	}
+	return normalizedURLOrigin(u)
+}
+
+func normalizedURLOrigin(u *url.URL) string {
+	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Host))
+	if host == "" {
+		return ""
+	}
+	return scheme + "://" + host
 }
 
 func oidcJWKSHandler(w http.ResponseWriter, _ *http.Request) {

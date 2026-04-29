@@ -395,7 +395,7 @@ func registerEnrollmentRoutes(r *mux.Router, lim routeLimiters) {
 }
 
 func registerOIDCRoutes(r *mux.Router) {
-	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET")
+	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
 	r.Handle("/oidc/authorize", authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
 	r.Handle("/oidc/authorize/decision", authMiddleware(requireSameOrigin(http.HandlerFunc(oidcAuthorizeDecisionHandler)))).Methods("POST")
