@@ -27,10 +27,10 @@ const (
 	unexpectedErrorCodeFmt   = "unexpected error code: got %q want %q"
 	unexpectedDescriptionFmt = "unexpected description: got %q want %q"
 
-	testClientID      = "client-123"
-	testClientName    = "Test App"
-	testCallbackURL   = "https://example.com/callback"
-	testTokenPath     = "/oidc/token"
+	testClientID          = "client-123"
+	testClientName        = "Test App"
+	testCallbackURL       = "https://example.com/callback"
+	testTokenPath         = "/oidc/token"
 	testHeaderContentType = "Content-Type"
 	mimeFormURLEnc        = "application/x-www-form-urlencoded"
 )
@@ -88,6 +88,104 @@ func TestFinishAuthorizeFlowSuccess(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf(unmetExpectationsFmt, err)
+	}
+}
+
+func TestOIDCDiscoveryHandlerAllowsRegisteredRedirectOrigin(t *testing.T) {
+	testDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf(sqlMockErrFmt, err)
+	}
+	defer testDB.Close()
+
+	originalService := oauthService
+	originalDB := db
+	defer func() {
+		oauthService = originalService
+		db = originalDB
+	}()
+
+	oauthService = oauth.Service{DB: testDB}
+	db = testDB
+
+	now := time.Now()
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT client_id, client_secret, name, redirect_uris, scopes, grant_types, response_types, created_at, updated_at
+  FROM oauth_clients
+ ORDER BY created_at ASC
+`)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"client_id",
+			"client_secret",
+			"name",
+			"redirect_uris",
+			"scopes",
+			"grant_types",
+			"response_types",
+			"created_at",
+			"updated_at",
+		}).AddRow(
+			testClientID,
+			"",
+			testClientName,
+			pq.StringArray{"https://app.example.com/callback"},
+			pq.StringArray{"openid"},
+			pq.StringArray{"authorization_code", "refresh_token"},
+			pq.StringArray{"code"},
+			now,
+			now,
+		))
+	mock.ExpectQuery(regexp.QuoteMeta(`
+SELECT name, COALESCE(description, '')
+  FROM permissions
+ ORDER BY name
+`)).
+		WillReturnRows(sqlmock.NewRows([]string{"name", "description"}).
+			AddRow("profile", "Profile").
+			AddRow("email", "Email"))
+
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/openid-configuration", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+
+	rr := httptest.NewRecorder()
+	oidcDiscoveryHandler(rr, req)
+
+	resp := rr.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf(unexpectedStatusFmt, resp.StatusCode, http.StatusOK)
+	}
+	if got := resp.Header.Get(oidcHeaderAllowOrigin); got != "https://app.example.com" {
+		t.Fatalf("unexpected CORS origin: got %q want %q", got, "https://app.example.com")
+	}
+	if got := resp.Header.Get(oidcHeaderVary); got != "Origin" {
+		t.Fatalf("unexpected Vary header: got %q want %q", got, "Origin")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf(unmetExpectationsFmt, err)
+	}
+}
+
+func TestOIDCDiscoveryHandlerHandlesCORSPreflight(t *testing.T) {
+	originalService := oauthService
+	defer func() { oauthService = originalService }()
+
+	oauthService = oauth.Service{}
+
+	req := httptest.NewRequest(http.MethodOptions, "/.well-known/openid-configuration", nil)
+	req.Header.Set("Origin", "https://unknown.example.com")
+
+	rr := httptest.NewRecorder()
+	oidcDiscoveryHandler(rr, req)
+
+	resp := rr.Result()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf(unexpectedStatusFmt, resp.StatusCode, http.StatusNoContent)
+	}
+	if got := resp.Header.Get(oidcHeaderAllowOrigin); got != "*" {
+		t.Fatalf("unexpected CORS origin: got %q want %q", got, "*")
+	}
+	if got := resp.Header.Get(oidcHeaderAllowMethods); !strings.Contains(got, http.MethodGet) || !strings.Contains(got, http.MethodOptions) {
+		t.Fatalf("unexpected CORS methods: %q", got)
 	}
 }
 
