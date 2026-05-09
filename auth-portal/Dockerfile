@@ -1,5 +1,5 @@
 # ---- builder ----
-FROM golang:1.25.9-alpine3.22 AS build
+FROM golang:1.26.3-alpine3.23 AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
@@ -20,7 +20,7 @@ COPY configstore ./configstore
 COPY health ./health
 COPY static ./static
 COPY templates ./templates
-RUN go mod tidy -compat=1.25
+RUN go mod tidy -compat=1.26
 
 # 3) Build static binary (verbose, no VCS scan)
 RUN mkdir -p /out && \
