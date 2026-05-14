@@ -22,6 +22,8 @@ body.modal-open{overflow:hidden;}
 /* Layered gradients for rich depth */
 .bg{
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background:
     radial-gradient(70% 60% at 10% 10%, #1e293b 0%, transparent 60%),
@@ -33,11 +35,38 @@ body.modal-open{overflow:hidden;}
 .bg.bg-mode-solid{
   background: var(--portal-bg-color);
 }
+.bg.bg-mode-image{
+  background-image:
+    linear-gradient(180deg, rgba(11,16,32,.36), rgba(11,16,32,.62)),
+    var(--portal-bg-image);
+  background-position: center, center;
+  background-size: cover, cover;
+  background-repeat: no-repeat, no-repeat;
+  background-color: var(--portal-bg-color);
+}
+.bg.bg-mode-image.bg-image-fit{
+  background-size: cover, contain;
+}
+.bg.bg-mode-image.bg-image-centered{
+  background-size: cover, auto;
+}
+.bg.bg-mode-image.bg-image-original{
+  background-position: center, left top;
+  background-size: cover, auto;
+}
+.bg.bg-mode-image.bg-image-stretch{
+  background-size: cover, 100% 100%;
+}
+.bg.bg-mode-image.bg-image-tile{
+  background-position: center, left top;
+  background-size: cover, auto;
+  background-repeat: no-repeat, repeat;
+}
 
 /* Animated film grain (very subtle) */
 .bg::after{
   content:"";
-  position:absolute; inset:0;
+  position:fixed; inset:0;
   background-image: repeating-radial-gradient(rgba(255,255,255,.012) 0 1px, transparent 2px 4px);
   opacity:.25;
   mix-blend-mode: soft-light;
@@ -59,7 +88,7 @@ body.modal-open{overflow:hidden;}
 }
 
 /* ========== Layout ========== */
-.center{min-height:100%;display:grid;place-items:center;padding:2rem;position:relative;z-index:1}
+.center{flex:1;min-height:0;display:grid;place-items:center;padding:2rem;position:relative;z-index:1}
 
 .card{
   width:100%;max-width:520px;
@@ -252,7 +281,7 @@ h1{font-size:1.6rem;margin:0}
 
 /* ========== Footer ========== */
 .footer{
-  position:fixed;left:0;right:0;bottom:0;
+  flex-shrink:0;
   display:flex;justify-content:center;align-items:center;
   padding:14px 10px;font-size:14px;color:#8b8f99;z-index:1;
   background: linear-gradient(to top, rgba(11,16,32,.55), rgba(11,16,32,0));

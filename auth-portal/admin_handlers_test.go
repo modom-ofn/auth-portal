@@ -61,6 +61,8 @@ func TestValidateAppSettingsConfig(t *testing.T) {
 		LoginExtraLinkText:    "Docs",
 		PortalAppName:         "North Ridge Portal",
 		PortalLogoURL:         "/static/north-ridge-logo.png",
+		PortalBackgroundURL:   "/static/north-ridge-background.jpg",
+		PortalBackgroundMode:  "fit",
 		LoginBodyText:         "Sign in with your {{providerName}} account to continue.",
 		AuthorizedTitleText:   "Welcome, {{username}}",
 		AuthorizedBodyText:    "Your access to {{appName}} is active.",
@@ -127,6 +129,57 @@ func TestValidateAppSettingsConfig(t *testing.T) {
 	normalizeAppSettingsConfig(&invalidLogo)
 	if validateAppSettingsConfig(invalidLogo) == nil {
 		t.Fatalf("expected validation error for invalid portal logo URL")
+	}
+
+	invalidBackground := AppSettingsConfig{
+		PortalBackgroundURL: "javascript:alert(1)",
+	}
+	normalizeAppSettingsConfig(&invalidBackground)
+	if validateAppSettingsConfig(invalidBackground) == nil {
+		t.Fatalf("expected validation error for invalid portal background URL")
+	}
+
+	invalidBackgroundMode := AppSettingsConfig{
+		PortalBackgroundMode: "sideways",
+	}
+	normalizeAppSettingsConfig(&invalidBackgroundMode)
+	if validateAppSettingsConfig(invalidBackgroundMode) == nil {
+		t.Fatalf("expected validation error for invalid portal background mode")
+	}
+}
+
+func TestPortalBackgroundPresentationUsesCustomURL(t *testing.T) {
+	previous := runtimeConfigValue.Load()
+	defer func() {
+		if previous != nil {
+			runtimeConfigValue.Store(previous)
+			return
+		}
+		runtimeConfigValue.Store(RuntimeConfig{AppSettings: defaultAppSettingsConfig()})
+	}()
+
+	runtimeConfigValue.Store(RuntimeConfig{
+		AppSettings: AppSettingsConfig{
+			PortalBackgroundColor: "#ffffff",
+			PortalBackgroundURL:   "/static/custom-background.jpg",
+			PortalBackgroundMode:  "fit",
+		},
+	})
+
+	color, bgURL, mode := portalBackgroundPresentation()
+	if bgURL != "/static/custom-background.jpg" {
+		t.Fatalf("expected custom background URL, got %q", bgURL)
+	}
+	if mode != "bg-mode-image bg-image-fit" {
+		t.Fatalf("expected image mode, got %q", mode)
+	}
+	if color != "#0b1020" {
+		t.Fatalf("expected neutral fallback color for image mode, got %q", color)
+	}
+
+	style := string(portalBackgroundStyle(color, bgURL))
+	if style != `--portal-bg-color: #0b1020; --portal-bg-image: url("/static/custom-background.jpg");` {
+		t.Fatalf("unexpected background style: %q", style)
 	}
 }
 

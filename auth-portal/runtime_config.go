@@ -69,6 +69,8 @@ type AppSettingsConfig struct {
 	LoginExtraLinkText    string           `json:"loginExtraLinkText"`
 	PortalAppName         string           `json:"portalAppName,omitempty"`
 	PortalLogoURL         string           `json:"portalLogoUrl,omitempty"`
+	PortalBackgroundURL   string           `json:"portalBackgroundUrl,omitempty"`
+	PortalBackgroundMode  string           `json:"portalBackgroundMode,omitempty"`
 	LoginBodyText         string           `json:"loginBodyText,omitempty"`
 	AuthorizedTitleText   string           `json:"authorizedTitleText,omitempty"`
 	AuthorizedBodyText    string           `json:"authorizedBodyText,omitempty"`
@@ -223,6 +225,8 @@ func defaultAppSettingsConfig() AppSettingsConfig {
 		LoginExtraLinkText:    strings.TrimSpace(os.Getenv("LOGIN_EXTRA_LINK_TEXT")),
 		PortalAppName:         strings.TrimSpace(os.Getenv("PORTAL_APP_NAME")),
 		PortalLogoURL:         strings.TrimSpace(os.Getenv("PORTAL_LOGO_URL")),
+		PortalBackgroundURL:   strings.TrimSpace(os.Getenv("PORTAL_BACKGROUND_URL")),
+		PortalBackgroundMode:  strings.TrimSpace(os.Getenv("PORTAL_BACKGROUND_MODE")),
 		LoginBodyText:         strings.TrimSpace(os.Getenv("LOGIN_BODY_TEXT")),
 		AuthorizedTitleText:   strings.TrimSpace(os.Getenv("AUTHORIZED_TITLE_TEXT")),
 		AuthorizedBodyText:    strings.TrimSpace(os.Getenv("AUTHORIZED_BODY_TEXT")),
@@ -458,6 +462,8 @@ func applyRuntimeConfig(cfg RuntimeConfig) {
 	cfg.AppSettings.LoginExtraLinkText = loginExtraLinkText
 	cfg.AppSettings.PortalAppName = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalAppName, defaults.AppSettings.PortalAppName))
 	cfg.AppSettings.PortalLogoURL = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalLogoURL, defaults.AppSettings.PortalLogoURL))
+	cfg.AppSettings.PortalBackgroundURL = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.PortalBackgroundURL, defaults.AppSettings.PortalBackgroundURL))
+	cfg.AppSettings.PortalBackgroundMode = normalizePortalBackgroundMode(firstNonEmpty(cfg.AppSettings.PortalBackgroundMode, defaults.AppSettings.PortalBackgroundMode))
 	cfg.AppSettings.LoginBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.LoginBodyText, defaults.AppSettings.LoginBodyText))
 	cfg.AppSettings.AuthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.AuthorizedTitleText, defaults.AppSettings.AuthorizedTitleText))
 	cfg.AppSettings.AuthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.AppSettings.AuthorizedBodyText, defaults.AppSettings.AuthorizedBodyText))

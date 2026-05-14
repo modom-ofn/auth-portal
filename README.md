@@ -199,7 +199,7 @@ APP_TIMEZONE=UTC
 TZ=UTC
 
 # 32-byte base64 key (e.g., openssl rand -base64 32) (Do Not Reuse Example Below)
-DATA_KEY=5Z3UMPcF9BBkpB2SkuoXqYfGWKn1eXzpMdR8EyMV8dY=
+DATA_KEY=generate-your-own-key
 
 # Admin bootstrap (comma-separated username:email pairs)
 ADMIN_BOOTSTRAP_USERS=admin:admin@example.com
@@ -720,9 +720,11 @@ DEBUG plex: resources match via machine id
 
 ## Customization
 
-- **Logo:** in `templates/login.html`, swap the inline SVG for your logo.  
-- **Colors & button:** tweak in `static/styles.css` (`--brand` etc.).
-- **Authorized / Unauthorized pages:** edit `templates/portal_authorized.html` and `templates/portal_unauthorized.html`
+- **Branding and portal styling:** use **Admin -> App Settings** to set the end-user portal app name, logo URL, background color, modal color, title color, body text color, and optional custom background image.
+- **Custom background image:** set `portalBackgroundUrl` to a relative path such as `/static/portal-background.jpg` or an absolute `http(s)` URL. When this is set, it overrides only `portalBackgroundColor`; modal, title, body text, and service button colors continue to apply.
+- **Background display mode:** set `portalBackgroundMode` to `span`, `fit`, `centered`, `original`, `stretch`, or `tile`. `span` is the default and fills the viewport while cropping as needed; `fit` keeps the whole image visible; `centered` uses the image's natural size centered in the viewport; `original` uses natural size from the top-left; `stretch` forces the image to the viewport; `tile` repeats it.
+- **Environment defaults:** first-run/default values can be supplied with `PORTAL_APP_NAME`, `PORTAL_LOGO_URL`, `PORTAL_BACKGROUND_COLOR`, `PORTAL_BACKGROUND_URL`, `PORTAL_BACKGROUND_MODE`, `PORTAL_MODAL_COLOR`, `PORTAL_TITLE_COLOR`, and `PORTAL_BODY_TEXT_COLOR`. Once App Settings are saved in Postgres, manage ongoing changes through the admin UI or `/api/admin/config/app-settings`.
+- **Authorized / Unauthorized page copy:** edit the text fields in **Admin -> App Settings -> Portal Config**. The copy fields support `{{username}}`, `{{providerName}}`, and `{{appName}}`.
 
 ---
 
