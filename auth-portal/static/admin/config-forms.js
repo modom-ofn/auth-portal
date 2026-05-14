@@ -456,6 +456,26 @@ export const createConfigFormsController = (configFields) => {
           </div>
         </div>
       </div>
+      <div class="config-form-group">
+        <h4>Custom Background</h4>
+        <div class="portal-bg-grid portal-bg-grid-top">
+          <div class="config-form-row">
+            <label for="app-portal-bg-url">Background URL</label>
+            <input id="app-portal-bg-url" type="text" placeholder="/static/portal-background.jpg">
+          </div>
+          <div class="config-form-row">
+            <label for="app-portal-bg-mode">Background Display</label>
+            <select id="app-portal-bg-mode">
+              <option value="span">Span</option>
+              <option value="fit">Fit</option>
+              <option value="centered">Centered</option>
+              <option value="original">Original</option>
+              <option value="stretch">Stretch</option>
+              <option value="tile">Tile</option>
+            </select>
+          </div>
+        </div>
+      </div>
     `, `
       <div class="config-form-group">
         <h4>Buttons</h4>
@@ -481,6 +501,8 @@ export const createConfigFormsController = (configFields) => {
     setFieldValue('app-unauth-request-email', config.unauthRequestEmail || '');
     setFieldValue('app-unauth-request-subject', config.unauthRequestSubject || '');
     setFieldValue('app-portal-bg-color', config.portalBackgroundColor || '#0b1020');
+    setFieldValue('app-portal-bg-url', config.portalBackgroundUrl || '');
+    setFieldValue('app-portal-bg-mode', config.portalBackgroundMode || 'span');
     setFieldValue('app-portal-modal-color', config.portalModalColor || '#111827');
     setFieldValue('app-portal-title-color', config.portalTitleColor || '#e5e7eb');
     setFieldValue('app-portal-body-text-color', config.portalBodyTextColor || '#94a3b8');
@@ -506,7 +528,11 @@ export const createConfigFormsController = (configFields) => {
       'app-unauth-request-subject':
         'Subject line prefilled in Request Access emails from the unauthorized page.',
       'app-portal-bg-color':
-        'Background color for login, authorized, and unauthorized page backgrounds.',
+        'Background color for login, authorized, and unauthorized page backgrounds. Ignored when Background URL is set.',
+      'app-portal-bg-url':
+        'Optional background image for login, authorized, and unauthorized page backgrounds. Use a relative path or absolute https:// URL.',
+      'app-portal-bg-mode':
+        'Controls how the background image is placed. Span fills the screen, Fit keeps the whole image visible, Original uses the natural image size.',
       'app-portal-modal-color':
         'Modal card color for login, authorized, and unauthorized pages.',
       'app-portal-title-color':
@@ -598,6 +624,8 @@ export const createConfigFormsController = (configFields) => {
     unauthRequestEmail: readFieldValue('app-unauth-request-email'),
     unauthRequestSubject: readFieldValue('app-unauth-request-subject'),
     portalBackgroundColor: readFieldValue('app-portal-bg-color') || '#0b1020',
+    portalBackgroundUrl: readFieldValue('app-portal-bg-url'),
+    portalBackgroundMode: readFieldValue('app-portal-bg-mode') || 'span',
     portalModalColor: readFieldValue('app-portal-modal-color') || '#111827',
     portalTitleColor: readFieldValue('app-portal-title-color') || '#e5e7eb',
     portalBodyTextColor: readFieldValue('app-portal-body-text-color') || '#94a3b8',

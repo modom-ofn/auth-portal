@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"html/template"
 	"log"
 	"net/http"
 	"net/mail"
@@ -120,13 +121,72 @@ func serviceButtonTextColor(color string) string {
 	return readableTextForHex(color)
 }
 
-func portalBackgroundPresentation() (heroColor, modeClass string) {
+func portalBackgroundPresentation() (heroColor, heroURL, modeClass string) {
+	bgMode := normalizePortalBackgroundMode(currentRuntimeConfig().AppSettings.PortalBackgroundMode)
+	if !isValidPortalBackgroundMode(bgMode) {
+		bgMode = "span"
+	}
+	heroURL = sanitizeDisplayURL(currentRuntimeConfig().AppSettings.PortalBackgroundURL)
+	if heroURL != "" {
+		return "#0b1020", heroURL, "bg-mode-image bg-image-" + bgMode
+	}
 	heroColor = sanitizeHexColor(currentRuntimeConfig().AppSettings.PortalBackgroundColor)
 	if heroColor == "" {
 		heroColor = "#0b1020"
 	}
 	modeClass = "bg-mode-solid"
-	return heroColor, modeClass
+	return heroColor, "", modeClass
+}
+
+func normalizePortalBackgroundMode(raw string) string {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	switch mode {
+	case "", "span", "cover":
+		return "span"
+	case "fit", "contain":
+		return "fit"
+	case "center", "centered":
+		return "centered"
+	case "original", "actual":
+		return "original"
+	case "stretch":
+		return "stretch"
+	case "tile", "tiled":
+		return "tile"
+	default:
+		return mode
+	}
+}
+
+func isValidPortalBackgroundMode(raw string) bool {
+	switch normalizePortalBackgroundMode(raw) {
+	case "span", "fit", "centered", "original", "stretch", "tile":
+		return true
+	default:
+		return false
+	}
+}
+
+func portalBackgroundStyle(heroColor, heroURL string) template.CSS {
+	if heroURL != "" {
+		return template.CSS(`--portal-bg-color: #0b1020; --portal-bg-image: url("` + cssQuotedURL(heroURL) + `");`)
+	}
+	color := sanitizeHexColor(heroColor)
+	if color == "" {
+		color = "#0b1020"
+	}
+	return template.CSS("--portal-bg-color: " + color + ";")
+}
+
+func cssQuotedURL(raw string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", "",
+		"\r", "",
+		"\f", "",
+	)
+	return replacer.Replace(raw)
 }
 
 func portalModalPresentation() (cardColor, modeClass string) {
@@ -271,7 +331,8 @@ func sanitizeMailAddress(raw string) string {
 func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 	key, name := providerUI()
 	extraURL, extraText := extraLink()
-	heroColor, modeClass := portalBackgroundPresentation()
+	heroColor, heroURL, modeClass := portalBackgroundPresentation()
+	heroStyle := portalBackgroundStyle(heroColor, heroURL)
 	cardColor, cardMode := portalModalPresentation()
 	titleColor := portalTitleColor()
 	bodyTextColor := portalBodyTextColor()
@@ -293,6 +354,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"ExtraLinkURL":        extraURL,
 			"ExtraLinkText":       extraText,
 			"HeroBackgroundColor": heroColor,
+			"HeroBackgroundStyle": heroStyle,
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
@@ -320,6 +382,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"ExtraLinkURL":        extraURL,
 			"ExtraLinkText":       extraText,
 			"HeroBackgroundColor": heroColor,
+			"HeroBackgroundStyle": heroStyle,
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
@@ -344,6 +407,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"ExtraLinkURL":        extraURL,
 			"ExtraLinkText":       extraText,
 			"HeroBackgroundColor": heroColor,
+			"HeroBackgroundStyle": heroStyle,
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
@@ -368,6 +432,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 				"ExtraLinkURL":        extraURL,
 				"ExtraLinkText":       extraText,
 				"HeroBackgroundColor": heroColor,
+				"HeroBackgroundStyle": heroStyle,
 				"HeroBackgroundMode":  modeClass,
 				"PortalCardColor":     cardColor,
 				"PortalCardMode":      cardMode,
@@ -382,6 +447,7 @@ func loginPageHandler(w http.ResponseWriter, r *http.Request) {
 			"ExtraLinkURL":        extraURL,
 			"ExtraLinkText":       extraText,
 			"HeroBackgroundColor": heroColor,
+			"HeroBackgroundStyle": heroStyle,
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
@@ -579,7 +645,8 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	// Use env-cased name for display
 	_, providerDisplay := providerUI()
 	extraURL, extraText := extraLink()
-	heroColor, modeClass := portalBackgroundPresentation()
+	heroColor, heroURL, modeClass := portalBackgroundPresentation()
+	heroStyle := portalBackgroundStyle(heroColor, heroURL)
 	cardColor, cardMode := portalModalPresentation()
 	titleColor := portalTitleColor()
 	bodyTextColor := portalBodyTextColor()
@@ -605,6 +672,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 			"ExtraLinkText":       extraText,
 			"ServiceLinks":        serviceLinks,
 			"HeroBackgroundColor": heroColor,
+			"HeroBackgroundStyle": heroStyle,
 			"HeroBackgroundMode":  modeClass,
 			"PortalCardColor":     cardColor,
 			"PortalCardMode":      cardMode,
@@ -634,6 +702,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"RequestSubject":      subj,
 		"RequestSubjectQP":    subjQP,
 		"HeroBackgroundColor": heroColor,
+		"HeroBackgroundStyle": heroStyle,
 		"HeroBackgroundMode":  modeClass,
 		"PortalCardColor":     cardColor,
 		"PortalCardMode":      cardMode,
@@ -673,12 +742,14 @@ func mfaChallengePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	heroColor, heroMode := portalBackgroundPresentation()
+	heroColor, heroURL, heroMode := portalBackgroundPresentation()
+	heroStyle := portalBackgroundStyle(heroColor, heroURL)
 	cardColor, cardMode := portalModalPresentation()
 	render(w, "mfa_challenge.html", map[string]any{
 		"Username":            strings.TrimSpace(claims.Username),
 		"Issuer":              mfaIssuer,
 		"HeroBackgroundColor": heroColor,
+		"HeroBackgroundStyle": heroStyle,
 		"HeroBackgroundMode":  heroMode,
 		"PortalCardColor":     cardColor,
 		"PortalCardMode":      cardMode,
@@ -690,12 +761,14 @@ func mfaEnrollPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, providers.PostAuthRedirectHome, http.StatusFound)
 		return
 	}
-	heroColor, heroMode := portalBackgroundPresentation()
+	heroColor, heroURL, heroMode := portalBackgroundPresentation()
+	heroStyle := portalBackgroundStyle(heroColor, heroURL)
 	cardColor, cardMode := portalModalPresentation()
 	render(w, "mfa_enroll.html", map[string]any{
 		"Username":            uname,
 		"Issuer":              mfaIssuer,
 		"HeroBackgroundColor": heroColor,
+		"HeroBackgroundStyle": heroStyle,
 		"HeroBackgroundMode":  heroMode,
 		"PortalCardColor":     cardColor,
 		"PortalCardMode":      cardMode,
