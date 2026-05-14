@@ -33,6 +33,33 @@ body.modal-open{overflow:hidden;}
 .bg.bg-mode-solid{
   background: var(--portal-bg-color);
 }
+.bg.bg-mode-image{
+  background-image:
+    linear-gradient(180deg, rgba(11,16,32,.36), rgba(11,16,32,.62)),
+    var(--portal-bg-image);
+  background-position: center, center;
+  background-size: cover, cover;
+  background-repeat: no-repeat, no-repeat;
+  background-color: var(--portal-bg-color);
+}
+.bg.bg-mode-image.bg-image-fit{
+  background-size: cover, contain;
+}
+.bg.bg-mode-image.bg-image-centered{
+  background-size: cover, auto;
+}
+.bg.bg-mode-image.bg-image-original{
+  background-position: center, left top;
+  background-size: cover, auto;
+}
+.bg.bg-mode-image.bg-image-stretch{
+  background-size: cover, 100% 100%;
+}
+.bg.bg-mode-image.bg-image-tile{
+  background-position: center, left top;
+  background-size: cover, auto;
+  background-repeat: no-repeat, repeat;
+}
 
 /* Animated film grain (very subtle) */
 .bg::after{

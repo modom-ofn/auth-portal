@@ -949,6 +949,8 @@ func normalizeAppSettingsConfig(cfg *AppSettingsConfig) {
 	cfg.LoginExtraLinkText = strings.TrimSpace(firstNonEmpty(cfg.LoginExtraLinkText, defaults.LoginExtraLinkText))
 	cfg.PortalAppName = strings.TrimSpace(firstNonEmpty(cfg.PortalAppName, defaults.PortalAppName))
 	cfg.PortalLogoURL = strings.TrimSpace(firstNonEmpty(cfg.PortalLogoURL, defaults.PortalLogoURL))
+	cfg.PortalBackgroundURL = strings.TrimSpace(firstNonEmpty(cfg.PortalBackgroundURL, defaults.PortalBackgroundURL))
+	cfg.PortalBackgroundMode = normalizePortalBackgroundMode(firstNonEmpty(cfg.PortalBackgroundMode, defaults.PortalBackgroundMode))
 	cfg.LoginBodyText = strings.TrimSpace(firstNonEmpty(cfg.LoginBodyText, defaults.LoginBodyText))
 	cfg.AuthorizedTitleText = strings.TrimSpace(firstNonEmpty(cfg.AuthorizedTitleText, defaults.AuthorizedTitleText))
 	cfg.AuthorizedBodyText = strings.TrimSpace(firstNonEmpty(cfg.AuthorizedBodyText, defaults.AuthorizedBodyText))
@@ -1057,6 +1059,21 @@ func validateOptionalLogoLink(raw string) error {
 	return nil
 }
 
+func validateOptionalBackgroundLink(raw string) error {
+	link := strings.TrimSpace(raw)
+	if link != "" && !isValidPortalLinkURL(link) {
+		return errors.New("portal background URL must be a relative path or absolute URL")
+	}
+	return nil
+}
+
+func validatePortalBackgroundMode(raw string) error {
+	if !isValidPortalBackgroundMode(raw) {
+		return errors.New("portal background mode must be one of span, fit, centered, original, stretch, or tile")
+	}
+	return nil
+}
+
 func validateOptionalRequestEmail(raw string) error {
 	email := strings.TrimSpace(raw)
 	if email == "" {
@@ -1112,6 +1129,8 @@ func validateAppSettingsConfig(cfg AppSettingsConfig) error {
 	optionalChecks := []func() error{
 		func() error { return validateOptionalPortalLink(cfg.LoginExtraLinkURL) },
 		func() error { return validateOptionalLogoLink(cfg.PortalLogoURL) },
+		func() error { return validateOptionalBackgroundLink(cfg.PortalBackgroundURL) },
+		func() error { return validatePortalBackgroundMode(cfg.PortalBackgroundMode) },
 		func() error { return validateOptionalRequestEmail(cfg.UnauthRequestEmail) },
 		func() error { return validateOptionalPortalColor(cfg.PortalBackgroundColor, "portal background color") },
 		func() error { return validateOptionalPortalColor(cfg.PortalModalColor, "portal modal color") },

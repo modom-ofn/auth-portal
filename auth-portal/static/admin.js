@@ -387,7 +387,9 @@ const initializeSidebarToggle = () => {
           <li><code>disableFooter</code> hides the footer on end-user pages only.</li>
           <li><code>loginExtraLinkUrl</code> and <code>loginExtraLinkText</code> add an optional button to the authorized portal header. Leave either blank to fall back to the shipped defaults.</li>
           <li><code>serviceLinks</code> defines zero or more button-style links shown to authorized users. Each entry needs a <code>name</code> and <code>url</code>; optional <code>color</code> accepts <code>#RRGGBB</code>.</li>
-          <li><code>portalBackgroundColor</code> controls login/home page background color.</li>
+          <li><code>portalBackgroundColor</code> controls login/home page background color unless <code>portalBackgroundUrl</code> is set.</li>
+          <li><code>portalBackgroundUrl</code> changes the login/home page background image and overrides only <code>portalBackgroundColor</code>.</li>
+          <li><code>portalBackgroundMode</code> controls how the background image is placed: <code>span</code>, <code>fit</code>, <code>centered</code>, <code>original</code>, <code>stretch</code>, or <code>tile</code>.</li>
           <li><code>portalModalColor</code> controls authorized/unauthorized modal panel color.</li>
           <li><code>portalTitleColor</code> and <code>portalBodyTextColor</code> control end-user page heading and body copy colors.</li>
           <li><code>unauthRequestEmail</code> and <code>unauthRequestSubject</code> power the mailto link shown on the unauthorized page. Provide a valid email address so users can reach you; empty values revert to defaults.</li>
@@ -408,6 +410,8 @@ const initializeSidebarToggle = () => {
     { "name": "Audiobookshelf", "url": "https://audiobooks.example.com", "color": "#1d4ed8" }
   ],
   "portalBackgroundColor": "#0b1020",
+  "portalBackgroundUrl": "/static/north-ridge-background.jpg",
+  "portalBackgroundMode": "span",
   "portalModalColor": "#111827",
   "portalTitleColor": "#e5e7eb",
   "portalBodyTextColor": "#94a3b8",
