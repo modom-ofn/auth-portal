@@ -7,6 +7,7 @@
 
 ### Fixed
 - Updated the Go toolchain and Docker builder image to Go 1.26.4, and upgraded `golang.org/x/crypto` to v0.52.0 to pick up current CVE fixes.
+- Updated pinned GitHub Actions build dependencies, including Checkout, Cache, Buildx, TruffleHog, and the GitHub release action.
 - Prevented the authorized portal page from showing transient vertical overflow when moving the mouse by letting the portal layout reserve footer space and keeping the animated grain layer out of scrollable layout.
 
 ## v2.0.5 - 2026-04-08
