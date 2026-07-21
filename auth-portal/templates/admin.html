@@ -131,7 +131,7 @@
                         <div class="panel-header-actions">
                             <button type="button" id="providers-export-btn" class="ghost-btn">Export</button>
                             <button type="button" id="providers-import-btn" class="ghost-btn">Import</button>
-                            <input type="file" id="providers-import-input" accept="application/json" hidden>
+                            <input type="file" id="providers-import-input" accept="application/json" aria-label="Import provider configuration file" hidden>
                         </div>
                     </div>
                     <p class="panel-helper">Choose the active media provider and supply its connection credentials. Only the active provider must be fully populated.</p>
@@ -154,7 +154,7 @@
                                 </div>
                             </div>
                             <div class="admin-actions">
-                                <input id="providers-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <input id="providers-reason" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="Provider change reason (optional)">
                                 <button id="providers-save" type="submit" class="primary-btn">Save Changes</button>
                             </div>
                         </section>
@@ -173,7 +173,7 @@
                         <div class="panel-header-actions">
                             <button type="button" id="security-export-btn" class="ghost-btn">Export</button>
                             <button type="button" id="security-import-btn" class="ghost-btn">Import</button>
-                            <input type="file" id="security-import-input" accept="application/json" hidden>
+                            <input type="file" id="security-import-input" accept="application/json" aria-label="Import security configuration file" hidden>
                         </div>
                     </div>
                     <p class="panel-helper">Control cookie lifetimes and browser security posture for authenticated admin and portal sessions.</p>
@@ -196,7 +196,7 @@
                                 </div>
                             </div>
                             <div class="admin-actions">
-                                <input id="security-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <input id="security-reason" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="Security change reason (optional)">
                                 <button id="security-save" type="submit" class="primary-btn">Save Changes</button>
                             </div>
                         </section>
@@ -215,7 +215,7 @@
                         <div class="panel-header-actions">
                             <button type="button" id="mfa-export-btn" class="ghost-btn">Export</button>
                             <button type="button" id="mfa-import-btn" class="ghost-btn">Import</button>
-                            <input type="file" id="mfa-import-input" accept="application/json" hidden>
+                            <input type="file" id="mfa-import-input" accept="application/json" aria-label="Import MFA configuration file" hidden>
                         </div>
                     </div>
                     <p class="panel-helper">Fine-tune multi-factor authentication behaviour for end-users. Enabling enforcement requires enrollment to also be enabled.</p>
@@ -238,7 +238,7 @@
                                 </div>
                             </div>
                             <div class="admin-actions">
-                                <input id="mfa-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <input id="mfa-reason" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="MFA change reason (optional)">
                                 <button id="mfa-save" type="submit" class="primary-btn">Save Changes</button>
                             </div>
                         </section>
@@ -257,7 +257,7 @@
                         <div class="panel-header-actions">
                             <button type="button" id="app-settings-export-btn" class="ghost-btn">Export</button>
                             <button type="button" id="app-settings-import-btn" class="ghost-btn">Import</button>
-                            <input type="file" id="app-settings-import-input" accept="application/json" hidden>
+                            <input type="file" id="app-settings-import-input" accept="application/json" aria-label="Import app settings configuration file" hidden>
                         </div>
                     </div>
                     <p class="panel-helper">Customize end-user portal branding, wording, service links, styling, and the unauthorized-page contact email. Admin pages always keep the built-in AuthPortal branding.</p>
@@ -309,7 +309,7 @@
                                 </div>
                             </div>
                             <div class="admin-actions">
-                                <input id="app-settings-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                <input id="app-settings-reason" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="App settings change reason (optional)">
                                 <button id="app-settings-save" type="submit" class="primary-btn">Save Changes</button>
                             </div>
                         </section>
@@ -417,7 +417,7 @@
                     <div class="config-tools">
                         <button type="button" id="ldap-sync-export-btn" class="ghost-btn">Export</button>
                         <button type="button" id="ldap-sync-import-btn" class="ghost-btn">Import</button>
-                        <input type="file" id="ldap-sync-import-input" accept="application/json" hidden>
+                        <input type="file" id="ldap-sync-import-input" accept="application/json" aria-label="Import LDAP sync configuration file" hidden>
                     </div>
                     <div class="panel-layout">
                         <section class="panel-section">
@@ -635,7 +635,7 @@
                                     <div class="config-form-group">
                                         <h4>Apply Changes</h4>
                                         <div class="admin-actions">
-                                            <input id="ldap-sync-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <input id="ldap-sync-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="LDAP sync change reason (optional)">
                                             <button id="ldap-sync-save-btn" type="submit" class="primary-btn">Save Configuration</button>
                                         </div>
                                     </div>
@@ -724,7 +724,7 @@
                                     <div class="config-form-group">
                                         <h4>Save Changes</h4>
                                         <div class="admin-actions">
-                                            <input id="rbac-role-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <input id="rbac-role-reason" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="Role change reason (optional)">
                                             <button id="rbac-role-reset" type="button" class="ghost-btn">New Role</button>
                                             <button id="rbac-role-save" type="submit" class="primary-btn">Save Role</button>
                                         </div>
@@ -777,7 +777,7 @@
                                     <div class="config-form-group">
                                         <h4>Save Changes</h4>
                                         <div class="admin-actions">
-                                            <input id="rbac-permission-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <input id="rbac-permission-reason" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="Permission change reason (optional)">
                                             <button id="rbac-permission-reset" type="button" class="ghost-btn">New Permission</button>
                                             <button id="rbac-permission-save" type="submit" class="primary-btn">Save Permission</button>
                                         </div>
@@ -832,7 +832,7 @@
                                     <div class="config-form-group">
                                         <h4>Save Changes</h4>
                                         <div class="admin-actions">
-                                            <input id="rbac-binding-reason" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <input id="rbac-binding-reason" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="Role binding change reason (optional)">
                                             <button id="rbac-binding-reset" type="button" class="ghost-btn">New Binding</button>
                                             <button id="rbac-binding-save" type="submit" class="primary-btn">Save Role Binding</button>
                                         </div>
@@ -970,7 +970,7 @@
                                     <div class="config-form-group">
                                         <h4>Save Changes</h4>
                                         <div class="backup-schedule-actions">
-                                            <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200">
+                                            <input id="backup-reason-input" type="text" placeholder="Change reason (optional)" maxlength="200" aria-label="Backup schedule change reason (optional)">
                                             <button type="submit" id="backup-schedule-save" class="primary-btn">Save Schedule</button>
                                         </div>
                                     </div>

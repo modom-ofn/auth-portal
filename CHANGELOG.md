@@ -6,6 +6,8 @@
 - Added App Settings controls for a custom portal background URL and display mode (`span`, `fit`, `centered`, `original`, `stretch`, or `tile`). A custom background URL overrides only `portalBackgroundColor`; other portal styling colors continue to apply.
 
 ### Fixed
+- Added accessible names to configuration import, change-reason, and MFA verification fields.
+- Resolved static-analysis maintainability findings in routing, login flow, admin smoke tests, consent styling, and MFA autocomplete markup.
 - Updated the Go toolchain and Docker builder image to Go 1.26.5, and upgraded `golang.org/x/crypto` to v0.52.0 to pick up current CVE fixes.
 - Updated pinned GitHub Actions build dependencies, including Checkout, Cache, Buildx, TruffleHog, and the GitHub release action.
 - Enforced HTTPS for Syft and Grype download redirects in the build workflow.

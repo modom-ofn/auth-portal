@@ -18,7 +18,7 @@
       const params = new URLSearchParams(globalThis.location.search || "");
       const next = params.get("next");
       const safe = safeRedirect(next);
-      if (!safe || !safe.startsWith("/oidc/authorize")) return null;
+      if (!safe?.startsWith("/oidc/authorize")) return null;
       return safe;
     } catch {
       return null;
@@ -36,28 +36,33 @@
     );
   }
 
+  function replaceHomeTarget(target, continueTarget, needsMFA) {
+    if (needsMFA || !continueTarget) return target;
+    try {
+      const parsed = new URL(target, globalThis.location.origin);
+      return parsed.pathname === "/home" ? continueTarget : target;
+    } catch {
+      return target;
+    }
+  }
+
+  function addContinueTargetToMFA(target, continueTarget) {
+    if (!continueTarget) return target;
+    try {
+      const parsed = new URL(target, globalThis.location.origin);
+      if (parsed.pathname !== "/mfa/challenge" || parsed.searchParams.has("next")) return target;
+      parsed.searchParams.set("next", continueTarget);
+      return parsed.pathname + parsed.search;
+    } catch {
+      return target;
+    }
+  }
+
   function finalizeNavigation(redirect, needsMFA) {
     const continueTarget = continueTargetFromLocation();
     let target = safeRedirect(redirect) || (needsMFA ? "/mfa/challenge" : "/home");
-
-    if (!needsMFA && continueTarget) {
-      try {
-        const parsed = new URL(target, globalThis.location.origin);
-        if (parsed.pathname === "/home") {
-          target = continueTarget;
-        }
-      } catch {}
-    }
-
-    if (continueTarget) {
-      try {
-        const parsed = new URL(target, globalThis.location.origin);
-        if (parsed.pathname === "/mfa/challenge" && !parsed.searchParams.has("next")) {
-          parsed.searchParams.set("next", continueTarget);
-          target = parsed.pathname + (parsed.search ? parsed.search : "");
-        }
-      } catch {}
-    }
+    target = replaceHomeTarget(target, continueTarget, needsMFA);
+    target = addContinueTargetToMFA(target, continueTarget);
 
     lastAuthRedirect = target;
     globalThis.location.assign(target);
@@ -162,105 +167,123 @@
     return provider === "jellyfin" ? "/auth/forward?jellyfin=1" : "/auth/forward?emby=1";
   }
 
+  function preparePopup(popup) {
+    try {
+      const doc = popup?.document;
+      if (!doc) return;
+      doc.title = "Starting sign-in…";
+      const body = doc.body || doc.createElement("body");
+      body.style.fontFamily = "system-ui";
+      body.style.padding = "1rem";
+      body.textContent = "Starting sign-in…";
+      if (!doc.body) doc.appendChild(body);
+    } catch {}
+  }
+
+  function navigatePopup(popup, authUrl) {
+    if (!popup || popup.closed) return false;
+    try {
+      popup.location.replace(authUrl);
+    } catch {
+      popup.location.href = authUrl;
+    }
+    return true;
+  }
+
+  function startPlexPolling(popup) {
+    let pollTimer = null;
+    let pollStopped = false;
+    let pollInFlight = false;
+
+    const stopPolling = () => {
+      pollStopped = true;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    };
+    const schedulePoll = (delayMs) => {
+      if (!pollStopped) pollTimer = setTimeout(runPollOnce, delayMs);
+    };
+    const runPollOnce = async () => {
+      if (pollStopped || pollInFlight) {
+        schedulePoll(2500);
+        return;
+      }
+      pollInFlight = true;
+      try {
+        const response = await fetch("/auth/poll", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" }
+        });
+        if (!response.ok) {
+          schedulePoll(3000);
+          return;
+        }
+        const result = await response.json().catch(() => ({}));
+        if (result?.ok) {
+          stopPolling();
+          try { if (popup && !popup.closed) popup.close(); } catch {}
+          finalizeNavigation(result.redirect, !!result.mfa);
+          return;
+        }
+        schedulePoll(2500);
+      } catch {
+        schedulePoll(3000);
+      } finally {
+        pollInFlight = false;
+      }
+    };
+
+    schedulePoll(2200);
+    return stopPolling;
+  }
+
+  function monitorPopupClosure(popup, stopPolling) {
+    const interval = setInterval(() => {
+      if (popup && !popup.closed) return;
+      clearInterval(interval);
+      stopPolling();
+      globalThis.location.assign(lastAuthRedirect);
+    }, 1200);
+  }
+
+  function showPopupError(popup) {
+    try {
+      if (popup && !popup.closed && popup.document) {
+        popup.document.body.innerHTML =
+          `<p style="font-family:system-ui;color:#b91c1c">Could not start login. Please try again.</p>`;
+      }
+    } catch {}
+  }
+
   async function startFlow(btn) {
     const provider = detectProvider(btn); // "plex" | "emby" | "jellyfin"
 
     // Open placeholder popup synchronously (prevents popup blockers)
-    let popup = openPopup("about:blank");
-    try {
-      const doc = popup?.document;
-      if (doc) {
-        doc.title = "Starting sign-in…";
-        const body = doc.body || doc.createElement("body");
-        body.style.fontFamily = "system-ui";
-        body.style.padding = "1rem";
-        body.textContent = "Starting sign-in…";
-        if (!doc.body) {
-          doc.appendChild(body);
-        }
-      }
-    } catch {}
+    const popup = openPopup("about:blank");
+    preparePopup(popup);
 
     btn.disabled = true;
     try {
       const authUrl = await resolveAuthUrl(provider);
 
-      if (popup && !popup.closed) {
-        try { popup.location.replace(authUrl); } catch { popup.location.href = authUrl; }
-      } else {
+      if (!navigatePopup(popup, authUrl)) {
         // Popup blocked → full-page navigation
         globalThis.location.assign(authUrl);
         return;
       }
 
       // Fallback for Plex: poll backend to finish PIN flow if Plex doesn't redirect to /auth/forward
-      let pollTimer = null;
-      let stopPlexPolling = () => {};
-      if (provider === "plex") {
-        let pollStopped = false;
-        let pollInFlight = false;
-        const schedulePoll = (delayMs) => {
-          if (pollStopped) return;
-          pollTimer = setTimeout(runPollOnce, delayMs);
-        };
-        const stopPolling = () => {
-          pollStopped = true;
-          if (pollTimer) {
-            clearTimeout(pollTimer);
-            pollTimer = null;
-          }
-        };
-        stopPlexPolling = stopPolling;
-        const runPollOnce = async () => {
-          if (pollStopped || pollInFlight) {
-            schedulePoll(2500);
-            return;
-          }
-          pollInFlight = true;
-          try {
-            const r = await fetch("/auth/poll", {
-              method: "GET",
-              credentials: "same-origin",
-              headers: { "Accept": "application/json" }
-            });
-            if (!r.ok) {
-              schedulePoll(3000);
-              return;
-            }
-            const j = await r.json().catch(() => ({}));
-            if (j?.ok) {
-              stopPolling();
-              try { if (popup && !popup.closed) popup.close(); } catch {}
-              finalizeNavigation(j.redirect, !!j.mfa);
-              return;
-            }
-            schedulePoll(2500);
-          } catch {
-            schedulePoll(3000);
-          } finally {
-            pollInFlight = false;
-          }
-        };
-        schedulePoll(2200);
-      }
+      const stopPlexPolling = provider === "plex" ? startPlexPolling(popup) : () => {};
 
       // If user closes the popup, head to /home
-      const iv = setInterval(() => {
-        if (!popup || popup.closed) {
-          clearInterval(iv);
-          stopPlexPolling();
-          globalThis.location.assign(lastAuthRedirect);
-        }
-      }, 1200);
+      monitorPopupClosure(popup, stopPlexPolling);
 
     } catch (err) {
       console.error(err);
-      try {
-        if (popup && !popup.closed && popup.document) {
-          popup.document.body.innerHTML =
-            `<p style="font-family:system-ui;color:#b91c1c">Could not start login. Please try again.</p>`;
-        }
-      } catch {}
+      showPopupError(popup);
       alert("Could not start login. Please try again.");
     } finally {
       btn.disabled = false;

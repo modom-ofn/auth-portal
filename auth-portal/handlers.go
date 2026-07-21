@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	loginTemplate     = "login.html"
-	headerContentType = "Content-Type"
-	contentTypeJSON   = "application/json"
-	signInTitleSuffix = "Sign In"
+	loginTemplate                = "login.html"
+	headerContentType            = "Content-Type"
+	contentTypeJSON              = "application/json"
+	signInTitleSuffix            = "Sign In"
+	defaultPortalBackgroundColor = "#0b1020"
 )
 
 // providerUI returns the provider key used by code ("plex"/"emby")
@@ -128,11 +129,11 @@ func portalBackgroundPresentation() (heroColor, heroURL, modeClass string) {
 	}
 	heroURL = sanitizeDisplayURL(currentRuntimeConfig().AppSettings.PortalBackgroundURL)
 	if heroURL != "" {
-		return "#0b1020", heroURL, "bg-mode-image bg-image-" + bgMode
+		return defaultPortalBackgroundColor, heroURL, "bg-mode-image bg-image-" + bgMode
 	}
 	heroColor = sanitizeHexColor(currentRuntimeConfig().AppSettings.PortalBackgroundColor)
 	if heroColor == "" {
-		heroColor = "#0b1020"
+		heroColor = defaultPortalBackgroundColor
 	}
 	modeClass = "bg-mode-solid"
 	return heroColor, "", modeClass
@@ -173,7 +174,7 @@ func portalBackgroundStyle(heroColor, heroURL string) template.CSS {
 	}
 	color := sanitizeHexColor(heroColor)
 	if color == "" {
-		color = "#0b1020"
+		color = defaultPortalBackgroundColor
 	}
 	return template.CSS("--portal-bg-color: " + color + ";")
 }

@@ -326,15 +326,8 @@ const runConstructionSmoke = () => {
   assert.equal(typeof backups.load, 'function');
 };
 
-const run = async () => {
-  await runRouterSmoke();
-  await runConfigSmoke();
-  runHelpAndLogsSmoke();
-  runConstructionSmoke();
-  console.log('admin smoke tests passed');
-};
-
-run().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+await runRouterSmoke();
+await runConfigSmoke();
+runHelpAndLogsSmoke();
+runConstructionSmoke();
+console.log('admin smoke tests passed');

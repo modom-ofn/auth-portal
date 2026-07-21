@@ -55,7 +55,7 @@
           <div style="display:flex;flex-direction:column;gap:.75rem">
             <h2 style="margin:0">Step 2: Verify your code</h2>
             <form id="verify-form" autocomplete="off" style="display:flex;flex-direction:column;gap:.75rem">
-              <input id="verify-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="10" placeholder="Enter 6-digit code" required style="padding:12px;border-radius:10px;border:1px solid var(--border);background:rgba(15,23,42,.82);color:var(--text)">
+              <input id="verify-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="10" placeholder="Enter 6-digit code" aria-label="Six-digit verification code" required style="padding:12px;border-radius:10px;border:1px solid var(--border);background:rgba(15,23,42,.82);color:var(--text)">
               <button type="submit" class="auth-btn" style="font-size:16px;padding:10px 18px">Verify and finish</button>
             </form>
             <div id="verify-message" style="margin-top:8px"></div>
