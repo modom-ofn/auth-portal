@@ -154,7 +154,7 @@ jobs:
           SYFT_VERSION="v1.42.4"
           SYFT_SHA256="590650c2743b83f327d1bf9bec64f6f83b7fec504187bb84f500c862bf8f2a0f"
           SYFT_URL="https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz"
-          curl -sSfL "$SYFT_URL" -o /tmp/syft.tgz
+          curl --proto '=https' --proto-redir '=https' -sSfL "$SYFT_URL" -o /tmp/syft.tgz
           echo "${SYFT_SHA256}  /tmp/syft.tgz" | sha256sum -c -
           tar -xzf /tmp/syft.tgz -C /tmp syft
           install /tmp/syft "$HOME/.local/bin/syft"
@@ -186,7 +186,7 @@ jobs:
           GRYPE_VERSION="v0.110.0"
           GRYPE_SHA256="aaa98d27d2d7efd9317c6a1ad6d9b15f3e65bab320e7d03bde41e251387bb71c"
           GRYPE_URL="https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz"
-          curl -sSfL "$GRYPE_URL" -o /tmp/grype.tgz
+          curl --proto '=https' --proto-redir '=https' -sSfL "$GRYPE_URL" -o /tmp/grype.tgz
           echo "${GRYPE_SHA256}  /tmp/grype.tgz" | sha256sum -c -
           tar -xzf /tmp/grype.tgz -C /tmp grype
           install /tmp/grype "$HOME/.local/bin/grype"
