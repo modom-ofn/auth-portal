@@ -1,6 +1,6 @@
 # ---- builder ----
-# dhi.io/golang:1.26.4-alpine3.23-dev
-FROM dhi.io/golang:1.26.4-alpine3.23-dev AS build
+# dhi.io/golang:1.26.5-alpine3.23-dev
+FROM dhi.io/golang:1.26.5-alpine3.23-dev AS build
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS

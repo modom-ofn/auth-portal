@@ -38,18 +38,18 @@ jobs:
       IMAGE: modomofn/auth-portal
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Secret scan (TruffleHog)
-        uses: trufflesecurity/trufflehog@37b77001d0174ebec2fcca2bd83ff83a6d45a3ab # v3.95.3
+        uses: trufflesecurity/trufflehog@00155c9dc586f34d189adc83d3ac2698c2ec551f # v3.95.8
         with:
           extra_args: --results=verified,unknown
 
       - name: Set up Go cache (optional)
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
@@ -62,7 +62,7 @@ jobs:
         uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
@@ -154,7 +154,7 @@ jobs:
           SYFT_VERSION="v1.42.4"
           SYFT_SHA256="590650c2743b83f327d1bf9bec64f6f83b7fec504187bb84f500c862bf8f2a0f"
           SYFT_URL="https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_VERSION#v}_linux_amd64.tar.gz"
-          curl -sSfL "$SYFT_URL" -o /tmp/syft.tgz
+          curl --proto '=https' --proto-redir '=https' -sSfL "$SYFT_URL" -o /tmp/syft.tgz
           echo "${SYFT_SHA256}  /tmp/syft.tgz" | sha256sum -c -
           tar -xzf /tmp/syft.tgz -C /tmp syft
           install /tmp/syft "$HOME/.local/bin/syft"
@@ -186,7 +186,7 @@ jobs:
           GRYPE_VERSION="v0.110.0"
           GRYPE_SHA256="aaa98d27d2d7efd9317c6a1ad6d9b15f3e65bab320e7d03bde41e251387bb71c"
           GRYPE_URL="https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}/grype_${GRYPE_VERSION#v}_linux_amd64.tar.gz"
-          curl -sSfL "$GRYPE_URL" -o /tmp/grype.tgz
+          curl --proto '=https' --proto-redir '=https' -sSfL "$GRYPE_URL" -o /tmp/grype.tgz
           echo "${GRYPE_SHA256}  /tmp/grype.tgz" | sha256sum -c -
           tar -xzf /tmp/grype.tgz -C /tmp grype
           install /tmp/grype "$HOME/.local/bin/grype"
@@ -215,7 +215,7 @@ jobs:
 
       - name: Create GitHub Release (for tags)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        uses: softprops/action-gh-release@2bb465e97f322d3cb2a965294d483e0d26a67aa9 # v3.0.1
         with:
           generate_release_notes: true
           files: auth-portal-sbom.cdx.json
