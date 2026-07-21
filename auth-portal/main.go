@@ -32,6 +32,8 @@ import (
 //	go build -ldflags "-X main.appVersion=v2.0.6"
 var appVersion = "v2.0.5"
 
+const oidcAuthorizePath = "/oidc/authorize"
+
 var (
 	db                                     *sql.DB
 	configStore                            *configstore.Store
@@ -397,7 +399,7 @@ func registerEnrollmentRoutes(r *mux.Router, lim routeLimiters) {
 func registerOIDCRoutes(r *mux.Router) {
 	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
-	r.Handle("/oidc/authorize", authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
+	r.Handle(oidcAuthorizePath, authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
 	r.Handle("/oidc/authorize/decision", authMiddleware(requireSameOrigin(http.HandlerFunc(oidcAuthorizeDecisionHandler)))).Methods("POST")
 	r.HandleFunc("/oidc/token", oidcTokenHandler).Methods("POST")
 	r.HandleFunc("/oidc/userinfo", oidcUserinfoHandler).Methods("GET")
@@ -503,7 +505,7 @@ func buildProviderForwardHandler() http.Handler {
 		provider := activeProvider()
 		v2 := providers.AdaptV2(provider)
 		if op, ok := provider.(providers.OutcomeProvider); ok {
-			if handled := handleOutcomeProviderForward(w, r, v2, op); handled {
+			if handleOutcomeProviderForward(w, r, v2, op) {
 				return
 			}
 		}
@@ -988,11 +990,11 @@ func loginRedirectTarget(r *http.Request) string {
 	if r == nil || r.URL == nil {
 		return "/"
 	}
-	if r.Method != http.MethodGet || strings.TrimSpace(r.URL.Path) != "/oidc/authorize" {
+	if r.Method != http.MethodGet || strings.TrimSpace(r.URL.Path) != oidcAuthorizePath {
 		return "/"
 	}
 	next := strings.TrimSpace(r.URL.RequestURI())
-	if !strings.HasPrefix(next, "/oidc/authorize") {
+	if !strings.HasPrefix(next, oidcAuthorizePath) {
 		return "/"
 	}
 	q := url.Values{}

@@ -26,7 +26,7 @@
           <h1>Verify your sign-in</h1>
           <p class="mfa-message">Hi {{ if .Username }}{{ .Username }}{{ else }}there{{ end }}, finish signing in with a code from {{ .Issuer }}.</p>
         </div>
-        <form id="mfa-challenge-form" autocomplete="one-time-code" novalidate class="mfa-field">
+        <form id="mfa-challenge-form" autocomplete="off" novalidate class="mfa-field">
           <label for="mfa-code" style="font-weight:600">Authenticator or recovery code</label>
           <input id="mfa-code" name="code" type="text" inputmode="numeric" autocapitalize="none" autocomplete="one-time-code" spellcheck="false" placeholder="123456 or ABCDE-12345" required>
           <button type="submit" id="mfa-submit" class="auth-btn" style="font-size:16px;padding:10px 18px">Verify and continue</button>
