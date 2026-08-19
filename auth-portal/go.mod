@@ -13,7 +13,7 @@ require (
 	golang.org/x/time v0.13.0
 )
 
-require golang.org/x/crypto v0.52.0
+require golang.org/x/crypto v0.55.0
 
 require (
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect

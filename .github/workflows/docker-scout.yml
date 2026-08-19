@@ -2,8 +2,9 @@ name: Docker Scout Scan
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
+  workflow_run:
+    workflows: [ "build-and-publish" ]
+    types: [ completed ]
 
 permissions: {}
 
@@ -13,50 +14,84 @@ concurrency:
 
 jobs:
   scout:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write
     env:
       IMAGE: modomofn/auth-portal
-      TAG: ${{ github.sha }}
+      SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       SCOUT_CLI: docker/scout-cli:1.20.4@sha256:28738a548abe9b4fd82b9de1ade84abacb09ee626d28c457c10866e6822bd564
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - name: Login to Docker Hub
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Pull image (or build if missing)
+      - name: Resolve published image
+        id: image
+        shell: bash
         run: |
           set -euo pipefail
-          if ! docker pull "$IMAGE:$TAG"; then
-            echo "Remote image not found, building locally for scan..."
-            docker build -t "$IMAGE:$TAG" auth-portal
-          fi
+          tag="${SOURCE_SHA::7}"
+          image_ref="$IMAGE:$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ref=$image_ref" >> "$GITHUB_OUTPUT"
+          docker pull "$image_ref"
 
       - name: Run Docker Scout CVE scan
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
         run: |
+          set -euo pipefail
           docker run --rm \
             -e DOCKER_HOST=unix:///var/run/docker.sock \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$HOME/.docker":/root/.docker \
-            "$SCOUT_CLI" cves "$IMAGE:$TAG" --exit-code 0 | tee scout.txt
+            "$SCOUT_CLI" cves "registry://$IMAGE_REF" --format markdown | tee scout.md
+
+          {
+            echo "## Docker Scout CVE scan"
+            echo
+            echo "Image: \`$IMAGE_REF\`"
+            echo
+            cat scout.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Docker Scout report
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: docker-scout-${{ steps.image.outputs.tag }}
+          path: scout.md
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Extract critical count
         id: parse
+        shell: bash
         run: |
-          crit=$(awk 'BEGIN{c=0} {for (i=1;i<=NF;i++) if (toupper($i)=="CRITICAL" && (i+1)<=NF && $0 !~ /summary/i){c=$(i+1); exit}} END{print c}' scout.txt)
-          if [[ -z "$crit" ]]; then crit=0; fi
-          echo "critical=$crit" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          crit=$(grep -oE 'alt="critical: [0-9]+"' scout.md | head -n 1 | grep -oE '[0-9]+' || true)
+          if [[ -z "$crit" ]]; then
+            echo "::error::Could not extract the critical vulnerability count from scout.md"
+            exit 1
+          fi
+          echo "critical=$crit" >> "$GITHUB_OUTPUT"
 
       - name: Create badge
         run: |
