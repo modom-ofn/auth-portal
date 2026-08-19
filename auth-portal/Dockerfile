@@ -1,6 +1,8 @@
 # ---- builder ----
-# dhi.io/golang:1.26.5-alpine3.23-dev
-FROM dhi.io/golang:1.26.5-alpine3.23-dev AS build
+# dhi.io/golang:1.26.6-alpine3.23-dev
+FROM --platform=$BUILDPLATFORM dhi.io/golang:1.26.6-alpine3.23-dev AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 
 # Tools needed for fetching modules over HTTPS
@@ -26,7 +28,7 @@ RUN go mod tidy -compat=1.26
 
 # 3) Build static binary (verbose, no VCS scan)
 RUN mkdir -p /out && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
     go build -v -x -buildvcs=false -trimpath -ldflags="-s -w" -o /out/auth-portal .
 
 # ---- runtime ----
