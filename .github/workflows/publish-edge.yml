@@ -1,0 +1,121 @@
+name: Publish edge container
+
+on:
+  push:
+    branches: [next]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: publish-edge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-edge:
+    name: Publish edge image
+    if: github.ref == 'refs/heads/next'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      DOCKERHUB_IMAGE: modomofn/auth-portal
+      GHCR_IMAGE: ghcr.io/modom-ofn/auth-portal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compute edge version
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA::7}"
+          version="$(tr -d '\r\n' < VERSION)"
+          version="${version#v}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "app_version=${version}-edge.${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable edge candidates
+        id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: auth-portal
+          file: auth-portal/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          sbom: true
+          build-args: |
+            APP_VERSION=${{ steps.vars.outputs.app_version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.vars.outputs.app_version }}
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:build-edge-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ env.GHCR_IMAGE }}:build-edge-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Attest GHCR image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.GHCR_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Scan edge image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.69.3
+          scan-type: image
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
+          vuln-type: os,library
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Promote validated edge tags
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SHORT_SHA: ${{ steps.vars.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          promote() {
+            local image="$1"
+            local source="${image}@${DIGEST}"
+            docker buildx imagetools create \
+              --tag "${image}:edge" \
+              --tag "${image}:sha-${SHORT_SHA}" \
+              "$source"
+          }
+
+          promote "$DOCKERHUB_IMAGE"
+          promote "$GHCR_IMAGE"

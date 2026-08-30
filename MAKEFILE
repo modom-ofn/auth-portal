@@ -10,7 +10,7 @@ help:
 	@echo "make smoke-admin  # admin JS smoke tests"
 	@echo "make install-git-secrets # install git-secrets hooks for this repo"
 	@echo "make docker       # local docker build (amd64)"
-	@echo "make tag          # create signed git tag v$(VERSION)"
+	@echo "make tag          # create annotated git tag v$(VERSION)"
 	@echo "make release      # push tag to trigger CI release"
 
 .PHONY: build
