@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Split CI, edge publication, and releases into separate least-privilege
+  workflows. Ordinary `main` and `v*` branch pushes no longer publish stable
+  images or GitHub Releases; only validated SemVer tags matching `VERSION` can
+  promote scan-approved images.
+- Added GitHub Container Registry publishing alongside Docker Hub, release SBOM
+  and vulnerability evidence, provenance/SBOM attestations, and an explicit
+  Semantic Versioning and release policy.
+
 ### Added
 - Added App Settings controls for a custom portal background URL and display mode (`span`, `fit`, `centered`, `original`, `stretch`, or `tile`). A custom background URL overrides only `portalBackgroundColor`; other portal styling colors continue to apply.
 

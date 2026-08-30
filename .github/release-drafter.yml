@@ -8,6 +8,14 @@ categories:
   - title: "🧰 Maintenance"
     labels: [ "chore", "refactor", "docs", "ci" ]
 change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+version-resolver:
+  major:
+    labels: ["breaking", "major"]
+  minor:
+    labels: ["feat", "feature", "minor"]
+  patch:
+    labels: ["fix", "bug", "security", "patch", "chore", "dependencies"]
+  default: patch
 template: |
   ## Changes
   $CHANGES

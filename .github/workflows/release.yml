@@ -1,0 +1,356 @@
+name: Release
+
+on:
+  push:
+    tags: [v*]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      major_tag: ${{ steps.version.outputs.major_tag }}
+      minor_tag: ${{ steps.version.outputs.minor_tag }}
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate SemVer tag and VERSION
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          prerelease='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(alpha|beta|rc)\.(0|[1-9][0-9]*)$'
+
+          if [[ "$tag" =~ $stable ]]; then
+            is_prerelease=false
+          elif [[ "$tag" =~ $prerelease ]]; then
+            is_prerelease=true
+          else
+            echo "::error::Unsupported release tag: $tag"
+            exit 1
+          fi
+
+          version="${tag#v}"
+          file_version="$(tr -d '\r\n' < VERSION)"
+          file_version="${file_version#v}"
+          if [[ "$file_version" != "$version" ]]; then
+            echo "::error::VERSION ($file_version) does not match tag ($version)"
+            exit 1
+          fi
+
+          core="${version%%-*}"
+          IFS='.' read -r major minor patch <<< "$core"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
+          echo "major_tag=v$major" >> "$GITHUB_OUTPUT"
+          echo "minor_tag=v$major.$minor" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag commit is on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release tags must identify a commit reachable from main"
+            exit 1
+          fi
+
+  release:
+    name: Build, scan, and release
+    needs: validate-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      DOCKERHUB_IMAGE: modomofn/auth-portal
+      GHCR_IMAGE: ghcr.io/modom-ofn/auth-portal
+      RELEASE_VERSION: ${{ needs.validate-version.outputs.version }}
+      RELEASE_PRERELEASE: ${{ needs.validate-version.outputs.prerelease }}
+      SCOUT_CLI: docker/scout-cli:1.20.4@sha256:28738a548abe9b4fd82b9de1ade84abacb09ee626d28c457c10866e6822bd564
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Secret scan
+        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11 # v3.96.0
+        with:
+          extra_args: --results=verified,unknown
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable candidates
+        id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: auth-portal
+          file: auth-portal/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          sbom: true
+          build-args: |
+            APP_VERSION=${{ env.RELEASE_VERSION }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.RELEASE_VERSION }}
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:build-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ env.GHCR_IMAGE }}:build-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Attest GHCR image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.GHCR_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Install Syft
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          version="v1.42.4"
+          checksum="590650c2743b83f327d1bf9bec64f6f83b7fec504187bb84f500c862bf8f2a0f"
+          url="https://github.com/anchore/syft/releases/download/${version}/syft_${version#v}_linux_amd64.tar.gz"
+          curl --proto '=https' --proto-redir '=https' -sSfL "$url" -o /tmp/syft.tgz
+          echo "$checksum  /tmp/syft.tgz" | sha256sum -c -
+          tar -xzf /tmp/syft.tgz -C /tmp syft
+          install /tmp/syft "$HOME/.local/bin/syft"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Generate release SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          syft "${GHCR_IMAGE}@${{ steps.build.outputs.digest }}" \
+            -o cyclonedx-json > auth-portal-sbom.cdx.json
+
+      - name: Attest GHCR image SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.GHCR_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: auth-portal-sbom.cdx.json
+          push-to-registry: true
+
+      - name: Install Grype
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          version="v0.110.0"
+          checksum="aaa98d27d2d7efd9317c6a1ad6d9b15f3e65bab320e7d03bde41e251387bb71c"
+          url="https://github.com/anchore/grype/releases/download/${version}/grype_${version#v}_linux_amd64.tar.gz"
+          curl --proto '=https' --proto-redir '=https' -sSfL "$url" -o /tmp/grype.tgz
+          echo "$checksum  /tmp/grype.tgz" | sha256sum -c -
+          tar -xzf /tmp/grype.tgz -C /tmp grype
+          install /tmp/grype "$HOME/.local/bin/grype"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Scan SBOM with Grype
+        shell: bash
+        run: |
+          set -euo pipefail
+          grype sbom:auth-portal-sbom.cdx.json -o table --fail-on high | tee grype-report.txt
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.69.3
+          scan-type: image
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
+          vuln-type: os,library
+          format: table
+          output: trivy-report.txt
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Scan image digest with Docker Scout
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_ref="${DOCKERHUB_IMAGE}@${{ steps.build.outputs.digest }}"
+          docker run --rm \
+            -e DOCKER_HOST=unix:///var/run/docker.sock \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.docker":/root/.docker \
+            "$SCOUT_CLI" cves "registry://$image_ref" --format markdown | tee docker-scout.md
+
+          {
+            echo "## Docker Scout CVE scan"
+            echo
+            echo "Image: \`$image_ref\`"
+            echo
+            cat docker-scout.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Extract Docker Scout critical count
+        id: scout
+        shell: bash
+        run: |
+          set -euo pipefail
+          critical="$(grep -oE 'alt="critical: [0-9]+"' docker-scout.md | head -n 1 | grep -oE '[0-9]+' || true)"
+          if [[ -z "$critical" ]]; then
+            echo "::error::Could not extract critical vulnerability count"
+            exit 1
+          fi
+          echo "critical=$critical" >> "$GITHUB_OUTPUT"
+
+      - name: Promote validated image tags
+        shell: bash
+        env:
+          MAJOR_TAG: ${{ needs.validate-version.outputs.major_tag }}
+          MINOR_TAG: ${{ needs.validate-version.outputs.minor_tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          promote() {
+            local image="$1"
+            shift
+            local source="${image}@${DIGEST}"
+            for tag in "$@"; do
+              docker buildx imagetools create --tag "${image}:${tag}" "$source"
+            done
+          }
+
+          exact_tag="v${RELEASE_VERSION}"
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            promote "$DOCKERHUB_IMAGE" "$exact_tag"
+            promote "$GHCR_IMAGE" "$exact_tag"
+          else
+            promote "$DOCKERHUB_IMAGE" "$exact_tag" "$MINOR_TAG" "$MAJOR_TAG" latest
+            promote "$GHCR_IMAGE" "$exact_tag" "$MINOR_TAG" "$MAJOR_TAG" latest
+          fi
+
+      - name: Prepare release checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum \
+            auth-portal-sbom.cdx.json \
+            grype-report.txt \
+            trivy-report.txt \
+            docker-scout.md > SHA256SUMS
+
+      - name: Upload release evidence artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: auth-portal-release-${{ env.RELEASE_VERSION }}
+          path: |
+            auth-portal-sbom.cdx.json
+            grype-report.txt
+            trivy-report.txt
+            docker-scout.md
+            SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create draft GitHub Release and upload evidence
+        id: github-release
+        uses: softprops/action-gh-release@fe965f7af51af5f2602596916f38a38df2e33de0 # v3.0.2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: AuthPortal ${{ github.ref_name }}
+          draft: true
+          prerelease: ${{ env.RELEASE_PRERELEASE }}
+          make_latest: ${{ env.RELEASE_PRERELEASE == 'false' }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            auth-portal-sbom.cdx.json
+            grype-report.txt
+            trivy-report.txt
+            docker-scout.md
+            SHA256SUMS
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.github-release.outputs.id }}
+        run: |
+          set -euo pipefail
+          make_latest=false
+          if [[ "$RELEASE_PRERELEASE" == "false" ]]; then
+            make_latest=true
+          fi
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -F prerelease="$RELEASE_PRERELEASE" \
+            -f make_latest="$make_latest" >/dev/null
+
+      - name: Publish Docker Scout badge
+        if: env.RELEASE_PRERELEASE == 'false'
+        continue-on-error: true
+        shell: bash
+        env:
+          CRITICAL_COUNT: ${{ steps.scout.outputs.critical }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/auth-portal-badges
+          color=brightgreen
+          if [[ "$CRITICAL_COUNT" != "0" ]]; then
+            color=red
+          fi
+          echo "{\"schemaVersion\":1,\"label\":\"docker scout\",\"message\":\"critical: $CRITICAL_COUNT\",\"color\":\"$color\"}" \
+            > /tmp/auth-portal-badges/docker-scout.json
+          content="$(base64 -w 0 /tmp/auth-portal-badges/docker-scout.json)"
+          path='.github/badges/docker-scout.json'
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=badges" --jq .sha 2>/dev/null || true)"
+          args=(
+            --method PUT
+            "repos/${GITHUB_REPOSITORY}/contents/${path}"
+            -f message='chore: update Docker Scout badge'
+            -f content="$content"
+            -f branch=badges
+          )
+          if [[ -n "$current_sha" ]]; then
+            args+=(-f sha="$current_sha")
+          fi
+          gh api "${args[@]}" >/dev/null
