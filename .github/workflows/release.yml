@@ -3,11 +3,17 @@ name: Release
 on:
   push:
     tags: [v*]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -18,6 +24,8 @@ jobs:
     permissions:
       contents: read
     outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       major_tag: ${{ steps.version.outputs.major_tag }}
@@ -26,15 +34,19 @@ jobs:
       - name: Checkout tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Validate SemVer tag and VERSION
         id: version
         shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
 
-          tag="$GITHUB_REF_NAME"
+          tag="$REQUESTED_TAG"
           stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           prerelease='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(alpha|beta|rc)\.(0|[1-9][0-9]*)$'
 
@@ -56,18 +68,24 @@ jobs:
           fi
 
           core="${version%%-*}"
-          IFS='.' read -r major minor patch <<< "$core"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
-          echo "major_tag=v$major" >> "$GITHUB_OUTPUT"
-          echo "minor_tag=v$major.$minor" >> "$GITHUB_OUTPUT"
+          IFS='.' read -r major minor _ <<< "$core"
+          {
+            echo "tag=$tag"
+            echo "sha=$(git rev-parse "refs/tags/${tag}^{commit}")"
+            echo "version=$version"
+            echo "prerelease=$is_prerelease"
+            echo "major_tag=v$major"
+            echo "minor_tag=v$major.$minor"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Verify tag commit is on main
         shell: bash
+        env:
+          RELEASE_SHA: ${{ steps.version.outputs.sha }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/main; then
             echo "::error::Release tags must identify a commit reachable from main"
             exit 1
           fi
@@ -86,12 +104,15 @@ jobs:
       DOCKERHUB_IMAGE: modomofn/auth-portal
       GHCR_IMAGE: ghcr.io/modom-ofn/auth-portal
       RELEASE_VERSION: ${{ needs.validate-version.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate-version.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate-version.outputs.sha }}
       RELEASE_PRERELEASE: ${{ needs.validate-version.outputs.prerelease }}
       SCOUT_CLI: docker/scout-cli:1.20.4@sha256:28738a548abe9b4fd82b9de1ade84abacb09ee626d28c457c10866e6822bd564
     steps:
       - name: Checkout tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ format('refs/tags/{0}', needs.validate-version.outputs.tag) }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -133,7 +154,7 @@ jobs:
             APP_VERSION=${{ env.RELEASE_VERSION }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
             org.opencontainers.image.version=${{ env.RELEASE_VERSION }}
           tags: |
             ${{ env.DOCKERHUB_IMAGE }}:build-${{ github.run_id }}-${{ github.run_attempt }}
@@ -210,13 +231,19 @@ jobs:
 
       - name: Scan image digest with Docker Scout
         shell: bash
+        env:
+          DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKER_SCOUT_REGISTRY_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKER_SCOUT_REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
           image_ref="${DOCKERHUB_IMAGE}@${{ steps.build.outputs.digest }}"
           docker run --rm \
-            -e DOCKER_HOST=unix:///var/run/docker.sock \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME/.docker":/root/.docker \
+            -e DOCKER_SCOUT_HUB_USER \
+            -e DOCKER_SCOUT_HUB_PASSWORD \
+            -e DOCKER_SCOUT_REGISTRY_USER \
+            -e DOCKER_SCOUT_REGISTRY_PASSWORD \
             "$SCOUT_CLI" cves "registry://$image_ref" --format markdown | tee docker-scout.md
 
           {
@@ -293,8 +320,8 @@ jobs:
         id: github-release
         uses: softprops/action-gh-release@fe965f7af51af5f2602596916f38a38df2e33de0 # v3.0.2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: AuthPortal ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: AuthPortal ${{ env.RELEASE_TAG }}
           draft: true
           prerelease: ${{ env.RELEASE_PRERELEASE }}
           make_latest: ${{ env.RELEASE_PRERELEASE == 'false' }}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed Docker Scout authentication in the release workflow and added a
+  guarded manual-dispatch path for publishing an existing immutable release
+  tag after a recoverable workflow failure.
+
 ## v2.0.6 - 2026-10-07
 
 - Split CI, edge publication, and releases into separate least-privilege
