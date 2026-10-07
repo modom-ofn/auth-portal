@@ -1,6 +1,6 @@
 # ---- builder ----
-# dhi.io/golang:1.26.6-alpine3.23-dev
-FROM --platform=$BUILDPLATFORM dhi.io/golang:1.26.6-alpine3.23-dev AS build
+# dhi.io/golang:1.26.8-alpine3.23-dev
+FROM --platform=$BUILDPLATFORM dhi.io/golang:1.26.8-alpine3.23-dev AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG APP_VERSION=dev
