@@ -1,4 +1,4 @@
-# AuthPortal (v2.0.5)
+# AuthPortal (v2.0.6)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
@@ -105,7 +105,7 @@ AuthPortal authenticates users directly against their connected media server acc
 - [AI-Assisted Development](#ai-assisted-development)
 - [Contributing](#contributing)
 - [License](#license)
-- [Upgrade Guide (to v2.0.5)](#upgrade-guide-to-v205)
+- [Upgrade Guide (to v2.0.6)](#upgrade-guide-to-v206)
 
 ---
 
@@ -238,7 +238,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.5
+EMBY_APP_VERSION=2.0.6
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -247,7 +247,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.5
+JELLYFIN_APP_VERSION=2.0.6
 ```
 
 
@@ -358,12 +358,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.5}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.6}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.5}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.6}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -817,9 +817,12 @@ GPL-3.0  https://opensource.org/license/gpl-3-0/
 
 ---
 
-## Upgrade Guide (to v2.0.5)
+## Upgrade Guide (to v2.0.6)
 
-1) Rebuild or pull `modomofn/auth-portal:v2.0.5` so you pick up the RBAC, LDAP Sync, and admin audit improvements.
+1) Pull `modomofn/auth-portal:v2.0.6` to receive the current Go toolchain,
+   dependency, and container security updates. Deployments upgrading from
+   versions before v2.0.5 also receive the RBAC, built-in LDAP Sync, and OAuth
+   audit improvements described above.
 2) If you previously used the standalone `ldap-sync` workflow, migrate that configuration into `Admin -> LDAP Sync` and stop relying on the external repo/service.
 3) If your compose/docs still reference `ldap-seed` for `ou=users`, remove that dependency unless you intentionally seed extra LDAP structure outside AuthPortal-managed sync.
 4) Review the new Access Control model:

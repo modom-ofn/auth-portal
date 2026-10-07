@@ -8,10 +8,11 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.5` (latest: `v2.0.5`) | ✅ Supported | Receives all security and high-priority bug fixes, including RBAC, LDAP sync, OAuth/OIDC hardening, and admin logging updates. |
-| `v2.0.4` | ✅ Supported | Previous minor line still covered during the overlap window while operators upgrade to `v2.0.5`. |
-| `dev` branch | ✅ Supported | Pre-release builds; fixes land here first and are promoted into the next tagged release. |
-| `< v2.0.4` | ❌ End-of-life | Please upgrade to a supported release. |
+| `v2.0.6` (latest: `v2.0.6`) | ✅ Supported | Receives all security and high-priority bug fixes. |
+| `v2.0.5` | ✅ Supported | Previous patch release covered during the upgrade overlap window. |
+| `main` branch | ✅ Supported | Stable integration branch; validated commits are eligible for the next tagged release. |
+| `next` branch | ✅ Supported | Pre-release integration branch published through the `edge` container channel. |
+| `< v2.0.5` | ❌ End-of-life | Please upgrade to a supported release. |
 
 When a new minor series ships, the previous series remains supported for at least 90 days. I will post deprecation notices in the release notes and CHANGELOG when a branch approaches end-of-life.
 
@@ -31,7 +32,9 @@ I would prefer that you disclose vulnerabilities responsibly through **GitHub Is
 
 - **Acknowledgement:** I review new security issues as soon as possible.  
 - **Triage:** If I need clarification, I will comment in the issue; please monitor notifications until the item is resolved.  
-- **Resolution:** Confirmed vulnerabilities are patched on the `dev` branch and rolled into the next tagged release. I aim to publish fixes for high-severity bugs within 14 days.  
+- **Resolution:** Confirmed vulnerabilities are patched on `main` and merged
+  forward to `next` when applicable, then rolled into the next tagged release.
+  I aim to publish fixes for high-severity bugs within 14 days.
 - **Advisories:** For issues that warrant an advisory or CVE, I will coordinate disclosure and provide upgrade guidance in the release notes and README.
 
 If you believe the issue should remain private until a fix is available, mention that in the issue body. We can coordinate embargoed communication on a case-by-case basis.

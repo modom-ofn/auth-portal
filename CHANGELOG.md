@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v2.0.6 - 2026-10-07
+
 - Split CI, edge publication, and releases into separate least-privilege
   workflows. Ordinary `main` and `v*` branch pushes no longer publish stable
   images or GitHub Releases; only validated SemVer tags matching `VERSION` can
