@@ -16,8 +16,9 @@
 ### Fixed
 - Added accessible names to configuration import, change-reason, and MFA verification fields.
 - Resolved static-analysis maintainability findings in routing, login flow, admin smoke tests, consent styling, and MFA autocomplete markup.
-- Updated the declared Go toolchain and Docker builder image to Go 1.26.8,
-  closing the reachable standard-library vulnerabilities present in Go 1.26.5.
+- Updated the declared Go toolchain, CI setup, and Docker builder image to Go
+  1.26.8, closing the reachable standard-library vulnerabilities present in Go
+  1.26.5.
 - Updated current direct Go dependencies, including `go-ldap` v3.4.14,
   `jwt/v5` v5.3.1, `lib/pq` v1.12.3, `x/crypto` v0.57.0, and `x/time`
   v0.16.0. Reachability analysis reports no application-callable CVEs, and the
