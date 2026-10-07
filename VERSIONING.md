@@ -65,4 +65,6 @@ If a release run fails after its tag is created, fix the workflow through a
 pull request and manually run the Release workflow from `main` with the existing
 tag as its `tag` input. The recovery path checks out only `refs/tags/<tag>`,
 revalidates SemVer and `VERSION`, and verifies that the tagged commit is
-reachable from `main`; do not move or recreate the tag.
+reachable from `main`. Secret scanning uses the validated tag commit and its
+parent as explicit bounds, so tag-triggered and manual recovery runs enforce
+the same check. Do not move or recreate the tag.
