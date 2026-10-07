@@ -73,7 +73,7 @@ const (
 	plexPlexUserFallback       = "plex-user"
 	plexMediaUUIDFormat        = "plex-%d"
 	plexProductName            = "AuthPortal"
-	plexProductVersion         = "2.0.0"
+	plexProductVersion         = "2.0.6"
 	plexClientIDDefault        = "auth-portal"
 	plexClientIDUserInfo       = "authportal-userinfo"
 	plexClientIDResourcesCheck = "authportal-check"
@@ -565,7 +565,7 @@ func (PlexProvider) StartWeb(w http.ResponseWriter, r *http.Request) {
 	proto := plexSanitizeProto(r)
 	host := plexSanitizeHost(r)
 	fwd := fmt.Sprintf("%s://%s/auth/forward", strings.ToLower(proto), host)
-	url := fmt.Sprintf("https://app.plex.tv/auth#?clientID=%s&code=%s&forwardUrl=%s&context[device][product]=AuthPortal&context[device][version]=2.0.0&context[device][platform]=Web&context[device][device]=Web", clientID, pin.Code, url.QueryEscape(fwd))
+	url := fmt.Sprintf("https://app.plex.tv/auth#?clientID=%s&code=%s&forwardUrl=%s&context[device][product]=AuthPortal&context[device][version]=%s&context[device][platform]=Web&context[device][device]=Web", clientID, pin.Code, url.QueryEscape(fwd), plexProductVersion)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":       true,
 		"provider": "plex",

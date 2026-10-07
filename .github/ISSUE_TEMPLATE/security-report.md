@@ -25,7 +25,7 @@ Describe what an attacker could achieve, prerequisites needed (auth, network pos
 Detailed steps, commands, or scripts required to trigger the issue. Redact or scrub sensitive data.
 
 **Environment**
-- AuthPortal version/commit: [e.g. v2.0.3 or 3533cef]
+- AuthPortal version/commit: [e.g. v2.0.6 or 3533cef]
 - Deployment details: [Docker, Kubernetes, binary, etc.]
 - Notable configuration flags or overrides related to the issue.
 
