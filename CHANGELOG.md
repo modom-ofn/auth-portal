@@ -5,6 +5,9 @@
 - Fixed Docker Scout authentication in the release workflow and added a
   guarded manual-dispatch path for publishing an existing immutable release
   tag after a recoverable workflow failure.
+- Made release secret scans deterministic across tag pushes and manual recovery
+  runs by scanning the validated release commit range with a pinned TruffleHog
+  version instead of falling back to a full-history scan.
 
 ## v2.0.6 - 2026-10-07
 
