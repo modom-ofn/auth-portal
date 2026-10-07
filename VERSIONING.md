@@ -60,3 +60,9 @@ GHCR images receive provenance and SBOM attestations.
    Release.
 5. Published tags and release assets are never moved or replaced. Corrections
    require a new version.
+
+If a release run fails after its tag is created, fix the workflow through a
+pull request and manually run the Release workflow from `main` with the existing
+tag as its `tag` input. The recovery path checks out only `refs/tags/<tag>`,
+revalidates SemVer and `VERSION`, and verifies that the tagged commit is
+reachable from `main`; do not move or recreate the tag.
