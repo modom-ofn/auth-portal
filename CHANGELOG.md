@@ -16,7 +16,14 @@
 ### Fixed
 - Added accessible names to configuration import, change-reason, and MFA verification fields.
 - Resolved static-analysis maintainability findings in routing, login flow, admin smoke tests, consent styling, and MFA autocomplete markup.
-- Updated the Go toolchain and Docker builder image to Go 1.26.5, and upgraded `golang.org/x/crypto` to v0.52.0 to pick up current CVE fixes.
+- Updated the declared Go toolchain and Docker builder image to Go 1.26.8,
+  closing the reachable standard-library vulnerabilities present in Go 1.26.5.
+- Updated current direct Go dependencies, including `go-ldap` v3.4.14,
+  `jwt/v5` v5.3.1, `lib/pq` v1.12.3, `x/crypto` v0.57.0, and `x/time`
+  v0.16.0. Reachability analysis reports no application-callable CVEs, and the
+  rebuilt AuthPortal image reports no critical, high, medium, or low findings.
+- Pinned the development Compose database image to the tested PostgreSQL 15.19
+  multi-platform digest to avoid silently drifting to a different patch image.
 - Updated pinned GitHub Actions build dependencies, including Checkout, Cache, Buildx, TruffleHog, and the GitHub release action.
 - Enforced HTTPS for Syft and Grype download redirects in the build workflow.
 - Prevented the authorized portal page from showing transient vertical overflow when moving the mouse by letting the portal layout reserve footer space and keeping the animated grain layer out of scrollable layout.
