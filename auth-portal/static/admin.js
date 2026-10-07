@@ -325,7 +325,7 @@ const initializeSidebarToggle = () => {
   "emby": {
     "serverUrl": "https://emby.example.com",
     "appName": "AuthPortal",
-    "appVersion": "2.0.5",
+    "appVersion": "2.0.6",
     "apiKey": "emby-api-key",
     "ownerUsername": "embyadmin",
     "ownerId": "12345"
@@ -333,7 +333,7 @@ const initializeSidebarToggle = () => {
   "jellyfin": {
     "serverUrl": "https://jellyfin.example.com",
     "appName": "AuthPortal",
-    "appVersion": "2.0.5",
+    "appVersion": "2.0.6",
     "apiKey": "jellyfin-api-key"
   }
 }</code></pre>

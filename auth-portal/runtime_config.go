@@ -182,14 +182,14 @@ func defaultProvidersConfig() ProvidersConfig {
 
 	cfg.Emby.ServerURL = envOr("EMBY_SERVER_URL", "http://localhost:8096")
 	cfg.Emby.AppName = envOr("EMBY_APP_NAME", "AuthPortal")
-	cfg.Emby.AppVersion = envOr("EMBY_APP_VERSION", "2.0.0")
+	cfg.Emby.AppVersion = envOr("EMBY_APP_VERSION", "2.0.6")
 	cfg.Emby.APIKey = envOr("EMBY_API_KEY", "")
 	cfg.Emby.OwnerUsername = envOr("EMBY_OWNER_USERNAME", "")
 	cfg.Emby.OwnerID = envOr("EMBY_OWNER_ID", "")
 
 	cfg.Jellyfin.ServerURL = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
 	cfg.Jellyfin.AppName = envOr("JELLYFIN_APP_NAME", "AuthPortal")
-	cfg.Jellyfin.AppVersion = envOr("JELLYFIN_APP_VERSION", "2.0.0")
+	cfg.Jellyfin.AppVersion = envOr("JELLYFIN_APP_VERSION", "2.0.6")
 	cfg.Jellyfin.APIKey = envOr("JELLYFIN_API_KEY", "")
 
 	return cfg

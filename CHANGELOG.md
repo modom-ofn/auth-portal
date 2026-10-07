@@ -27,6 +27,8 @@
   rebuilt AuthPortal image reports no critical, high, medium, or low findings.
 - Pinned the development Compose database image to the tested PostgreSQL 15.19
   multi-platform digest to avoid silently drifting to a different patch image.
+- Aligned the compiled fallback version, provider client metadata, environment
+  examples, admin help, and issue templates with the v2.0.6 release identity.
 - Updated pinned GitHub Actions build dependencies, including Checkout, Cache, Buildx, TruffleHog, and the GitHub release action.
 - Enforced HTTPS for Syft and Grype download redirects in the build workflow.
 - Prevented the authorized portal page from showing transient vertical overflow when moving the mouse by letting the portal layout reserve footer space and keeping the animated grain layer out of scrollable layout.

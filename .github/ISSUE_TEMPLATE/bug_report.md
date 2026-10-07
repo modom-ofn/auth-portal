@@ -24,7 +24,7 @@ What you thought would happen.
 What actually happened, including any on-screen errors.
 
 **Environment**
-- AuthPortal version/commit: [e.g. v2.0.3 or 3533cef]
+- AuthPortal version/commit: [e.g. v2.0.6 or 3533cef]
 - Install method: [Docker Compose | binary | Kubernetes | other]
 - Database backend: [Postgres 15 | other]
 - External providers configured: [Plex | Jellyfin | Emby | none]

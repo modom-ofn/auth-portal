@@ -30,7 +30,7 @@ import (
 // appVersion is the application version string. Override at build time via:
 //
 //	go build -ldflags "-X main.appVersion=v2.0.6"
-var appVersion = "v2.0.5"
+var appVersion = "v2.0.6"
 
 const oidcAuthorizePath = "/oidc/authorize"
 
@@ -48,13 +48,13 @@ var (
 	plexServerName                         = envOr("PLEX_SERVER_NAME", "")
 	embyServerURL                          = envOr("EMBY_SERVER_URL", "http://localhost:8096")
 	embyAppName                            = envOr("EMBY_APP_NAME", "AuthPortal")
-	embyAppVersion                         = envOr("EMBY_APP_VERSION", "2.0.0")
+	embyAppVersion                         = envOr("EMBY_APP_VERSION", "2.0.6")
 	embyAPIKey                             = envOr("EMBY_API_KEY", "")
 	embyOwnerUsername                      = envOr("EMBY_OWNER_USERNAME", "")
 	embyOwnerID                            = envOr("EMBY_OWNER_ID", "")
 	jellyfinServerURL                      = envOr("JELLYFIN_SERVER_URL", "http://localhost:8096")
 	jellyfinAppName                        = envOr("JELLYFIN_APP_NAME", "AuthPortal")
-	jellyfinAppVersion                     = envOr("JELLYFIN_APP_VERSION", "2.0.0")
+	jellyfinAppVersion                     = envOr("JELLYFIN_APP_VERSION", "2.0.6")
 	jellyfinAPIKey                         = envOr("JELLYFIN_API_KEY", "")
 	mediaServerSelection                   = strings.TrimSpace(os.Getenv("MEDIA_SERVER"))
 	mediaProviderKey, mediaProviderDisplay = resolveProviderSelection(mediaServerSelection)
