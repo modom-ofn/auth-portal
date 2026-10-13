@@ -47,6 +47,10 @@ type Options struct {
 
 // UpdateOptions control how a section update is applied.
 type UpdateOptions struct {
+	// RequireVersion compares even version zero and serializes creation.
+	RequireVersion bool
+	// BeforeCommit changes dependent records atomically with config and history.
+	BeforeCommit  func(context.Context, *sql.Tx) error
 	Key           string
 	UpdatedBy     string
 	Reason        string
@@ -203,6 +207,11 @@ func (s *Store) UpsertSection(ctx context.Context, section Section, payload any,
 		return Snapshot{}, err
 	}
 	defer tx.Rollback()
+	if uopts.RequireVersion {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, string(section), key); err != nil {
+			return Snapshot{}, err
+		}
+	}
 
 	var (
 		currentVersion sql.NullInt64
@@ -222,7 +231,7 @@ SELECT version
 		err = nil
 	}
 
-	if currentVersion.Valid && uopts.ExpectVersion > 0 && currentVersion.Int64 != uopts.ExpectVersion {
+	if currentVersion.Valid && (uopts.RequireVersion || uopts.ExpectVersion > 0) && currentVersion.Int64 != uopts.ExpectVersion {
 		return Snapshot{}, ErrVersionMismatch
 	}
 	if !currentVersion.Valid && uopts.ExpectVersion > 0 {
@@ -256,6 +265,11 @@ VALUES ($1, $2, $3, $4, now(), NULLIF($5, ''), NULLIF($6, ''))
 		return Snapshot{}, err
 	}
 
+	if uopts.BeforeCommit != nil {
+		if err := uopts.BeforeCommit(ctx, tx); err != nil {
+			return Snapshot{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return Snapshot{}, err
 	}
