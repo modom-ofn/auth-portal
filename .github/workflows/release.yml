@@ -117,7 +117,7 @@ jobs:
           persist-credentials: false
 
       - name: Secret scan
-        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11 # v3.96.0
+        uses: trufflesecurity/trufflehog@e76dff8a7e57d6df0c60ad8cbf5d5cba505a8fc9 # v3.99.2
         with:
           base: ${{ format('{0}^', needs.validate-version.outputs.sha) }}
           head: ${{ needs.validate-version.outputs.sha }}
