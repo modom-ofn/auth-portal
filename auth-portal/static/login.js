@@ -1,6 +1,8 @@
 // /static/login.js
 (() => {
   let lastAuthRedirect = "/home";
+  let oauthCancelled = false;
+  let activeLoginCleanup = () => {};
 
   function safeRedirect(path) {
     try {
@@ -16,7 +18,7 @@
   function continueTargetFromLocation() {
     try {
       const params = new URLSearchParams(globalThis.location.search || "");
-      const next = params.get("next");
+      const next = params.get("next") || sessionStorage.getItem("authportal.oauth.next");
       const safe = safeRedirect(next);
       if (!safe?.startsWith("/oidc/authorize")) return null;
       return safe;
@@ -64,6 +66,7 @@
     target = replaceHomeTarget(target, continueTarget, needsMFA);
     target = addContinueTargetToMFA(target, continueTarget);
 
+    sessionStorage.removeItem("authportal.oauth.next");
     lastAuthRedirect = target;
     globalThis.location.assign(target);
   }
@@ -93,6 +96,10 @@
     if (data.authComplete !== "1") {
       return false;
     }
+    if (!globalThis.opener || globalThis.opener.closed) {
+      finalizeNavigation(data.authRedirect || "/home", data.authMfa === "true");
+      return true;
+    }
     notifyOpener({
       type: data.authProvider || "auth-portal",
       redirect: data.authRedirect || "/home",
@@ -115,6 +122,7 @@
   // Only accept messages from our own origin
   globalThis.addEventListener("message", (ev) => {
     if (ev.origin !== globalThis.location.origin) return;
+    if (oauthCancelled) return;
     const d = ev.data || {};
     if (d?.ok && (d.type === "plex-auth" || d.type === "emby-auth" || d.type === "jellyfin-auth" || d.type === "auth-portal")) {
       finalizeNavigation(d.redirect, !!d.mfa);
@@ -222,6 +230,7 @@
           return;
         }
         const result = await response.json().catch(() => ({}));
+        if (pollStopped || oauthCancelled) return;
         if (result?.ok) {
           stopPolling();
           try { if (popup && !popup.closed) popup.close(); } catch {}
@@ -245,8 +254,15 @@
       if (popup && !popup.closed) return;
       clearInterval(interval);
       stopPolling();
+      if (oauthCancelled) return;
+      if (continueTargetFromLocation()) {
+        const status = document.getElementById("auth-status");
+        if (status) status.textContent = "Login window closed. Sign in again, or cancel and return to the application.";
+        return;
+      }
       globalThis.location.assign(lastAuthRedirect);
     }, 1200);
+    return () => clearInterval(interval);
   }
 
   function showPopupError(popup) {
@@ -259,15 +275,18 @@
   }
 
   async function startFlow(btn) {
+    if (oauthCancelled) return;
     const provider = detectProvider(btn); // "plex" | "emby" | "jellyfin"
 
     // Open placeholder popup synchronously (prevents popup blockers)
     const popup = openPopup("about:blank");
     preparePopup(popup);
+    activeLoginCleanup = () => { try { if (popup && !popup.closed) popup.close(); } catch {} };
 
     btn.disabled = true;
     try {
       const authUrl = await resolveAuthUrl(provider);
+      if (oauthCancelled) return;
 
       if (!navigatePopup(popup, authUrl)) {
         // Popup blocked → full-page navigation
@@ -279,9 +298,14 @@
       const stopPlexPolling = provider === "plex" ? startPlexPolling(popup) : () => {};
 
       // If user closes the popup, head to /home
-      monitorPopupClosure(popup, stopPlexPolling);
+      const stopClosureMonitor = monitorPopupClosure(popup, stopPlexPolling);
+      activeLoginCleanup = () => {
+        stopPlexPolling(); stopClosureMonitor();
+        try { if (popup && !popup.closed) popup.close(); } catch {}
+      };
 
     } catch (err) {
+      if (oauthCancelled) return;
       console.error(err);
       showPopupError(popup);
       alert("Could not start login. Please try again.");
@@ -305,6 +329,95 @@
 
     btn.addEventListener("click", (e) => { e.preventDefault(); startFlow(btn); });
     return true;
+  }
+
+  // Keep the requesting application flow on AuthPortal while Plex uses a popup.
+  const oauthNext = new URLSearchParams(location.search).get("next");
+  const safeNext = safeRedirect(oauthNext);
+  if (safeNext && new URL(safeNext, location.origin).pathname === "/oidc/authorize") {
+    const btn = document.getElementById("auth-signin");
+    const cancel = document.getElementById("auth-cancel");
+    const status = document.getElementById("auth-status");
+    let starting = false;
+    let popup = null;
+    let stopPolling = () => {};
+    let closureTimer = null;
+    function cleanup() {
+      stopPolling();
+      if (closureTimer) clearInterval(closureTimer);
+      closureTimer = null;
+      try { if (popup && !popup.closed) popup.close(); } catch {}
+    }
+    const start = async () => {
+      if (oauthCancelled || starting) return;
+      // Must open synchronously, before fetching the PIN, for click-based retry.
+      popup = openPopup("about:blank");
+      if (!popup || popup.closed) {
+        status.textContent = "Could not open the Plex login window. Allow popups for this site and try again.";
+        btn.disabled = false;
+        return;
+      }
+      preparePopup(popup);
+      starting = true;
+      btn.disabled = true;
+      status.textContent = "Complete Plex sign-in in the popup, or cancel below.";
+      try {
+        const res = await fetch("/auth/start-web", {
+          method: "POST", credentials: "same-origin", headers: { Accept: "application/json" }
+        });
+        if (!res.ok) throw new Error("Could not start Plex sign-in");
+        const result = await res.json();
+        const dest = new URL(result.url);
+        if (dest.origin !== "https://app.plex.tv" || dest.pathname !== "/auth") throw new Error("Invalid Plex URL");
+        if (oauthCancelled) return;
+        sessionStorage.setItem("authportal.oauth.next", safeNext);
+        if (!navigatePopup(popup, dest.href)) throw new Error("Popup closed");
+        stopPolling = startPlexPolling(popup);
+        closureTimer = setInterval(() => {
+          if (popup && !popup.closed) return;
+          cleanup();
+          starting = false;
+          btn.disabled = false;
+          status.textContent = "Login window closed. Sign in again, or cancel and return to the application.";
+        }, 1200);
+      } catch {
+        cleanup();
+        if (oauthCancelled) return;
+        status.textContent = "Could not start Plex sign-in. Please try again or cancel.";
+        btn.disabled = false;
+        starting = false;
+      }
+    };
+    if (btn && cancel && status) {
+      sessionStorage.setItem("authportal.oauth.next", safeNext);
+      cancel.hidden = false;
+      cancel.addEventListener("click", async () => {
+        oauthCancelled = true;
+        cleanup();
+        activeLoginCleanup();
+        btn.disabled = true;
+        cancel.disabled = true;
+        try {
+          const res = await fetch("/oidc/login/cancel", {
+            method: "POST", credentials: "same-origin",
+            headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+            body: new URLSearchParams({ next: safeNext })
+          });
+          if (!res.ok) throw new Error("Cancellation failed");
+          const result = await res.json();
+          sessionStorage.removeItem("authportal.oauth.next");
+          location.assign(result.redirect);
+        } catch {
+          status.textContent = "Could not return to the application. Please retry cancellation.";
+          cancel.disabled = false;
+        }
+      });
+    }
+    if (btn && detectProvider(btn) === "plex") {
+      btn.addEventListener("click", e => { e.preventDefault(); void start(); });
+      globalThis.addEventListener("pagehide", cleanup);
+      return;
+    }
   }
 
   // Bind now; if not yet in DOM, bind on DOMContentLoaded; as a last resort, poll briefly

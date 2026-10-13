@@ -635,3 +635,8 @@ a:hover{opacity:.9}
   .portal-bg-grid-top,.portal-bg-grid-bottom{grid-template-columns:1fr;}
   .rbac-binding-row{grid-template-columns:1fr;}
 }
+
+#auth-cancel[hidden] { display: none; }
+
+.auth-cancel-row { display: flex; justify-content: center; margin-top: 1rem; }
+#auth-status { display: block; margin: 1em 0; text-align: center; }

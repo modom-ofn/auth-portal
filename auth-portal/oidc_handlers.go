@@ -293,7 +293,11 @@ type authorizeRequest struct {
 }
 
 func parseAuthorizeRequest(r *http.Request) (authorizeRequest, error) {
-	query := r.URL.Query()
+	return parseAuthorizeQuery(r.URL.Query())
+}
+
+// Parse query values without constructing a request or performing network I/O.
+func parseAuthorizeQuery(query url.Values) (authorizeRequest, error) {
 	respType := strings.TrimSpace(query.Get("response_type"))
 	if respType != "code" {
 		return authorizeRequest{}, errors.New("only response_type=code is supported")

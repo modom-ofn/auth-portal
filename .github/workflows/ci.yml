@@ -23,6 +23,21 @@ jobs:
       # Public, deterministic test-only key; never use this value in deployment.
       DATA_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       SESSION_SECRET: auth-portal-ci-session-secret-not-for-production
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          # Public disposable CI fixture credentials; never use in deployment.
+          POSTGRES_USER: authportal_test
+          POSTGRES_PASSWORD: authportal_ci_fixture_only
+          POSTGRES_DB: authportal_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U authportal_test -d authportal_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: auth-portal
@@ -52,9 +67,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
-            echo "No comparison base is available; skipping changed-file formatting check."
-            exit 0
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            BASE_SHA="$(git merge-base origin/main HEAD)"
           fi
 
           mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$GITHUB_SHA" -- '*.go')
@@ -73,8 +87,15 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Test with race detector and isolated PostgreSQL
+        env:
+          PGUSER: authportal_test
+          PGPASSWORD: authportal_ci_fixture_only
+          PGDATABASE: authportal_test
+        run: |
+          # Construct the public fixture DSN at runtime instead of committing a credential URI.
+          export AUTHPORTAL_TEST_DATABASE_URL="$(python3 -c 'import os, urllib.parse; print(urllib.parse.urlunparse(("postgres", os.environ["PGUSER"] + ":" + os.environ["PGPASSWORD"] + "@localhost:5432", "/" + os.environ["PGDATABASE"], "", "sslmode=disable", "")))')"
+          go test -race ./...
 
   admin-smoke:
     name: Admin smoke tests
@@ -91,8 +112,11 @@ jobs:
         with:
           node-version: 24
 
-      - name: Run admin smoke tests
-        run: node auth-portal/static/admin/smoke-test.mjs
+      - name: Run admin and OIDC browser regression tests
+        run: |
+          node auth-portal/static/admin/smoke-test.mjs
+          if [ -f auth-portal/tests/login_flow_test.cjs ]; then node auth-portal/tests/login_flow_test.cjs; fi
+          if [ -f auth-portal/tests/oidc_config_ui_test.cjs ]; then node --experimental-vm-modules auth-portal/tests/oidc_config_ui_test.cjs auth-portal; fi
 
   secret-scan:
     name: Secret scan
@@ -105,9 +129,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Resolve the contribution scan range
+        id: scan-range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            BASE_SHA="$(git merge-base origin/main HEAD)"
+          fi
+          echo "base=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Scan with TruffleHog
         uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11 # v3.96.0
         with:
+          base: ${{ steps.scan-range.outputs.base }}
+          head: ${{ steps.scan-range.outputs.head }}
           extra_args: --results=verified,unknown
 
   container-build:

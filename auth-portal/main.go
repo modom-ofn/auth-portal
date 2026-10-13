@@ -397,6 +397,7 @@ func registerEnrollmentRoutes(r *mux.Router, lim routeLimiters) {
 }
 
 func registerOIDCRoutes(r *mux.Router) {
+	r.Handle("/oidc/login/cancel", requireSameOrigin(http.HandlerFunc(oidcLoginCancelHandler))).Methods("POST")
 	r.HandleFunc("/.well-known/openid-configuration", oidcDiscoveryHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/oidc/jwks.json", oidcJWKSHandler).Methods("GET")
 	r.Handle(oidcAuthorizePath, authMiddleware(http.HandlerFunc(oidcAuthorizeHandler))).Methods("GET")
