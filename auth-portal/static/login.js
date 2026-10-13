@@ -414,7 +414,7 @@
       });
     }
     if (btn && detectProvider(btn) === "plex") {
-      btn.addEventListener("click", e => { e.preventDefault(); start(); });
+      btn.addEventListener("click", e => { e.preventDefault(); void start(); });
       globalThis.addEventListener("pagehide", cleanup);
       return;
     }

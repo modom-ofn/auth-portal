@@ -115,7 +115,7 @@ jobs:
       - name: Run admin and OIDC browser regression tests
         run: |
           node auth-portal/static/admin/smoke-test.mjs
-          if [ -f auth-portal/tests/login_flow_test.cjs ]; then node auth-portal/tests/login_flow_test.cjs auth-portal/static/login.js; fi
+          if [ -f auth-portal/tests/login_flow_test.cjs ]; then node auth-portal/tests/login_flow_test.cjs; fi
           if [ -f auth-portal/tests/oidc_config_ui_test.cjs ]; then node --experimental-vm-modules auth-portal/tests/oidc_config_ui_test.cjs auth-portal; fi
 
   secret-scan:

@@ -1,8 +1,10 @@
-// Run with: node tests/login_flow_test.cjs /path/to/auth-portal/static/login.js
+// Run with: node tests/login_flow_test.cjs
+// Execute only this repository's trusted browser asset in isolated mock contexts.
 const vm = require('node:vm');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(process.argv[2], 'utf8');
+const path = require('node:path');
+const source = fs.readFileSync(path.join(__dirname, '../static/login.js'), 'utf8');
 const next = '/oidc/authorize?client_id=example&state=original';
 function environment({ complete = false, mfa = false, blocked = false, fail = false, provider = 'plex' } = {}) {
   const events = {}, clicks = {}, calls = [], navigations = [];
@@ -20,12 +22,24 @@ function environment({ complete = false, mfa = false, blocked = false, fail = fa
     sessionStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     document:{body:{dataset:complete?{authComplete:'1',authRedirect:mfa?'/mfa/challenge':'/home',authMfa:String(mfa)}:{}},getElementById:k=>({'auth-signin':btn,'auth-cancel':cancel,'auth-status':status}[k])},
     addEventListener:(n,f)=>events[n]=f,
-    fetch:async (u,o)=>{calls.push([u,o]);return {ok:!fail,json:async()=>u.includes('cancel')?{redirect:'https://app.example/callback?error=access_denied&state=original'}:u.includes('poll')?{ok:true,redirect:'/home'}:{url:'https://app.plex.tv/auth#?code=example'}}}
+    fetch: async (u, o) => {
+      calls.push([u, o]);
+      let result = {url: 'https://app.plex.tv/auth#?code=example'};
+      if (u.includes('cancel')) result = {redirect: 'https://app.example/callback?error=access_denied&state=original'};
+      else if (u.includes('poll')) result = {ok: true, redirect: '/home'};
+      return {ok: !fail, json: async () => result};
+    }
   };
   vm.runInNewContext(source,context);
   return {context,btn,cancel,status,clicks,calls,navigations,storage,events,popup,popupNavigations,timers,popupAttempts:()=>popupAttempts,click:()=>clicks.signin({preventDefault(){}}),allowPopup:()=>popupBlocked=false};
 }
 const flush = ()=>new Promise(r=>setImmediate(r));
+async function testProvider(provider) {
+  let e=environment({provider});assert.equal(e.cancel.hidden,false);e.click();await flush();await e.clicks.cancel();assert.equal(e.popup.closed,true);assert.equal(e.timers.size,0);assert.match(e.navigations[0],/error=access_denied/);
+  e=environment({provider});e.click();await e.clicks.cancel();await flush();assert.equal(e.popupNavigations.length,0);assert.equal(e.navigations.length,1);
+  e=environment({provider});e.click();await flush();e.popup.closed=true;Array.from(e.timers.values())[0]();assert.equal(e.navigations.length,0);assert.match(e.status.textContent,/Sign in again/);
+}
+
 (async()=>{
  let e=environment(); await flush(); assert.equal(e.calls.length,0);assert.equal(e.popupAttempts(),0);assert.equal(e.status.textContent,undefined);assert.equal(e.cancel.hidden,false);e.click();await flush();assert.equal(e.calls.length,1);assert.equal(e.navigations.length,0);assert.equal(e.popupNavigations[0],'https://app.plex.tv/auth#?code=example');assert.equal(e.cancel.hidden,false);
  e=environment();await e.clicks.cancel();assert.equal(e.popupAttempts(),0);assert.match(e.navigations[0],/error=access_denied/);assert.equal(e.calls.length,1);
@@ -38,10 +52,6 @@ const flush = ()=>new Promise(r=>setImmediate(r));
  e=environment({complete:true,mfa:true});const target=new URL(e.navigations[0],'https://auth.example');assert.equal(target.pathname,'/mfa/challenge');assert.equal(target.searchParams.get('next'),next);
  e=environment({fail:true});e.click();await flush();assert.equal(e.navigations.length,0);assert.equal(e.btn.disabled,false);assert.match(e.status.textContent,/try again/);
  assert.equal(e.popup.closed,true);
- for (const provider of ['emby', 'jellyfin']) {
-  e=environment({provider});assert.equal(e.cancel.hidden,false);e.click();await flush();await e.clicks.cancel();assert.equal(e.popup.closed,true);assert.equal(e.timers.size,0);assert.match(e.navigations[0],/error=access_denied/);
-  e=environment({provider});e.click();await e.clicks.cancel();await flush();assert.equal(e.popupNavigations.length,0);assert.equal(e.navigations.length,1);
-  e=environment({provider});e.click();await flush();e.popup.closed=true;Array.from(e.timers.values())[0]();assert.equal(e.navigations.length,0);assert.match(e.status.textContent,/Sign in again/);
- }
+ await Promise.all(['emby', 'jellyfin'].map(testProvider));
  console.log('Passed: quiet page load, click-only popup, blocked click retry, cancellation race, late completion suppression, popup closure, polling completion, same-tab fallback callback, MFA, startup failure, Emby/Jellyfin cancellation and popup closure.');
 })().catch(e=>{console.error(e);process.exitCode=1});

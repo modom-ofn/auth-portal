@@ -639,4 +639,4 @@ a:hover{opacity:.9}
 #auth-cancel[hidden] { display: none; }
 
 .auth-cancel-row { display: flex; justify-content: center; margin-top: 1rem; }
-#auth-status { text-align: center; }
+#auth-status { display: block; margin: 1em 0; text-align: center; }

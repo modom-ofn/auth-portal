@@ -13,4 +13,9 @@ code. Same-origin checks apply; no authenticated session is required to cancel a
 unfinished login. Downstream applications may display their ordinary OAuth error
 page. Application-specific friendly-error proxy redirects are outside this branch.
 
-Validation: Go callback tests and `node auth-portal/tests/login_flow_test.cjs auth-portal/static/login.js`; existing upstream tests retained.
+Validation: Go callback tests and `node auth-portal/tests/login_flow_test.cjs`; existing upstream tests retained.
+
+The browser harness reads only this repository's fixed login asset and executes it
+in isolated VM contexts with mocked browser APIs. This deliberate test execution
+is not a security boundary for untrusted scripts; no CLI-supplied source is read.
+Cancellation parses query values without constructing or sending an HTTP request.

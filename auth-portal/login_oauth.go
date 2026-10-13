@@ -55,5 +55,5 @@ func parseLoginContinuation(raw string) (authorizeRequest, error) {
 	if err != nil || u.IsAbs() || u.Host != "" || u.Path != oidcAuthorizePath || u.Fragment != "" {
 		return authorizeRequest{}, errors.New("invalid continuation")
 	}
-	return parseAuthorizeRequest(&http.Request{URL: u})
+	return parseAuthorizeQuery(u.Query())
 }
