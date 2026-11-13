@@ -1,11 +1,10 @@
-# AuthPortal (v2.0.6)
+# AuthPortal (v2.0.7)
 
-Latest published release: [v2.0.6](https://github.com/modom-ofn/auth-portal/releases/tag/v2.0.6).
-This branch also contains unreleased maintenance changes listed in
-[CHANGELOG.md](CHANGELOG.md#unreleased), including the Go 1.26.11 build below.
-The existing v2.0.6 image retains its original Go 1.26.8 build; merging a pull
-request does not replace that image or publish a release. See
-[VERSIONING.md](VERSIONING.md) for the separate version/tag release process.
+This source tree targets the v2.0.7 security maintenance release described in
+[CHANGELOG.md](CHANGELOG.md#v207---2026-11-13). Versioned images become available
+only after the matching release tag completes the publishing workflow. A merge
+alone does not publish images or update `latest`; existing exact release tags
+remain unchanged. See [VERSIONING.md](VERSIONING.md) for the release process.
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
@@ -112,7 +111,7 @@ AuthPortal authenticates users directly against their connected media server acc
 - [AI-Assisted Development](#ai-assisted-development)
 - [Contributing](#contributing)
 - [License](#license)
-- [Upgrade Guide (to v2.0.6)](#upgrade-guide-to-v206)
+- [Upgrade Guide (to v2.0.7)](#upgrade-guide-to-v207)
 
 ---
 
@@ -245,7 +244,7 @@ PLEX_SERVER_NAME=
 # ---------- Emby ----------
 EMBY_SERVER_URL=http://localhost:8096
 EMBY_APP_NAME=AuthPortal
-EMBY_APP_VERSION=2.0.6
+EMBY_APP_VERSION=2.0.7
 # EMBY_API_KEY=
 EMBY_OWNER_USERNAME=
 EMBY_OWNER_ID=
@@ -254,7 +253,7 @@ EMBY_OWNER_ID=
 JELLYFIN_SERVER_URL=http://localhost:8096
 JELLYFIN_API_KEY=
 JELLYFIN_APP_NAME=AuthPortal
-JELLYFIN_APP_VERSION=2.0.6
+JELLYFIN_APP_VERSION=2.0.7
 ```
 
 
@@ -365,12 +364,12 @@ services:
       JELLYFIN_SERVER_URL: ${JELLYFIN_SERVER_URL:-http://localhost:8096}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
       JELLYFIN_APP_NAME: ${JELLYFIN_APP_NAME:-AuthPortal}
-      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.6}
+      JELLYFIN_APP_VERSION: ${JELLYFIN_APP_VERSION:-2.0.7}
 
       # Emby
       EMBY_SERVER_URL: ${EMBY_SERVER_URL:-http://localhost:8096}
       EMBY_APP_NAME: ${EMBY_APP_NAME:-AuthPortal}
-      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.6}
+      EMBY_APP_VERSION: ${EMBY_APP_VERSION:-2.0.7}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_OWNER_USERNAME: ${EMBY_OWNER_USERNAME:-}
       EMBY_OWNER_ID: ${EMBY_OWNER_ID:-}
@@ -826,11 +825,12 @@ GPL-3.0  https://opensource.org/license/gpl-3-0/
 
 ---
 
-## Upgrade Guide (to v2.0.6)
+## Upgrade Guide (to v2.0.7)
 
-1) Pull `modomofn/auth-portal:v2.0.6` to receive the published October 7, 2026
-   release. It does not include subsequent `Unreleased` maintenance changes;
-   those require a new versioned release. Deployments upgrading from
+1) After v2.0.7 is published, pull `modomofn/auth-portal:v2.0.7` for the Go
+   1.26.11, dependency, and hardened-image security updates. Publication also
+   updates `latest`; the exact version tag is preferable for repeatable
+   deployments. Deployments upgrading from
    versions before v2.0.5 also receive the RBAC, built-in LDAP Sync, and OAuth
    audit improvements described above.
 2) If you previously used the standalone `ldap-sync` workflow, migrate that configuration into `Admin -> LDAP Sync` and stop relying on the external repo/service.

@@ -51,22 +51,24 @@ GHCR images receive provenance and SBOM attestations.
 
 ## Release sequence
 
-Merging a maintenance PR into `main` runs CI but does not increment `VERSION`,
-create a Git tag or GitHub Release, publish container images, or update `latest`.
+Merging a maintenance PR into `main` runs CI but does not automatically choose
+or increment a version. Version changes come from the reviewed files in the PR.
+A merge does not create a Git tag or GitHub Release, publish container images,
+or update `latest`.
 The edge workflow runs only for `next`, so a `main` merge does not publish edge
 images either. A release-drafter configuration file alone does not execute a
 release workflow or change the application version.
 
-The currently published release is v2.0.6. The backward-compatible dependency
-and security maintenance in PR #180 is eligible for a **v2.0.7 patch release**;
-that version is a proposed next release, not an automatic result of merging.
-Until the release preparation below is completed, `VERSION`, the unversioned
-local-build fallback, and provider client-version defaults remain at 2.0.6.
+PR #180 combines backward-compatible dependency/security maintenance with
+**v2.0.7 patch release preparation**. It sets `VERSION`, the local-build fallback,
+and provider client-version defaults to 2.0.7. Merging it completes release
+preparation; tagging the reviewed merge commit is still a separate step.
 Docker builds can override the display version through `APP_VERSION` without
 creating a release (for example, temporary UAT images).
 
 1. Update `VERSION`, release notes, upgrade guidance, and any fallback display
-   version in a short-lived `release/X.Y.Z` branch. Audit README title/upgrade
+   version in a short-lived `release/X.Y.Z` branch or the maintenance PR being
+   prepared for release. Audit README title/upgrade
    links, SECURITY support policy, provider metadata/defaults, Compose/env
    examples, admin help, and issue-template version examples. Preserve historical
    changelog entries, feature-introduction labels, and test fixture versions.

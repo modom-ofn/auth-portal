@@ -207,5 +207,9 @@ Delivery checkpoint: the operator accepted UAT of the temporary multi-platform
 This confirms repository-configured CodeQL scanning despite the absence of a
 checked-in CodeQL workflow. UAT acceptance does not enumerate individual
 provider/MFA scenarios, so it is not a claim that every integration was tested.
-The latest published release remains v2.0.6; maintenance changes await a new
-version/tag. The proposed next patch release is v2.0.7.
+At that delivery checkpoint, the published release was v2.0.6. PR #180 now
+also prepares v2.0.7: VERSION, application/provider defaults, deployment examples,
+and release documentation are aligned. After merging and validating main, push
+the immutable v2.0.7 tag on the reviewed merge commit to run release publication
+and update stable image aliases. No merge, release tag, or stable publication
+has been performed as part of preparation.

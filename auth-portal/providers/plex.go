@@ -73,7 +73,7 @@ const (
 	plexPlexUserFallback       = "plex-user"
 	plexMediaUUIDFormat        = "plex-%d"
 	plexProductName            = "AuthPortal"
-	plexProductVersion         = "2.0.6"
+	plexProductVersion         = "2.0.7"
 	plexClientIDDefault        = "auth-portal"
 	plexClientIDUserInfo       = "authportal-userinfo"
 	plexClientIDResourcesCheck = "authportal-check"

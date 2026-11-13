@@ -8,16 +8,17 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.6` (latest: `v2.0.6`) | ✅ Supported | Receives all security and high-priority bug fixes. |
-| `v2.0.5` | ✅ Supported | Previous patch release covered during the upgrade overlap window. |
+| `v2.0.7` | ✅ Supported release target | Security maintenance release; image availability requires successful tagged publication. |
+| `v2.0.6` | ✅ Supported | Previous patch release covered during the upgrade overlap window. |
+| `v2.0.5` | ✅ Supported | Earlier patch release covered during the upgrade overlap window. |
 | `main` branch | ✅ Supported | Stable integration branch; validated commits are eligible for the next tagged release. |
 | `next` branch | ✅ Supported | Pre-release integration branch published through the `edge` container channel. |
 | `< v2.0.5` | ❌ End-of-life | Please upgrade to a supported release. |
 
-The latest published release remains v2.0.6. Maintenance changes under
-`Unreleased` in CHANGELOG, including Go 1.26.11 and refreshed hardened images,
-are source changes awaiting a new tagged release. They do not retrofit fixes
-into the existing v2.0.6 image. Image scan results are dated evidence; the
+This source tree prepares v2.0.7, including Go 1.26.11 and refreshed hardened
+images. The release workflow must finish successfully before operators can pull
+the v2.0.7 image or receive it through `latest`. These changes do not retrofit
+fixes into the existing v2.0.6 image. Image scan results are dated evidence; the
 dependency audit records outstanding PostgreSQL image findings separately.
 
 When a new minor series ships, the previous series remains supported for at least 90 days. I will post deprecation notices in the release notes and CHANGELOG when a branch approaches end-of-life.

@@ -2,9 +2,12 @@
 
 ## Unreleased
 
-- Clarified published v2.0.6 versus unreleased maintenance, documented the
-  separate proposed v2.0.7 release steps, and aligned security-scan descriptions
-  with the checked-in workflows and verified repository CodeQL checks.
+## v2.0.7 - 2026-11-13
+
+- Prepared the 2.0.7 release identity across application/provider defaults,
+  deployment examples, issue templates, support policy, and upgrade guidance.
+- Documented the separate merge/tag/publication steps and aligned security-scan
+  descriptions with the workflows and verified repository CodeQL checks.
 
 - Updated Go to 1.26.11, LDAP to 3.4.15, and x/crypto to 0.59.0;
   refreshed digest-pinned hardened builder/runtime images.
