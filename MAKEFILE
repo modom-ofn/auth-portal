@@ -16,12 +16,12 @@ help:
 .PHONY: build
 build:
 	@echo "==> go build"
-	go build ./...
+	cd auth-portal && go build ./...
 
 .PHONY: test
 test:
 	@echo "==> go test"
-	go test ./...
+	cd auth-portal && go test ./...
 
 .PHONY: smoke-admin
 smoke-admin:
@@ -31,7 +31,7 @@ smoke-admin:
 .PHONY: docker
 docker:
 	@echo "==> docker build $(IMAGE):$(SHA)"
-	docker build -t $(IMAGE):$(SHA) .
+	docker build --platform linux/amd64 -t $(IMAGE):$(SHA) auth-portal
 
 .PHONY: install-git-secrets
 install-git-secrets:

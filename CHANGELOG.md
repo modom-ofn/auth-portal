@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v2.0.7 - 2026-11-13
+
+- Prepared the 2.0.7 release identity across application/provider defaults,
+  deployment examples, issue templates, support policy, and upgrade guidance.
+- Documented the separate merge/tag/publication steps and aligned security-scan
+  descriptions with the workflows and verified repository CodeQL checks.
+
+- Updated Go to 1.26.11, LDAP to 3.4.15, and x/crypto to 0.59.0;
+  refreshed digest-pinned hardened builder/runtime images.
+- Added reachable Go vulnerability scanning to PR/default-branch CI, corrected
+  Dependabot's Go module path, and added Dockerfile update coverage.
+- Refreshed immutable CI action pins and release scanners with verified
+  download checksums; corrected root Makefile module and Docker build paths.
+
 - Fixed Docker Scout authentication in the release workflow and added a
   guarded manual-dispatch path for publishing an existing immutable release
   tag after a recoverable workflow failure.

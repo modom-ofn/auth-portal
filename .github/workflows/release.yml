@@ -107,7 +107,7 @@ jobs:
       RELEASE_TAG: ${{ needs.validate-version.outputs.tag }}
       RELEASE_SHA: ${{ needs.validate-version.outputs.sha }}
       RELEASE_PRERELEASE: ${{ needs.validate-version.outputs.prerelease }}
-      SCOUT_CLI: docker/scout-cli:1.20.4@sha256:28738a548abe9b4fd82b9de1ade84abacb09ee626d28c457c10866e6822bd564
+      SCOUT_CLI: docker/scout-cli:1.29.0@sha256:5c117dd8f4a9a7b623b23a3983b3cd60ddf6c689349f96f03dee21dca8ec9cf9
     steps:
       - name: Checkout tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,27 +117,27 @@ jobs:
           persist-credentials: false
 
       - name: Secret scan
-        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11 # v3.96.0
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           base: ${{ format('{0}^', needs.validate-version.outputs.sha) }}
           head: ${{ needs.validate-version.outputs.sha }}
-          version: 3.96.0
+          version: 3.99.9
           extra_args: --results=verified,unknown
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -145,7 +145,7 @@ jobs:
 
       - name: Build and publish immutable candidates
         id: build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: auth-portal
           file: auth-portal/Dockerfile
@@ -164,7 +164,7 @@ jobs:
             ${{ env.GHCR_IMAGE }}:build-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Attest GHCR image provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.GHCR_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -175,8 +175,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          version="v1.42.4"
-          checksum="590650c2743b83f327d1bf9bec64f6f83b7fec504187bb84f500c862bf8f2a0f"
+          version="v1.57.1"
+          checksum="bf52519eb57f675d47c07d43213cb6dff6449f3d6d1147ff6701ed91f44eef0c"
           url="https://github.com/anchore/syft/releases/download/${version}/syft_${version#v}_linux_amd64.tar.gz"
           curl --proto '=https' --proto-redir '=https' -sSfL "$url" -o /tmp/syft.tgz
           echo "$checksum  /tmp/syft.tgz" | sha256sum -c -
@@ -192,7 +192,7 @@ jobs:
             -o cyclonedx-json > auth-portal-sbom.cdx.json
 
       - name: Attest GHCR image SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.GHCR_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -204,8 +204,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          version="v0.110.0"
-          checksum="aaa98d27d2d7efd9317c6a1ad6d9b15f3e65bab320e7d03bde41e251387bb71c"
+          version="v0.121.3"
+          checksum="e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85"
           url="https://github.com/anchore/grype/releases/download/${version}/grype_${version#v}_linux_amd64.tar.gz"
           curl --proto '=https' --proto-redir '=https' -sSfL "$url" -o /tmp/grype.tgz
           echo "$checksum  /tmp/grype.tgz" | sha256sum -c -
@@ -222,7 +222,7 @@ jobs:
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.69.3
+          version: v0.76.2
           scan-type: image
           image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
           vuln-type: os,library
@@ -307,7 +307,7 @@ jobs:
             docker-scout.md > SHA256SUMS
 
       - name: Upload release evidence artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: auth-portal-release-${{ env.RELEASE_VERSION }}
           path: |
@@ -321,7 +321,7 @@ jobs:
 
       - name: Create draft GitHub Release and upload evidence
         id: github-release
-        uses: softprops/action-gh-release@fe965f7af51af5f2602596916f38a38df2e33de0 # v3.0.2
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: AuthPortal ${{ env.RELEASE_TAG }}

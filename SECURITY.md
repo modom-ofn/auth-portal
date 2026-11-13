@@ -8,11 +8,18 @@ Security fixes are provided for actively maintained release lines. Anything outs
 
 | Version line | Status | Notes |
 | ------------ | ------ | ----- |
-| `v2.0.6` (latest: `v2.0.6`) | ✅ Supported | Receives all security and high-priority bug fixes. |
-| `v2.0.5` | ✅ Supported | Previous patch release covered during the upgrade overlap window. |
+| `v2.0.7` | ✅ Supported release target | Security maintenance release; image availability requires successful tagged publication. |
+| `v2.0.6` | ✅ Supported | Previous patch release covered during the upgrade overlap window. |
+| `v2.0.5` | ✅ Supported | Earlier patch release covered during the upgrade overlap window. |
 | `main` branch | ✅ Supported | Stable integration branch; validated commits are eligible for the next tagged release. |
 | `next` branch | ✅ Supported | Pre-release integration branch published through the `edge` container channel. |
 | `< v2.0.5` | ❌ End-of-life | Please upgrade to a supported release. |
+
+This source tree prepares v2.0.7, including Go 1.26.11 and refreshed hardened
+images. The release workflow must finish successfully before operators can pull
+the v2.0.7 image or receive it through `latest`. These changes do not retrofit
+fixes into the existing v2.0.6 image. Image scan results are dated evidence; the
+dependency audit records outstanding PostgreSQL image findings separately.
 
 When a new minor series ships, the previous series remains supported for at least 90 days. I will post deprecation notices in the release notes and CHANGELOG when a branch approaches end-of-life.
 
@@ -50,11 +57,13 @@ AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, RBAC authorizat
 Automated security checks run on this project:
 
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
-- TruffleHog: secret scanning on every push/PR in CI/CD.
+- TruffleHog: secret scanning in main/next CI and tagged release workflows.
 - git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
-- GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
+- govulncheck: reachable Go vulnerability checks in pull-request and main/next CI.
+- GitHub CodeQL: repository-configured analysis of Go, JavaScript/TypeScript,
+  and GitHub Actions; verified on the maintenance pull request.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
-- Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
+- Docker Scout: image-level vulnerability analysis during tagged releases, including base image and library findings.
 - SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.
 
 If you spot an issue or have questions about these scans, please open an issue or reach out.
@@ -73,4 +82,4 @@ If you spot an issue or have questions about these scans, please open an issue o
 - **Token privacy for OIDC:** access/refresh tokens are stored as deterministic SHA-256 digests, limiting exposure if databases or logs leak.
 - **OAuth governance:** OAuth client changes now produce persistent server-side audit history with operator-supplied change reasons, and custom OAuth scopes are validated against the RBAC permission catalog before they can be assigned or granted.
 - **Operational logging caution:** because the admin Logs tab can surface recent application log lines in-browser, operators should avoid writing secrets to logs and should keep `admin.access` assignments tightly scoped.
-- **Runtime hygiene:** containers are built with Docker Hardened Images for both build and runtime (`dhi.io/golang:1.26.8-alpine3.23-dev` -> `dhi.io/alpine-base:3.23-alpine3.23`), keep only CA certs/tzdata in the final layer, and run as non-root UID 65532 to shrink the attack surface.
+- **Runtime hygiene:** containers are built with Docker Hardened Images for both build and runtime (`dhi.io/golang:1.26.11-alpine3.23-dev` -> `dhi.io/alpine-base:3.23-alpine3.23`), keep only CA certs/tzdata in the final layer, and run as non-root UID 65532 to shrink the attack surface.
