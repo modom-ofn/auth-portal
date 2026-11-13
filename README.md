@@ -1,11 +1,5 @@
 # AuthPortal (v2.0.7)
 
-This source tree targets the v2.0.7 security maintenance release described in
-[CHANGELOG.md](CHANGELOG.md#v207---2026-11-13). Versioned images become available
-only after the matching release tag completes the publishing workflow. A merge
-alone does not publish images or update `latest`; existing exact release tags
-remain unchanged. See [VERSIONING.md](VERSIONING.md) for the release process.
-
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Go Version](https://img.shields.io/badge/Go-1.26.11%2B-00ADD8?logo=go)](https://go.dev/)
