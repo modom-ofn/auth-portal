@@ -79,14 +79,14 @@ AuthPortal authenticates users directly against their connected media server acc
 ## Table of Contents
 
 - [Features](#features)
-- [What's New in v2.0.5](#whats-new-in-v205)
+- [What's Available in v2.0.7](#whats-available-in-v207)
 - [LDAP Sync](#ldap-sync)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
-  - [Admin Console & Config Store (new in v2.0.4)](#admin-console--config-store-new-in-v204)
-  - [LDAP Sync (new in v2.0.5)](#ldap-sync-new-in-v205)
+  - [Admin Console & Config Store](#admin-console--config-store)
+  - [LDAP Sync](#ldap-sync)
   - [Backups](#backups)
-  - [OAuth 2.1 / OIDC Authorization Server (new in v2.0.4)](#oauth-21--oidc-authorization-server-new-in-v204)
+  - [OAuth 2.1 / OIDC Authorization Server](#oauth-21--oidc-authorization-server)
   - [Multi-factor authentication](#multi-factor-authentication)
   - [Plex](#plex)
   - [Jellyfin](#jellyfin)
@@ -109,7 +109,7 @@ AuthPortal authenticates users directly against their connected media server acc
 
 ---
 
-## What's New in v2.0.5
+## What's Available in v2.0.7
 
 - **RBAC is now built into AuthPortal:** AuthPortal now has database-backed roles, permissions, role bindings, and permission middleware instead of relying only on a broad admin flag.
 - **Access Control admin tab:** operators can create custom roles and custom permissions, assign permissions to roles, and manage manual user-role bindings from the browser.
@@ -130,7 +130,7 @@ AuthPortal authenticates users directly against their connected media server acc
 
 ## LDAP Sync
 
-LDAP sync is built into AuthPortal in `v2.0.5`. Configure it in the Admin Console under `LDAP Sync` to run manual syncs or schedule recurring LDAP exports of authorized users.
+LDAP sync is built into AuthPortal since `v2.0.5`. Configure it in the Admin Console under `LDAP Sync` to run manual syncs or schedule recurring LDAP exports of authorized users.
 
 What it does:
 
@@ -419,7 +419,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - `LDAP_SYNC_SCHEDULE_ENABLED` / `LDAP_SYNC_SCHEDULE_FREQUENCY` / `LDAP_SYNC_SCHEDULE_TIME` / `LDAP_SYNC_SCHEDULE_DAY`  bootstrap defaults for the built-in LDAP scheduler; once saved in Admin, the persisted runtime config takes precedence.
 - `LOG_LEVEL`  `DEBUG`, `INFO`, `WARN`, or `ERROR`.
 
-### Admin Console & Config Store (new in v2.0.4)
+### Admin Console & Config Store
 
 - Reach the admin experience at `/admin` with a user provisioned via `ADMIN_BOOTSTRAP_USERS` (comma-separated `username:email` pairs evaluated at startup).
 - Providers, Security, MFA, App Settings, and LDAP Sync settings now persist in Postgres as JSON documents. Edits go through `/api/admin/config/{section}` with optimistic concurrency (`version` field) and are tracked in `/api/admin/config/history/{section}`.
@@ -428,7 +428,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - The OAuth tab in the admin console surfaces live client management (list/create/update/delete plus secret rotation), persistent audit history, and change reasons backed by the `/api/admin/oauth/*` endpoints.
 - The Access Control tab exposes RBAC role, permission, and manual binding management backed by the `/api/admin/rbac/*` endpoints.
 
-### LDAP Sync (new in v2.0.5)
+### LDAP Sync
 
 - The **LDAP Sync** tab under `/admin` manages LDAP host/bind/Base-DN settings, StartTLS, optional stale-entry deletion, manual sync runs, and the built-in scheduler.
 - Optional group sync in the same tab can map LDAP groups to AuthPortal RBAC roles.
@@ -445,7 +445,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - Each row in the table supports `Download`, `Restore`, and `Delete`. Restore immediately applies the captured config via the standard validation pipeline; deletion only affects the filesystem.
 - The same functionality is exposed via the REST API (`/api/admin/backups*`); see [HTTP Routes](#http-routes) below for endpoint details.
 
-### OAuth 2.1 / OIDC Authorization Server (new in v2.0.4)
+### OAuth 2.1 / OIDC Authorization Server
 
 - Discovery endpoint `/.well-known/openid-configuration` advertises JWKS (`/oidc/jwks.json`), authorize (`/oidc/authorize`), token (`/oidc/token`), and userinfo (`/oidc/userinfo`) URLs.
 - `/oidc/authorize` implements the authorization-code grant with PKCE. User consent is recorded per client/scope, supports `prompt=consent`, and returns `consent_required` when `prompt=none` is requested without prior approval.
@@ -458,7 +458,7 @@ If you plan to use LDAP Sync, point the LDAP environment variables at your exist
 - Register clients through the admin console (OAuth tab) or the REST API: `GET/POST /api/admin/oauth/clients`, `PUT/DELETE /api/admin/oauth/clients/{id}`, `POST /api/admin/oauth/clients/{id}/rotate-secret`, `GET /api/admin/oauth/scopes`, and `GET /api/admin/oauth/history`.
 - Custom RBAC permissions can be used as OAuth scopes, which lets downstream apps request app-specific entitlements such as `audiobookshelf.read`.
 
-### RBAC / Access Control (new in v2.0.5)
+### RBAC / Access Control
 
 - AuthPortal now stores roles, permissions, role-permission assignments, and user-role bindings in Postgres.
 - Seeded system roles are `admin`, `viewer`, and `user`; system permissions protect core admin surfaces such as config, LDAP, backups, OAuth, and RBAC management.
