@@ -14,6 +14,12 @@ Security fixes are provided for actively maintained release lines. Anything outs
 | `next` branch | ✅ Supported | Pre-release integration branch published through the `edge` container channel. |
 | `< v2.0.5` | ❌ End-of-life | Please upgrade to a supported release. |
 
+The latest published release remains v2.0.6. Maintenance changes under
+`Unreleased` in CHANGELOG, including Go 1.26.11 and refreshed hardened images,
+are source changes awaiting a new tagged release. They do not retrofit fixes
+into the existing v2.0.6 image. Image scan results are dated evidence; the
+dependency audit records outstanding PostgreSQL image findings separately.
+
 When a new minor series ships, the previous series remains supported for at least 90 days. I will post deprecation notices in the release notes and CHANGELOG when a branch approaches end-of-life.
 
 ## Reporting a Vulnerability
@@ -50,9 +56,11 @@ AuthPortal layers AES-GCM token sealing, HTTP-only JWT sessions, RBAC authorizat
 Automated security checks run on this project:
 
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
-- TruffleHog: secret scanning on every push/PR in CI/CD.
+- TruffleHog: secret scanning in main/next CI and tagged release workflows.
 - git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
 - govulncheck: reachable Go vulnerability checks in pull-request and main/next CI.
+- GitHub CodeQL: repository-configured analysis of Go, JavaScript/TypeScript,
+  and GitHub Actions; verified on the maintenance pull request.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability analysis during tagged releases, including base image and library findings.
 - SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.

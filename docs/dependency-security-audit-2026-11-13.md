@@ -198,5 +198,14 @@ Validation after implementation:
 
 The initial DHI authentication and source/image findings above are baseline
 evidence, not current blockers or findings for the rebuilt application images.
-Remote GitHub Actions execution, publication/attestation, real provider login,
-and real database upgrade acceptance remain outside local validation.
+Remote publication/attestation and real database upgrade acceptance remain
+outside local validation.
+
+Delivery checkpoint: the operator accepted UAT of the temporary multi-platform
+`modomofn/auth-portal:uat-f2b63d0` image. PR #180 targets `main`; its initial head
+`f2b63d0` passed all nine GitHub checks, including CI, SonarCloud, and CodeQL.
+This confirms repository-configured CodeQL scanning despite the absence of a
+checked-in CodeQL workflow. UAT acceptance does not enumerate individual
+provider/MFA scenarios, so it is not a claim that every integration was tested.
+The latest published release remains v2.0.6; maintenance changes await a new
+version/tag. The proposed next patch release is v2.0.7.

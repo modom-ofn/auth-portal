@@ -1,5 +1,12 @@
 # AuthPortal (v2.0.6)
 
+Latest published release: [v2.0.6](https://github.com/modom-ofn/auth-portal/releases/tag/v2.0.6).
+This branch also contains unreleased maintenance changes listed in
+[CHANGELOG.md](CHANGELOG.md#unreleased), including the Go 1.26.11 build below.
+The existing v2.0.6 image retains its original Go 1.26.8 build; merging a pull
+request does not replace that image or publish a release. See
+[VERSIONING.md](VERSIONING.md) for the separate version/tag release process.
+
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Go Version](https://img.shields.io/badge/Go-1.26.11%2B-00ADD8?logo=go)](https://go.dev/)
@@ -750,9 +757,11 @@ DEBUG plex: resources match via machine id
 Automated security checks run on this project:
 
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
-- TruffleHog: secret scanning on every push/PR in CI/CD.
+- TruffleHog: secret scanning in main/next CI and tagged release workflows.
 - git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
 - govulncheck: reachable Go vulnerability checks in pull-request and main/next CI.
+- GitHub CodeQL: repository-configured analysis of Go, JavaScript/TypeScript,
+  and GitHub Actions; verified on the maintenance pull request.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
 - Docker Scout: image-level vulnerability analysis during tagged releases, including base image and library findings.
 - SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.
@@ -819,8 +828,9 @@ GPL-3.0  https://opensource.org/license/gpl-3-0/
 
 ## Upgrade Guide (to v2.0.6)
 
-1) Pull `modomofn/auth-portal:v2.0.6` to receive the current Go toolchain,
-   dependency, and container security updates. Deployments upgrading from
+1) Pull `modomofn/auth-portal:v2.0.6` to receive the published October 7, 2026
+   release. It does not include subsequent `Unreleased` maintenance changes;
+   those require a new versioned release. Deployments upgrading from
    versions before v2.0.5 also receive the RBAC, built-in LDAP Sync, and OAuth
    audit improvements described above.
 2) If you previously used the standalone `ldap-sync` workflow, migrate that configuration into `Admin -> LDAP Sync` and stop relying on the external repo/service.

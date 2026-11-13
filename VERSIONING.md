@@ -51,8 +51,25 @@ GHCR images receive provenance and SBOM attestations.
 
 ## Release sequence
 
+Merging a maintenance PR into `main` runs CI but does not increment `VERSION`,
+create a Git tag or GitHub Release, publish container images, or update `latest`.
+The edge workflow runs only for `next`, so a `main` merge does not publish edge
+images either. A release-drafter configuration file alone does not execute a
+release workflow or change the application version.
+
+The currently published release is v2.0.6. The backward-compatible dependency
+and security maintenance in PR #180 is eligible for a **v2.0.7 patch release**;
+that version is a proposed next release, not an automatic result of merging.
+Until the release preparation below is completed, `VERSION`, the unversioned
+local-build fallback, and provider client-version defaults remain at 2.0.6.
+Docker builds can override the display version through `APP_VERSION` without
+creating a release (for example, temporary UAT images).
+
 1. Update `VERSION`, release notes, upgrade guidance, and any fallback display
-   version in a short-lived `release/X.Y.Z` branch.
+   version in a short-lived `release/X.Y.Z` branch. Audit README title/upgrade
+   links, SECURITY support policy, provider metadata/defaults, Compose/env
+   examples, admin help, and issue-template version examples. Preserve historical
+   changelog entries, feature-introduction labels, and test fixture versions.
 2. Merge the release pull request after all required checks pass.
 3. Create the protected release tag on the exact merge commit.
 4. The tag-only release workflow builds immutable candidates, scans their
@@ -61,6 +78,14 @@ GHCR images receive provenance and SBOM attestations.
 5. Published tags and release assets are never moved or replaced. Corrections
    require a new version.
 
+For a stable v2.0.7 release, successful publication would create the GitHub
+Release `AuthPortal v2.0.7` with generated notes, SBOM, scan reports, and
+checksums. Both Docker Hub and GHCR would receive `v2.0.7`, `v2.0`, `v2`, and
+`latest`; the existing exact `v2.0.6` tag and release remain intact. Publication
+is conditional on the workflow gates succeeding. A failed run can leave
+candidate images or partially completed publication; inspect the run before
+recovery rather than assuming that all registries/releases changed together.
+
 If a release run fails after its tag is created, fix the workflow through a
 pull request and manually run the Release workflow from `main` with the existing
 tag as its `tag` input. The recovery path checks out only `refs/tags/<tag>`,
@@ -68,3 +93,6 @@ revalidates SemVer and `VERSION`, and verifies that the tagged commit is
 reachable from `main`. Secret scanning uses the validated tag commit and its
 parent as explicit bounds, so tag-triggered and manual recovery runs enforce
 the same check. Do not move or recreate the tag.
+Recovery rebuilds the existing tagged source; rerunning an old tag cannot
+include maintenance changes merged after that tag. Do not use recovery to
+replace an already published release with newer source or build contents.
