@@ -1,6 +1,6 @@
 # ---- builder ----
-# dhi.io/golang:1.26.8-alpine3.23-dev
-FROM --platform=$BUILDPLATFORM dhi.io/golang:1.26.8-alpine3.23-dev AS build
+# dhi.io/golang:1.26.11-alpine3.23-dev
+FROM --platform=$BUILDPLATFORM dhi.io/golang:1.26.11-alpine3.23-dev@sha256:b67835d53e07cda04291aba44d65d3eace427d9eb61693b7e2819ccafa48c8fe AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG APP_VERSION=dev
@@ -35,7 +35,7 @@ RUN mkdir -p /out && \
 
 # ---- runtime ----
 # dhi.io/alpine-base:3.23-alpine3.23
-FROM dhi.io/alpine-base@sha256:27d91b0ae2dbb1bbf89398f4ee4564a0c7a14a82c34c8cffd3b2687033a9d97a
+FROM dhi.io/alpine-base@sha256:8a14cb527704fd6325fae6e92e0bc73a3c64b44a83c36a3abb53730c5757cc72
 WORKDIR /app
 
 COPY --from=build --chown=65532:65532 /out/auth-portal /app/auth-portal

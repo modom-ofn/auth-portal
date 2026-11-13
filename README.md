@@ -2,7 +2,7 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/modomofn/auth-portal.svg)](https://hub.docker.com/r/modomofn/auth-portal)
 [![Docker Image Size](https://img.shields.io/docker/image-size/modomofn/auth-portal/latest)](https://hub.docker.com/r/modomofn/auth-portal)
-[![Go Version](https://img.shields.io/badge/Go-1.26.8%2B-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26.11%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL3.0-green.svg)](https://github.com/modom-ofn/auth-portal?tab=GPL-3.0-1-ov-file#readme)
 [![AI-Assisted Development](https://img.shields.io/badge/AI--Assisted_Development-Yes-6c757d)](#ai-assisted-development)
 [![Sonarcloud Status](https://sonarcloud.io/api/project_badges/measure?project=modom-ofn_auth-portal&metric=alert_status)](https://sonarcloud.io/dashboard?id=modom-ofn_auth-portal)
@@ -587,10 +587,10 @@ These tables are created and migrated automatically at startup. Existing legacy 
 
 ## Build & Images
 
-- Go: `1.26.8` on Docker Hardened Images `dhi.io/golang:1.26.8-alpine3.23-dev` (builder stage).
+- Go: `1.26.11` on Docker Hardened Images `dhi.io/golang:1.26.11-alpine3.23-dev` (builder stage).
 - Builder installs `git` + CA certs, runs `go mod download` then `go mod tidy -compat=1.26`, builds with:
     - `-v -x` (verbose), `-buildvcs=false` (avoid VCS scans), `-trimpath`, `-ldflags "-s -w"`.
-- Builder: `dhi.io/golang:1.26.8-alpine3.23-dev`.
+- Builder: `dhi.io/golang:1.26.11-alpine3.23-dev`.
 - Runtime: `dhi.io/alpine-base:3.23-alpine3.23`, keeps CA certs in-base, copies tzdata from the builder stage, and runs as non-root `uid 65532`.
 
 ---
@@ -752,9 +752,9 @@ Automated security checks run on this project:
 - Syft SBOM + Grype: SBOM generated from the built image; Grype scans that SBOM.
 - TruffleHog: secret scanning on every push/PR in CI/CD.
 - git-secrets: local pre-commit and commit-message guardrail to catch credentials before they land in git history.
-- GitHub CodeQL: static analysis for code-level vulnerabilities in every PR and on main.
+- govulncheck: reachable Go vulnerability checks in pull-request and main/next CI.
 - Trivy: container and dependency scans to catch OS and library CVEs in our images.
-- Docker Scout: image-level vulnerability insights for each commit/tag, including base image and layer analysis.
+- Docker Scout: image-level vulnerability analysis during tagged releases, including base image and library findings.
 - SonarQube Cloud: continuous code quality and security hotspot detection across the codebase.
 
 If you spot an issue or have questions about these scans, please open an issue or reach out.
